@@ -41,31 +41,35 @@ function heb(dateStr){
 }
 function dateCell(s){const h=heb(s);return `${esc(gFmt.format(parseIso(s)))}<span class="sub">${esc(h.heb)}</span><span class="sub">${esc(h.parsha)}</span>`}
 
-// ---------- state & storage ----------
+// ---------- state & storage (Convex: convex/fund.ts) ----------
+const Auth=window.SiteAuth;
 let txs=[]; let settings={synName:"קופת בית הכנסת",openMain:0,openPetty:0,israel:1};
-let db=null, downloads=null, mode="local";
+let members=[], role=null, sid=null, stage="loading", ledgerError="";
+const isManager=()=>role==="gabbai"||role==="rabbi";
 const LS="gabbai-fallback-v1";
-function loadLocal(){try{const j=JSON.parse(localStorage.getItem(LS)||"null");if(j){txs=j.txs||[];settings=Object.assign(settings,j.settings||{})}}catch(e){}}
-function saveLocal(){try{localStorage.setItem(LS,JSON.stringify({txs,settings}))}catch(e){}}
+function errText(e,fallback){return (e&&typeof e.data==="string")?e.data:fallback}
+const call=(name,args)=>Auth.client().mutation(name,Object.assign({synagogueId:sid},args));
+const TX_KEYS=["type","amount","date","name","desc","method","mitzvah","month","category","vendor","paid","paidDate","createdAt"];
 async function putTx(obj){
-  if(mode==="db"){
-    const ref=obj.id?db.collection("tx").doc(obj.id):db.collection("tx").doc();
-    const body=Object.assign({},obj);delete body.id;
-    await ref.set(body);
-  }else{
-    if(!obj.id){obj.id="l"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);txs.push(obj)}
-    else{const i=txs.findIndex(t=>t.id===obj.id);if(i>=0)txs[i]=obj}
-    saveLocal();render();
-  }
+  const body={};for(const k of TX_KEYS) if(obj[k]!==undefined) body[k]=obj[k];
+  body.donorId=obj.donorId||null;
+  if(obj.id) body.id=obj.id;
+  await call("fund:save",body);
 }
-async function delTx(id){
-  if(mode==="db"){await db.collection("tx").doc(id).delete()}
-  else{txs=txs.filter(t=>t.id!==id);saveLocal();render()}
-}
-async function putSettings(s){
-  settings=Object.assign(settings,s);hcache.clear();
-  if(mode==="db"){await db.doc("settings/main").set(settings)}else{saveLocal()}
-  render();
+async function delTx(id){await call("fund:remove",{id})}
+async function markPaid(id){await call("fund:markPaid",{id,paidDate:todayIso()})}
+async function putSettings(s){await call("fund:saveSettings",{openMain:s.openMain,openPetty:s.openPetty})}
+
+function localData(){try{const j=JSON.parse(localStorage.getItem(LS)||"null");return j&&Array.isArray(j.txs)&&j.txs.length?j:null}catch(e){return null}}
+async function importLocal(){
+  const j=localData();if(!j)return;
+  if(!confirm(`להעביר ${j.txs.length} רישומים שנשמרו בדפדפן הזה לקופה של ${settings.synName}?`))return;
+  const list=j.txs.map(t=>{const o={};for(const k of TX_KEYS) if(t[k]!==undefined&&t[k]!==null) o[k]=t[k]; o.amount=Number(o.amount)||0; return o}).filter(o=>o.amount>0&&o.type&&o.date);
+  try{
+    const n=await call("fund:importLocal",{txs:list,openMain:Number(j.settings&&j.settings.openMain)||0,openPetty:Number(j.settings&&j.settings.openPetty)||0});
+    localStorage.setItem(LS+"-imported",localStorage.getItem(LS));localStorage.removeItem(LS);
+    toast(`הועברו ${n} רישומים`);render();
+  }catch(e){toast(errText(e,"הייבוא נכשל. נסו שוב."))}
 }
 
 // ---------- accounting ----------
@@ -181,7 +185,7 @@ function viewDonations(){
   }
   const list=items.filter(t=>ui.donFilter==="all"||(ui.donFilter==="paid"?t.paid:!t.paid));
   return head+`<div class="panel scroll"><table><thead><tr><th>תאריך</th><th>מי</th><th>מה</th><th class="num">סכום</th><th>סטטוס</th><th></th></tr></thead><tbody>
-    ${list.map(t=>`<tr><td>${dateCell(t.date)}</td><td><b>${esc(t.name||"")}</b></td><td>${esc(t.type==="mitzvah"?t.mitzvah:"תרומה")}<span class="sub">${esc(t.desc||"")}</span></td><td class="num">${money(t.amount)}</td>
+    ${list.map(t=>`<tr><td>${dateCell(t.date)}</td><td><b>${esc(t.name||"")}</b>${t.donorId?`<span class="sub">חבר קהילה</span>`:""}</td><td>${esc(t.type==="mitzvah"?t.mitzvah:"תרומה")}<span class="sub">${esc(t.desc||"")}</span></td><td class="num">${money(t.amount)}</td>
     <td>${t.paid?`<span class="pill ok">שולם</span><span class="sub">${t.paidDate?esc(gFmt.format(parseIso(t.paidDate))):""} ${esc(t.method||"")}</span>`:`<span class="pill no">לא שולם</span>`}</td><td>${actions(t)}</td></tr>`).join("")}
     ${list.length?"":`<tr><td colspan="6" class="empty">אין רשומות להצגה.</td></tr>`}
   </tbody></table></div>`;
@@ -211,16 +215,43 @@ function viewSalary(){
   </tbody></table></div>`;
 }
 
+function viewMine(){
+  const list=[...txs].sort((a,b)=>a.date<b.date?1:-1);
+  const paid=list.filter(t=>t.paid), open=list.filter(t=>!t.paid);
+  return `<h2>התרומות שלי</h2>
+  <div class="balances">
+    <div class="bal main"><div class="k">סה״כ שולם</div><div class="v">${money(sum(paid,t=>t.amount))}</div></div>
+    <div class="bal owed"><div class="k">נדרים שטרם שולמו (${open.length})</div><div class="v">${money(sum(open,t=>t.amount))}</div></div>
+  </div>
+  <div class="panel scroll" style="margin-top:14px"><table><thead><tr><th>תאריך</th><th>מה</th><th class="num">סכום</th><th>סטטוס</th></tr></thead><tbody>
+    ${list.map(t=>`<tr><td>${dateCell(t.date)}</td><td>${esc(t.type==="mitzvah"?"מכירת מצווה: "+t.mitzvah:"תרומה")}<span class="sub">${esc(t.desc||"")}</span></td><td class="num">${money(t.amount)}</td>
+    <td>${t.paid?`<span class="pill ok">שולם</span><span class="sub">${t.paidDate?esc(gFmt.format(parseIso(t.paidDate))):""} ${esc(t.method||"")}</span>`:`<span class="pill no">לא שולם</span>`}</td></tr>`).join("")}
+    ${list.length?"":`<tr><td colspan="4" class="empty">עדיין לא נרשמו תרומות על שמך.</td></tr>`}
+  </tbody></table></div>
+  <div class="status">מוצגות כאן רק התרומות והמצוות שהגבאי רשם על שמך.</div>`;
+}
+function viewMessage(text,button){return `<div class="empty" style="margin-top:40px">${text}${button?`<div style="margin-top:14px">${button}</div>`:""}</div>`}
+
 function render(){
-  const t=todayIso(), h=heb(t);
-  $("#synName").textContent=settings.synName||"קופת בית הכנסת";
+  const t=todayIso(), h=heb(t), ready=stage==="ready", manager=ready&&isManager();
+  $("#synName").textContent=ready?settings.synName:"קופת בית הכנסת";
   $("#todayParsha").textContent=h.parsha||"קופת בית הכנסת";
   $("#todayDates").innerHTML=`<b>${esc(h.heb)}</b> · ${esc(gLong.format(new Date()))}`;
+  document.querySelector("nav.tabs").hidden=!manager;
+  $("#addBtn").hidden=!manager;
+  $("#openSettings").hidden=!manager;
+  if(stage==="loading"){$("#view").innerHTML=viewMessage("טוען…");return}
+  if(stage==="signedOut"){$("#view").innerHTML=viewMessage("כדי לראות את הקופה יש להתחבר עם חשבון Google.",`<button class="btn" id="signIn">כניסה עם Google</button>`);return}
+  if(stage==="noCommunity"){$("#view").innerHTML=viewMessage("עדיין לא הצטרפת לקהילה.",`<a class="btn" href="../account/">לחשבון שלי</a>`);return}
+  if(stage==="error"){$("#view").innerHTML=viewMessage(esc(ledgerError),`<a class="btn" href="../account/">לחשבון שלי</a>`);return}
+  if(!manager){$("#view").innerHTML=viewMine();return}
   document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===tab));
   const v={home:viewHome,ledger:viewLedger,donations:viewDonations,petty:viewPetty,salary:viewSalary}[tab]();
-  $("#view").innerHTML=v+(mode==="local"?`<div class="status">הנתונים נשמרים בדפדפן זה בלבד.</div>`:"");
+  const local=localData();
+  $("#view").innerHTML=(local?`<div class="panel" style="padding:12px;margin-top:14px">נמצאו בדפדפן הזה ${local.txs.length} רישומי קופה מהגרסה הקודמת. <button class="btn" id="importLocal">העברה לקופת הקהילה</button></div>`:"")+v;
   const names=[...new Set(txs.filter(x=>x.name).map(x=>x.name))];
   $("#donorList").innerHTML=names.map(n=>`<option value="${esc(n)}">`).join("");
+  if(!dlg.open) $("#donor").innerHTML=`<option value="">לא חבר קהילה (שם חופשי)</option>`+members.map(m=>`<option value="${esc(m.userId)}">${esc(m.name)}</option>`).join("");
 }
 
 // ---------- form ----------
@@ -244,13 +275,14 @@ function openForm(type,t){
   form.reset();editId=t?t.id:null;
   $("#dlgTitle").textContent=t?"עריכת רישום":"רישום חדש";
   $("#typePick").hidden=!!t;
-  if(t){for(const k of ["amount","date","name","desc","method","mitzvah","month","category","vendor","paidDate"]) if(form[k]&&t[k]!=null) form[k].value=t[k]; form.paid.checked=!!t.paid}
+  if(t){for(const k of ["amount","date","name","desc","method","mitzvah","month","category","vendor","paidDate"]) if(form[k]&&t[k]!=null&&t[k]!=="") form[k].value=t[k]; form.paid.checked=!!t.paid; form.donor.value=t.donorId||""}
   else form.date.value=todayIso();
   setType(t?t.type:(type||"donation"));
   dlg.showModal();
 }
 form.addEventListener("click",e=>{const b=e.target.closest("#typePick button");if(b)setType(b.dataset.t);if(e.target.closest("[data-close]"))dlg.close()});
 form.paid.addEventListener("change",syncPaid);
+form.donor.addEventListener("change",()=>{const m=members.find(x=>x.userId===form.donor.value);if(m)form.name.value=m.name});
 form.date.addEventListener("input",hint);form.paidDate.addEventListener("input",hint);
 form.addEventListener("submit",async e=>{
   e.preventDefault();
@@ -260,20 +292,20 @@ form.addEventListener("submit",async e=>{
   const prev=editId?txs.find(x=>x.id===editId):null;
   const o={type:curType,amount,date:form.date.value,desc:form.desc.value.trim(),createdAt:prev?prev.createdAt:Date.now()};
   if(editId)o.id=editId;
-  if(curType==="donation"||curType==="mitzvah"){o.name=form.name.value.trim();o.method=form.method.value;if(curType==="mitzvah")o.mitzvah=form.mitzvah.value}
+  if(curType==="donation"||curType==="mitzvah"){o.name=form.name.value.trim();o.donorId=form.donor.value||null;o.method=form.method.value;if(curType==="mitzvah")o.mitzvah=form.mitzvah.value}
   if(curType==="salary")o.month=form.month.value.trim();
   if(curType==="expense"||curType==="petty"){o.category=form.category.value;o.vendor=form.vendor.value.trim()}
   if(isIncome(o)){o.paid=form.paid.checked;o.paidDate=o.paid?(form.paidDate.value||o.date):""}
   const btn=$("#saveBtn");btn.disabled=true;
-  try{await putTx(o);dlg.close();toast("נשמר")}catch(err){toast("השמירה נכשלה. נסו שוב.")}
+  try{await putTx(o);dlg.close();toast("נשמר")}catch(err){toast(errText(err,"השמירה נכשלה. נסו שוב."))}
   btn.disabled=false;
 });
 
 // ---------- settings ----------
 const sdlg=$("#setDlg"), sform=$("#setForm");
-$("#openSettings").onclick=()=>{sform.synName.value=settings.synName||"";sform.openMain.value=settings.openMain||0;sform.openPetty.value=settings.openPetty||0;sform.israel.value=settings.israel?"1":"0";sdlg.showModal()};
+$("#openSettings").onclick=()=>{sform.openMain.value=settings.openMain||0;sform.openPetty.value=settings.openPetty||0;sdlg.showModal()};
 sform.addEventListener("click",e=>{if(e.target.closest("[data-close]"))sdlg.close()});
-sform.addEventListener("submit",async e=>{e.preventDefault();try{await putSettings({synName:sform.synName.value.trim(),openMain:parseFloat(sform.openMain.value)||0,openPetty:parseFloat(sform.openPetty.value)||0,israel:sform.israel.value==="1"?1:0});sdlg.close();toast("ההגדרות נשמרו")}catch(err){toast("השמירה נכשלה")}});
+sform.addEventListener("submit",async e=>{e.preventDefault();try{await putSettings({openMain:parseFloat(sform.openMain.value)||0,openPetty:parseFloat(sform.openPetty.value)||0});sdlg.close();toast("ההגדרות נשמרו")}catch(err){toast(errText(err,"השמירה נכשלה"))}});
 
 // ---------- events ----------
 document.querySelector("nav.tabs").addEventListener("click",e=>{const b=e.target.closest("button[data-tab]");if(b){tab=b.dataset.tab;render();window.scrollTo(0,0)}});
@@ -285,9 +317,11 @@ $("#view").addEventListener("click",async e=>{
   if(b.dataset.dv){ui.donView=b.dataset.dv;return render()}
   if(b.dataset.df){ui.donFilter=b.dataset.df;return render()}
   if(b.dataset.edit){const t=txs.find(x=>x.id===b.dataset.edit);if(t)openForm(null,t);return}
-  if(b.dataset.del){const t=txs.find(x=>x.id===b.dataset.del);if(t&&confirm(`למחוק את הרישום "${label(t)}" על סך ${money(t.amount)}?`)){try{await delTx(t.id);toast("נמחק")}catch(err){toast("המחיקה נכשלה")}}return}
-  if(b.dataset.pay){const t=txs.find(x=>x.id===b.dataset.pay);if(t){try{await putTx(Object.assign({},t,{paid:true,paidDate:todayIso()}));toast("סומן כשולם")}catch(err){toast("העדכון נכשל")}}return}
+  if(b.dataset.del){const t=txs.find(x=>x.id===b.dataset.del);if(t&&confirm(`למחוק את הרישום "${label(t)}" על סך ${money(t.amount)}?`)){try{await delTx(t.id);toast("נמחק")}catch(err){toast(errText(err,"המחיקה נכשלה"))}}return}
+  if(b.dataset.pay){const t=txs.find(x=>x.id===b.dataset.pay);if(t){try{await markPaid(t.id);toast("סומן כשולם")}catch(err){toast(errText(err,"העדכון נכשל"))}}return}
   if(b.id==="csv") return exportCsv();
+  if(b.id==="importLocal") return importLocal();
+  if(b.id==="signIn") return Auth.signInWithGoogle(location.href).catch(()=>toast("ההתחברות נכשלה"));
 });
 $("#view").addEventListener("change",e=>{if(e.target.id==="lf"){ui.from=e.target.value;render()}if(e.target.id==="lt"){ui.to=e.target.value;render()}});
 
@@ -300,22 +334,41 @@ async function exportCsv(){
   lines.push(["","","","סה״כ","",s.cr.toFixed(2),s.dr.toFixed(2),s.closing.toFixed(2)].map(q).join(","));
   const name=(ui.acct==="main"?"דוח-עוש":"דוח-קופה-קטנה")+`_${ui.from||"התחלה"}_${ui.to||"היום"}.csv`;
   const data="\uFEFF"+lines.join("\r\n");
-  if(downloads){try{await downloads.save({filename:name,data})}catch(err){if(err&&err.code!=="declined")toast("ההורדה לא זמינה כרגע")}return}
   const url=URL.createObjectURL(new Blob([data],{type:"text/csv;charset=utf-8"}));
   const a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
 // ---------- boot ----------
-loadLocal();render();
+let unsubscribe=null;
+function subscribe(id){
+  if(unsubscribe){unsubscribe();unsubscribe=null}
+  sid=id;
+  if(!id){stage="noCommunity";return render()}
+  stage="loading";render();
+  unsubscribe=Auth.client().onUpdate("fund:ledger",{synagogueId:id},d=>{
+    role=d.role;txs=d.txs;members=d.members;
+    settings=Object.assign({},settings,d.settings||{},{synName:d.synagogue.name,israel:d.synagogue.il?1:0});
+    hcache.clear();stage="ready";render();
+  },e=>{console.warn(e);ledgerError=errText(e,"לא ניתן לטעון את הקופה.");stage="error";render()});
+}
+function signedOut(){if(unsubscribe){unsubscribe();unsubscribe=null}sid=null;stage="signedOut";render()}
+async function load(){
+  if(!Auth.isAuthenticated()) return signedOut();
+  let synagogues=[];
+  try{
+    const [me,list]=await Promise.all([Auth.client().query("users:me",{}),Auth.client().query("synagogues:mine",{})]);
+    if(me===null) return signedOut();
+    synagogues=list;
+  }catch(e){console.warn(e)}
+  let id=Auth.activeSynagogueId();
+  if(!synagogues.some(s=>s._id===id)){id=synagogues[0]?synagogues[0]._id:null;Auth.setActiveSynagogueId(id)}
+  if(id!==sid||!unsubscribe) subscribe(id);
+}
+render();
 (async()=>{
-  if(!window.claude||!window.claude.use) return;
-  try{downloads=await window.claude.use("downloads")}catch(e){}
-  try{db=await window.claude.use("db")}catch(e){db=null}
-  if(!db){render();return}
-  mode="db";txs=[];render();
-  db.doc("settings/main").onSnapshot(s=>{if(s.exists){settings=Object.assign({},settings,s.data());hcache.clear();render()}},()=>{});
-  db.collection("tx").onSnapshot(snap=>{txs=snap.docs.map(d=>Object.assign({id:d.id},d.data()));render()},
-    err=>{if(err&&err.code==="revoked"){mode="local";loadLocal();render()}});
+  try{await Auth.completeSignInFromRedirect()}catch(e){console.warn(e);toast("ההתחברות נכשלה. נסו שוב.")}
+  Auth.onChange(()=>load());
+  await load();
 })();
 })();

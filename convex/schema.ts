@@ -3,6 +3,15 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { roleValidator } from "./roles";
 
+export const fundTypeValidator = v.union(
+  v.literal("donation"),
+  v.literal("mitzvah"),
+  v.literal("salary"),
+  v.literal("expense"),
+  v.literal("petty"),
+  v.literal("pettyIn"),
+);
+
 export default defineSchema({
   ...authTables,
 
@@ -74,4 +83,31 @@ export default defineSchema({
     by: v.id("users"),
     readBy: v.array(v.id("users")),
   }).index("by_synagogue_at", ["synagogueId", "at"]),
+
+  fundTransactions: defineTable({
+    synagogueId: v.id("synagogues"),
+    type: fundTypeValidator,
+    amount: v.number(),
+    date: v.string(),
+    donorId: v.optional(v.id("users")),
+    name: v.string(),
+    desc: v.string(),
+    method: v.string(),
+    mitzvah: v.string(),
+    month: v.string(),
+    category: v.string(),
+    vendor: v.string(),
+    paid: v.boolean(),
+    paidDate: v.string(),
+    createdAt: v.number(),
+    createdBy: v.id("users"),
+  })
+    .index("by_synagogue", ["synagogueId"])
+    .index("by_synagogue_donor", ["synagogueId", "donorId"]),
+
+  fundSettings: defineTable({
+    synagogueId: v.id("synagogues"),
+    openMain: v.number(),
+    openPetty: v.number(),
+  }).index("by_synagogue", ["synagogueId"]),
 });

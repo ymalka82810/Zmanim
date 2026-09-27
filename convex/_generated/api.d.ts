@@ -9,6 +9,7 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as fund from "../fund.js";
 import type * as http from "../http.js";
 import type * as invitations from "../invitations.js";
 import type * as inviteCode from "../inviteCode.js";
@@ -27,6 +28,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  fund: typeof fund;
   http: typeof http;
   invitations: typeof invitations;
   inviteCode: typeof inviteCode;
