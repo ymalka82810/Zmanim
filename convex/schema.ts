@@ -101,9 +101,19 @@ export default defineSchema({
     paidDate: v.string(),
     createdAt: v.number(),
     createdBy: v.id("users"),
+    lastReminderDate: v.optional(v.string()),
   })
     .index("by_synagogue", ["synagogueId"])
     .index("by_synagogue_donor", ["synagogueId", "donorId"]),
+
+  fundNotifications: defineTable({
+    synagogueId: v.id("synagogues"),
+    userId: v.id("users"),
+    transactionId: v.id("fundTransactions"),
+    text: v.string(),
+    at: v.number(),
+    read: v.boolean(),
+  }).index("by_synagogue_user_at", ["synagogueId", "userId", "at"]),
 
   scheduleFiles: defineTable({
     synagogueId: v.id("synagogues"),

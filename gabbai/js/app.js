@@ -44,7 +44,7 @@ function dateCell(s){const h=heb(s);return `${esc(gFmt.format(parseIso(s)))}<spa
 // ---------- state & storage (Convex: convex/fund.ts) ----------
 const Auth=window.SiteAuth;
 let txs=[]; let settings={synName:"קופת בית הכנסת",openMain:0,openPetty:0,israel:1};
-let members=[], role=null, sid=null, stage="loading", ledgerError="";
+let members=[], role=null, sid=null, stage="loading", ledgerError="", notifications=[];
 const isManager=()=>role==="gabbai"||role==="rabbi";
 const LS="gabbai-fallback-v1";
 function errText(e,fallback){return (e&&typeof e.data==="string")?e.data:fallback}
@@ -59,6 +59,8 @@ async function putTx(obj){
 async function delTx(id){await call("fund:remove",{id})}
 async function markPaid(id){await call("fund:markPaid",{id,paidDate:todayIso()})}
 async function putSettings(s){await call("fund:saveSettings",{openMain:s.openMain,openPetty:s.openPetty})}
+async function pledgeMine(o){await call("fund:pledgeMine",o)}
+async function markFundRead(){await call("fund:markNotificationsRead",{})}
 
 function localData(){try{const j=JSON.parse(localStorage.getItem(LS)||"null");return j&&Array.isArray(j.txs)&&j.txs.length?j:null}catch(e){return null}}
 async function importLocal(){
@@ -218,17 +220,24 @@ function viewSalary(){
 function viewMine(){
   const list=[...txs].sort((a,b)=>a.date<b.date?1:-1);
   const paid=list.filter(t=>t.paid), open=list.filter(t=>!t.paid);
-  return `<h2>התרומות שלי</h2>
+  const unread=notifications.filter(n=>!n.read);
+  const reminders=unread.length?`<div class="panel" style="padding:12px;margin-bottom:14px;border-inline-start:4px solid var(--out)">
+    <b>תזכורות תשלום</b>
+    ${unread.map(n=>`<div class="sub" style="margin-top:6px">${esc(n.text)}</div>`).join("")}
+    <div style="margin-top:8px"><button class="btn ghost" id="markFundRead">סימון כנקרא</button></div>
+  </div>`:"";
+  return `${reminders}<h2>התרומות שלי</h2>
   <div class="balances">
     <div class="bal main"><div class="k">סה״כ שולם</div><div class="v">${money(sum(paid,t=>t.amount))}</div></div>
     <div class="bal owed"><div class="k">נדרים שטרם שולמו (${open.length})</div><div class="v">${money(sum(open,t=>t.amount))}</div></div>
   </div>
+  <div class="bar" style="margin-top:14px"><button class="btn" id="pledgeBtn">רישום חיוב חדש</button></div>
   <div class="panel scroll" style="margin-top:14px"><table><thead><tr><th>תאריך</th><th>מה</th><th class="num">סכום</th><th>סטטוס</th></tr></thead><tbody>
     ${list.map(t=>`<tr><td>${dateCell(t.date)}</td><td>${esc(t.type==="mitzvah"?"מכירת מצווה: "+t.mitzvah:"תרומה")}<span class="sub">${esc(t.desc||"")}</span></td><td class="num">${money(t.amount)}</td>
     <td>${t.paid?`<span class="pill ok">שולם</span><span class="sub">${t.paidDate?esc(gFmt.format(parseIso(t.paidDate))):""} ${esc(t.method||"")}</span>`:`<span class="pill no">לא שולם</span>`}</td></tr>`).join("")}
     ${list.length?"":`<tr><td colspan="4" class="empty">עדיין לא נרשמו תרומות על שמך.</td></tr>`}
   </tbody></table></div>
-  <div class="status">מוצגות כאן רק התרומות והמצוות שהגבאי רשם על שמך.</div>`;
+  <div class="status">מוצגות כאן התרומות והמצוות שנרשמו על שמך, בין אם על ידי הגבאי ובין אם על ידך.</div>`;
 }
 function viewMessage(text,button){return `<div class="empty" style="margin-top:40px">${text}${button?`<div style="margin-top:14px">${button}</div>`:""}</div>`}
 
@@ -301,6 +310,28 @@ form.addEventListener("submit",async e=>{
   btn.disabled=false;
 });
 
+// ---------- pledge (member self-charge) ----------
+const pdlg=$("#pledgeDlg"), pform=$("#pledgeForm"); let pType="donation";
+function setPledgeType(t){
+  pType=t;
+  pform.querySelectorAll("#pledgeTypePick button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.t===t));
+  pform.querySelectorAll("[data-for]").forEach(el=>{el.hidden=!el.dataset.for.split(" ").includes(t)});
+}
+function openPledge(){pform.reset();pform.date.value=todayIso();setPledgeType("donation");pdlg.showModal()}
+pform.addEventListener("click",e=>{const b=e.target.closest("#pledgeTypePick button");if(b)setPledgeType(b.dataset.t);if(e.target.closest("[data-close]"))pdlg.close()});
+pform.addEventListener("submit",async e=>{
+  e.preventDefault();
+  const amount=parseFloat(pform.amount.value);
+  if(!(amount>0)){pform.amount.focus();toast("יש להזין סכום גדול מאפס");return}
+  if(!pform.date.value){pform.date.focus();return}
+  const btn=$("#pledgeSaveBtn");btn.disabled=true;
+  try{
+    await pledgeMine({type:pType,amount,date:pform.date.value,desc:pform.desc.value.trim(),mitzvah:pType==="mitzvah"?pform.mitzvah.value:undefined});
+    pdlg.close();toast("החיוב נרשם")
+  }catch(err){toast(errText(err,"השמירה נכשלה. נסו שוב."))}
+  btn.disabled=false;
+});
+
 // ---------- settings ----------
 const sdlg=$("#setDlg"), sform=$("#setForm");
 $("#openSettings").onclick=()=>{sform.openMain.value=settings.openMain||0;sform.openPetty.value=settings.openPetty||0;sdlg.showModal()};
@@ -322,6 +353,8 @@ $("#view").addEventListener("click",async e=>{
   if(b.id==="csv") return exportCsv();
   if(b.id==="importLocal") return importLocal();
   if(b.id==="signIn") return Auth.signInWithGoogle(location.href).catch(()=>toast("ההתחברות נכשלה"));
+  if(b.id==="pledgeBtn") return openPledge();
+  if(b.id==="markFundRead"){try{await markFundRead()}catch(err){}return}
 });
 $("#view").addEventListener("change",e=>{if(e.target.id==="lf"){ui.from=e.target.value;render()}if(e.target.id==="lt"){ui.to=e.target.value;render()}});
 
@@ -347,7 +380,7 @@ function subscribe(id){
   if(!id){stage="noCommunity";return render()}
   stage="loading";render();
   unsubscribe=Auth.client().onUpdate("fund:ledger",{synagogueId:id},d=>{
-    role=d.role;txs=d.txs;members=d.members;
+    role=d.role;txs=d.txs;members=d.members;notifications=d.notifications||[];
     settings=Object.assign({},settings,d.settings||{},{synName:d.synagogue.name,israel:d.synagogue.il?1:0});
     hcache.clear();stage="ready";render();
   },e=>{console.warn(e);ledgerError=errText(e,"לא ניתן לטעון את הקופה.");stage="error";render()});

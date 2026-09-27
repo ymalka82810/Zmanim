@@ -36,6 +36,31 @@
 <button class="fab" id="addBtn">+ רישום חדש</button>
 <div class="toast" id="toast" role="status"></div>
 
+<dialog id="pledgeDlg">
+  <form method="dialog" id="pledgeForm">
+    <div class="dlg-h"><h3>רישום חיוב חדש</h3><button type="button" class="lnk" data-close>סגור</button></div>
+    <div class="dlg-b">
+      <div class="types" id="pledgeTypePick">
+        <button type="button" data-t="donation" aria-pressed="true">תרומה</button>
+        <button type="button" data-t="mitzvah">מכירת מצווה</button>
+      </div>
+      <div class="f" data-for="mitzvah"><span>המצווה</span>
+        <select name="mitzvah">
+          <option>עלייה לתורה</option><option>שלישי</option><option>שישי</option><option>מפטיר</option>
+          <option>פתיחת הארון</option><option>הגבהה</option><option>גלילה</option><option>הוצאה והכנסה</option>
+          <option>חתן תורה</option><option>חתן בראשית</option><option>אתה הראית</option><option>אחר</option>
+        </select></div>
+      <div class="two">
+        <div class="f"><span>סכום (₪)</span><input name="amount" type="number" inputmode="decimal" min="0" step="0.01" required></div>
+        <div class="f"><span>תאריך</span><input name="date" type="date" lang="he" required></div>
+      </div>
+      <div class="f"><span>הערה</span><textarea name="desc" rows="2"></textarea></div>
+      <div class="hint">הרישום יופיע כחוב פתוח על שמך עד שהגבאי יסמן אותו כשולם. תישלח לך תזכורת כל 5 ימים וגם בעשירי לכל חודש.</div>
+    </div>
+    <div class="dlg-f"><button class="btn" type="submit" id="pledgeSaveBtn">שמור</button><button class="btn ghost" type="button" data-close>ביטול</button></div>
+  </form>
+</dialog>
+
 <dialog id="dlg">
   <form method="dialog" id="txForm">
     <div class="dlg-h"><h3 id="dlgTitle">רישום חדש</h3><button type="button" class="lnk" data-close>סגור</button></div>

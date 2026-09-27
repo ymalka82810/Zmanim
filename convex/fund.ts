@@ -1,9 +1,12 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { getMembership, isManager, requireManager, requireMember } from "./roles";
 import { fundTypeValidator } from "./schema";
+
+const PLEDGE_TYPES = v.union(v.literal("donation"), v.literal("mitzvah"));
+const REMINDER_DAYS = 5;
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DONOR_TYPES = new Set(["donation", "mitzvah"]);
@@ -99,7 +102,16 @@ const forClient = (t: Doc<"fundTransactions">) => ({
   createdAt: t.createdAt,
 });
 
-/** גבאי ורב מקבלים את כל הקופה. חבר קהילה מקבל רק תרומות ומצוות שמשויכות אליו. */
+async function myNotifications(ctx: QueryCtx, synagogueId: Id<"synagogues">, userId: Id<"users">) {
+  const notes = await ctx.db
+    .query("fundNotifications")
+    .withIndex("by_synagogue_user_at", (q) => q.eq("synagogueId", synagogueId).eq("userId", userId))
+    .order("desc")
+    .take(50);
+  return notes.map((n) => ({ _id: n._id, text: n.text, at: n.at, read: n.read }));
+}
+
+/** גבאי ורב מקבלים את כל הקופה. חבר קהילה מקבל רק תרומות ומצוות שמשויכות אליו, וכן תזכורות תשלום אישיות. */
 export const ledger = query({
   args: { synagogueId: v.id("synagogues") },
   handler: async (ctx, args) => {
@@ -115,7 +127,13 @@ export const ledger = query({
         .query("fundTransactions")
         .withIndex("by_synagogue_donor", (q) => q.eq("synagogueId", args.synagogueId).eq("donorId", userId))
         .collect();
-      return { ...base, txs: mine.filter((t) => DONOR_TYPES.has(t.type)).map(forClient), settings: null, members: [] };
+      return {
+        ...base,
+        txs: mine.filter((t) => DONOR_TYPES.has(t.type)).map(forClient),
+        settings: null,
+        members: [],
+        notifications: await myNotifications(ctx, args.synagogueId, userId),
+      };
     }
 
     const txs = await ctx.db
@@ -141,7 +159,93 @@ export const ledger = query({
       txs: txs.map(forClient),
       settings: { openMain: settings?.openMain ?? 0, openPetty: settings?.openPetty ?? 0 },
       members: members.sort((a, b) => a.name.localeCompare(b.name, "he")),
+      notifications: await myNotifications(ctx, args.synagogueId, userId),
     };
+  },
+});
+
+/** חבר קהילה רושם על עצמו בלבד חיוב פתוח (תרומה או מכירת מצווה) שעליו לשלם. */
+export const pledgeMine = mutation({
+  args: {
+    synagogueId: v.id("synagogues"),
+    type: PLEDGE_TYPES,
+    amount: v.number(),
+    date: v.string(),
+    desc: v.optional(v.string()),
+    mitzvah: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { userId } = await requireMember(ctx, args.synagogueId);
+    const user = await ctx.db.get(userId);
+    const data = await clean(ctx, args.synagogueId, {
+      type: args.type,
+      amount: args.amount,
+      date: args.date,
+      donorId: userId,
+      name: user?.name ?? user?.email ?? "חבר קהילה",
+      desc: args.desc,
+      mitzvah: args.mitzvah,
+      paid: false,
+    });
+    return await ctx.db.insert("fundTransactions", {
+      synagogueId: args.synagogueId,
+      ...data,
+      createdAt: Date.now(),
+      createdBy: userId,
+    });
+  },
+});
+
+export const markNotificationsRead = mutation({
+  args: { synagogueId: v.id("synagogues") },
+  handler: async (ctx, args) => {
+    const { userId } = await requireMember(ctx, args.synagogueId);
+    const notes = await ctx.db
+      .query("fundNotifications")
+      .withIndex("by_synagogue_user_at", (q) => q.eq("synagogueId", args.synagogueId).eq("userId", userId))
+      .collect();
+    for (const n of notes) {
+      if (!n.read) {
+        await ctx.db.patch(n._id, { read: true });
+      }
+    }
+  },
+});
+
+function pledgeText(t: Doc<"fundTransactions">) {
+  const what = t.type === "mitzvah" ? "מכירת מצווה" + (t.mitzvah ? ": " + t.mitzvah : "") : "תרומה";
+  return `תזכורת: נותר לך לשלם ${what} על סך ₪${t.amount}${t.desc ? " (" + t.desc + ")" : ""}.`;
+}
+
+/** תזכורת יומית: כל 5 ימים מהתזכורת האחרונה, וכן תמיד בעשירי לחודש, לכל חיוב פתוח שיש לו תורם רשום. */
+export const sendDueReminders = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const isTenth = today.slice(8, 10) === "10";
+    const txs = await ctx.db.query("fundTransactions").collect();
+    for (const t of txs) {
+      if (t.paid || !t.donorId || !DONOR_TYPES.has(t.type)) {
+        continue;
+      }
+      const since = t.lastReminderDate ?? new Date(t.createdAt).toISOString().slice(0, 10);
+      if (since === today) {
+        continue;
+      }
+      const daysSince = Math.round((Date.parse(today) - Date.parse(since)) / 864e5);
+      if (daysSince < REMINDER_DAYS && !isTenth) {
+        continue;
+      }
+      await ctx.db.insert("fundNotifications", {
+        synagogueId: t.synagogueId,
+        userId: t.donorId,
+        transactionId: t._id,
+        text: pledgeText(t),
+        at: Date.now(),
+        read: false,
+      });
+      await ctx.db.patch(t._id, { lastReminderDate: today });
+    }
   },
 });
 
