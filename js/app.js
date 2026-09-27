@@ -19,6 +19,7 @@ let cursor = null;       // היום שממנו מחפשים את האירוע �
 let period = null;       // השבת/החג או ימי החול של הלוח המוצג
 let current = null;      // הלוח המוצג כרגע
 let sel = 'shabbat';     // התבנית שנבחרה בהגדרות
+let kiddush = null;      // dateKey ← קידוש מאושר, מהקהילה (community.js)
 
 /* סוג הלוח שמוצג: holy – שבתות וחגים, days – ימות השבוע וחול המועד. נשמר במכשיר */
 const MODE_KEY = 'zmanim.mode';
@@ -61,7 +62,7 @@ $('modeDays').onclick = () => setMode('days');
 /** הלוח לפי התבנית שחלה עליו. l.design – העיצוב מהקובץ הישן, רק לשבת/חג של יום אחד כמו בלוח המקורי */
 function build(p) {
   const t = templateFor(cfg, p), c = { ...cfg, rules: t.rules };
-  const l = p.mode === 'days' ? buildDaysLuach(c, p) : buildLuach(c, p);
+  const l = p.mode === 'days' ? buildDaysLuach(c, p, kiddush) : buildLuach(c, p, kiddush);
   const d = activeDesign(cfg, t);
   l.design = d && !l.values.multiDay ? d : null;
   l.designSkipped = !!d && !l.design;
@@ -443,6 +444,7 @@ function renderRules() {
   const days = selTpl().kind === 'days';
   $('rules').innerHTML = rules().map((r, i) => {
     const fixed = r.base === 'שעה קבועה';
+    const kiddush = BASES[r.base] === 'kiddush';
     return '<div class="rule" data-i="' + i + '"><div class="rule-top">' +
       '<input data-k="name" value="' + esc(r.name) + '" placeholder="שם התפילה או השיעור" aria-label="שם התפילה">' +
       '<button type="button" data-del="' + i + '" aria-label="מחיקת ' + esc(r.name) + '">מחיקה</button></div>' +
@@ -450,10 +452,14 @@ function renderRules() {
       (days ? '' : '<div><label>מתי</label><select data-k="when">' + opts(WHEN, r.when) + '</select></div>') +
       '<div><label>חל על</label><select data-k="applies">' + opts(days ? DAY_APPLIES : APPLIES, r.applies) + '</select></div>' +
       '<div><label>לפי</label><select data-k="base">' + baseOpts(r) + '</select></div>' +
-      '<div><label>' + (fixed ? 'שעה' : 'הפרש (דקות)') + '</label><input data-k="offset" value="' + esc(r.offset) +
-      '" placeholder="' + (fixed ? '08:00' : '-20') + '" dir="ltr" inputmode="' + (fixed ? 'text' : 'numeric') + '"></div>' +
-      '<div><label>עיגול</label><select data-k="round"' + (fixed ? ' disabled' : '') + '>' + opts(ROUND, r.round) + '</select></div>' +
-      '</div></div>';
+      '<div><label>' + (kiddush ? 'נוסח' : fixed ? 'שעה' : 'הפרש (דקות)') + '</label><input data-k="offset" value="' + esc(r.offset) +
+      '" placeholder="' + (kiddush ? '{שם}{לרגל}' : fixed ? '08:00' : '-20') + '"' +
+      (kiddush ? ' dir="rtl"' : ' dir="ltr" inputmode="' + (fixed ? 'text' : 'numeric') + '"') + '></div>' +
+      '<div><label>עיגול</label><select data-k="round"' + (fixed || kiddush ? ' disabled' : '') + '>' + opts(ROUND, r.round) + '</select></div>' +
+      '</div>' + (kiddush ? '<p class="hint">הטקסט יתמלא לפי מי שאושר לקידוש בתאריך הזה (מלוח הקידושים של הקהילה). ' +
+        'אפשר להשתמש ב-{שם} (שם התורם), ב-{סיבה} (לרגל מה נתרם) וב-{לרגל} (מוסיף "לרגל ..." רק אם יש סיבה). ' +
+        'בלי תאריך מאושר, השורה לא תופיע.</p>' : '') +
+      '</div>';
   }).join('');
 }
 
@@ -495,8 +501,10 @@ $('rules').addEventListener('input', e => {
     });
   }
   if (k === 'base') {
+    const kiddush = BASES[r.base] === 'kiddush';
     if (r.base === 'שעה קבועה' && r.offset.indexOf(':') < 0) r.offset = '08:00';
-    if (r.base !== 'שעה קבועה' && r.offset.indexOf(':') >= 0) r.offset = '0';
+    if (kiddush && /^-?\d+$/.test(r.offset)) r.offset = '';
+    if (!kiddush && r.base !== 'שעה קבועה' && r.offset.indexOf(':') >= 0) r.offset = '0';
     renderRules();
   }
   changed();
@@ -646,6 +654,10 @@ initCommunity({
     if (!current || !period) return null;
     const { png } = await getFiles();
     return { file: png, title: current.title, firstDate: toYmd(period.first), mode: period.mode === 'days' ? 'days' : 'holy' };
+  },
+  onKiddush(map) {
+    kiddush = map;
+    renderLuach();
   }
 });
 

@@ -9,7 +9,7 @@ const ROLE = { gabbai: 'גבאי', rabbi: 'רב', member: 'חבר קהילה' };
 const MODE = { holy: 'שבתות וחגים', days: 'ימות השבוע' };
 const fmtDate = ymd => { const [y, m, d] = ymd.split('-'); return `${d}/${m}/${y}`; };
 
-let sid = null, role = null, files = [], unsubscribe = null, getLuachFile = null, toast = () => {};
+let sid = null, role = null, files = [], unsubscribe = null, unsubscribeKiddush = null, getLuachFile = null, toast = () => {}, onKiddush = () => {};
 
 function show(view){
   const manager = view === 'app';
@@ -82,6 +82,7 @@ async function submitCurrent(){
 
 function subscribe(id){
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+  if (unsubscribeKiddush) { unsubscribeKiddush(); unsubscribeKiddush = null; }
   sid = id;
   unsubscribe = Auth.client().onUpdate('schedules:list', { synagogueId: id }, data => {
     role = data.role; files = data.files;
@@ -89,11 +90,17 @@ function subscribe(id){
     show(manager ? 'app' : 'member');
     if (manager) { $('communityRole').textContent = ROLE[role]; renderManager(); } else renderMember();
   }, e => gate(esc(errText(e, 'לא ניתן לטעון את לוח הזמנים של הקהילה.')), `<a class="btn-link" href="${ACCOUNT_URL}">לחשבון שלי</a>`));
+  unsubscribeKiddush = Auth.client().onUpdate('kiddush:board', { synagogueId: id }, data => {
+    const map = new Map();
+    for (const b of data.bookings) if (b.status === 'approved') map.set(b.dateKey, { sponsorName: b.sponsorName, occasion: b.occasion });
+    onKiddush(map);
+  }, () => {});
 }
 
 async function load(){
   if (!Auth.isAuthenticated()) {
     if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+    if (unsubscribeKiddush) { unsubscribeKiddush(); unsubscribeKiddush = null; }
     return gate('כדי לראות את לוח הזמנים של הקהילה יש להתחבר עם חשבון Google.', '<button type="button" class="primary" id="gateSignIn">כניסה עם Google</button>');
   }
   let synagogues = [];
@@ -115,6 +122,7 @@ async function load(){
 export async function initCommunity(options){
   getLuachFile = options.getLuachFile;
   toast = options.toast;
+  onKiddush = options.onKiddush || (() => {});
   $('submitLuach').onclick = submitCurrent;
   try { await Auth.completeSignInFromRedirect(); } catch (e) { console.warn(e); toast('ההתחברות נכשלה. נסו שוב.', true); }
   Auth.onChange(() => load());

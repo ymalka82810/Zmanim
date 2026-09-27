@@ -19,7 +19,8 @@ export const BASES = {
   'צאת שבת/חג': 'havdalah', 'עלות השחר': 'alotHaShachar', 'הנץ': 'sunrise',
   'סו"ז ק"ש מג"א': 'sofZmanShmaMGA', 'סו"ז ק"ש גר"א': 'sofZmanShma',
   'חצות': 'chatzot', 'מנחה גדולה': 'minchaGedola', 'מנחה קטנה': 'minchaKetana',
-  'פלג המנחה': 'plagHaMincha', 'שעה קבועה': 'fixed'
+  'פלג המנחה': 'plagHaMincha', 'שעה קבועה': 'fixed',
+  'קידוש (מלוח הקידושים)': 'kiddush',
 };
 export const WHEN = ['כניסה', 'כל יום', 'יציאה'];
 export const APPLIES = ['שבת וחג', 'שבת בלבד', 'חג בלבד'];

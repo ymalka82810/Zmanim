@@ -149,6 +149,7 @@ function ruleTime(rule, ctx, seen = new Set()) {
     if (!m) return null;
     return { text: ('0' + m[1]).slice(-2) + ':' + m[2], key: +m[1] * 60 + +m[2] };
   }
+  if (base === 'kiddush') return kiddushRow(rule, ctx);
   if (!base && String(rule.base || '').trim()) {
     const p = parentTime(rule, ctx, seen);
     if (!p) return null;
@@ -161,6 +162,22 @@ function ruleTime(rule, ctx, seen = new Set()) {
   const b = k === 'candles' ? (t.candles ?? (t.sunset == null ? null : t.sunset - cfg.candle * MIN)) : t[k];
   if (b == null) return null;
   return fromMs(applyOffset(b, offset, rule.round), cfg.tz);
+}
+
+/**
+ * ערך "קידוש": הטקסט של הכלל הזה לא זמן, אלא הנוסח שהגבאי או הרב קבעו (בשדה "הפרש"),
+ * ממולא לפי מי שאושר לקידוש בתאריך של היום הזה. אין אישור קידוש לתאריך – אין ערך.
+ */
+function kiddushRow(rule, ctx) {
+  const info = ctx.kiddush && ctx.kiddush.get(toYmd(ctx.day.day));
+  if (!info) return null;
+  const occasion = info.occasion || '';
+  const fmt = String(rule.offset || '').trim() || '{שם}{לרגל}';
+  const text = fmt
+    .replace(/\{לרגל\}/g, occasion ? ' לרגל ' + occasion : '')
+    .replace(/\{סיבה\}/g, occasion)
+    .replace(/\{שם\}/g, info.sponsorName || '');
+  return { text, key: 9998 };
 }
 
 function fromMs(ms, tz) {
@@ -184,10 +201,10 @@ function applies(rule, day) {
     (rule.applies === 'שבת בלבד' && day.shabbat) || (rule.applies === 'חג בלבד' && !!day.chag);
 }
 
-function rowsFor(cfg, when, day, t) {
+function rowsFor(cfg, when, day, t, kiddush) {
   return (cfg.rules || [])
     .filter(r => r && String(r.name || '').trim() && r.when === when && applies(r, day))
-    .map(r => Object.assign({ name: String(r.name).trim() }, ruleTime(r, { cfg, when, day, t }) || { text: '—', key: 9999 }))
+    .map(r => Object.assign({ name: String(r.name).trim() }, ruleTime(r, { cfg, when, day, t, kiddush }) || { text: '—', key: 9999 }))
     .map(({ ms, ...r }) => r)
     .sort((a, b) => a.key - b.key);
 }
@@ -196,7 +213,7 @@ function rowsFor(cfg, when, day, t) {
  * הלוח המלא לאירוע: כותרת ורשימת קטעים (ערב, כל יום, מוצאי).
  * כל קטע: { title, date, rows:[{name,text}], zmanim:[[תווית, 'HH:MM']] }
  */
-export function buildLuach(cfg, occ) {
+export function buildLuach(cfg, occ, kiddush) {
   const il = cfg.il, tz = cfg.tz;
   const kind = d => d.chag ? 'חג' : 'שבת';
   const first = occ.days[0], last = occ.days[occ.days.length - 1];
@@ -207,7 +224,7 @@ export function buildLuach(cfg, occ) {
   const te = times(occ.erev);
   sections.push({
     title: 'ערב ' + kind(first), date: gDate(occ.erev),
-    rows: rowsFor(cfg, 'כניסה', first, te),
+    rows: rowsFor(cfg, 'כניסה', first, te, kiddush),
     zmanim: zlist([['הדלקת נרות', te.candles], ['שקיעה', te.sunset]])
   });
 
@@ -216,13 +233,13 @@ export function buildLuach(cfg, occ) {
     const label = d.chag || (d.chol ? 'שבת חול המועד' : occ.days.length > 1 ? 'שבת' : 'יום השבת');
     const z = [['סו"ז ק"ש מג"א', t.sofZmanShmaMGA], ['סו"ז ק"ש גר"א', t.sofZmanShma], ['שקיעה', t.sunset]];
     if (i < occ.days.length - 1) z.push(['הדלקת נרות', t.candles]);
-    sections.push({ title: label, date: gDate(d.day), rows: rowsFor(cfg, 'כל יום', d, t), zmanim: zlist(z) });
+    sections.push({ title: label, date: gDate(d.day), rows: rowsFor(cfg, 'כל יום', d, t, kiddush), zmanim: zlist(z) });
   });
 
   const tl = times(last.day);
   sections.push({
     title: 'מוצאי ' + kind(last), date: gDate(last.day),
-    rows: rowsFor(cfg, 'יציאה', last, tl),
+    rows: rowsFor(cfg, 'יציאה', last, tl, kiddush),
     zmanim: zlist([['צאת ה' + kind(last), tl.havdalah]])
   });
 
@@ -267,7 +284,7 @@ function rangeDates(first, last) {
  * לוח של ימי חול (שבועי או חול המועד): טבלה שבה כל עמודה היא יום.
  * { days, rows:[{name, cells}], zmanim:[{name, cells}] } – תא ריק (null) כשהתפילה לא חלה באותו יום.
  */
-export function buildDaysLuach(cfg, p) {
+export function buildDaysLuach(cfg, p, kiddush) {
   const tz = cfg.tz;
   const cols = p.days.map(x => ({ ...x, t: timesFor(cfg, x.day) }));
   const rules = (cfg.rules || []).filter(r => r && String(r.name || '').trim());
@@ -279,7 +296,7 @@ export function buildDaysLuach(cfg, p) {
       const r = rules.filter(x => String(x.name).trim() === name && applies(x, c))
         .sort((a, b) => DAY_APPLIES.indexOf(b.applies) - DAY_APPLIES.indexOf(a.applies))[0];
       if (!r) return null;
-      const v = ruleTime(r, { cfg, when: 'כל יום', day: c, t: c.t });
+      const v = ruleTime(r, { cfg, when: 'כל יום', day: c, t: c.t, kiddush });
       if (v) key = Math.min(key, v.key);
       return v ? v.text : '—';
     });
