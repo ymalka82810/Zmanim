@@ -2,11 +2,23 @@
 
 export const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+/** לוח ימי חול: טבלה, שורה לכל תפילה ועמודה לכל יום */
+function daysHtml(l) {
+  let h = '<div class="l-grid-wrap"><table class="l-grid"><thead><tr><th></th>' +
+    l.days.map(d => '<th>' + esc(d.name) + '<small>' + esc(d.date) + '</small>' +
+      (d.special ? '<small class="sp">' + esc(d.special) + '</small>' : '') + '</th>').join('') + '</tr></thead><tbody>';
+  const row = (r, cls) => '<tr' + (cls ? ' class="' + cls + '"' : '') + '><th>' + esc(r.name) + '</th>' +
+    r.cells.map(c => '<td>' + (c == null ? '' : esc(c)) + '</td>').join('') + '</tr>';
+  h += l.rows.map(r => row(r)).join('') + l.zmanim.map((r, i) => row(r, i ? 'z' : 'z first')).join('');
+  return h + '</tbody></table></div>';
+}
+
 export function luachHtml(l) {
   let h = '<div class="stripe"></div><div class="stripe s"></div><div class="stripe"></div>';
   if (l.shul) h += '<div class="l-shul">' + esc(l.shul) + '</div>';
   h += '<h2 class="l-title">' + esc(l.title) + '</h2><div class="l-dates">' + esc(l.dates) + '</div>';
-  for (const s of l.sections) {
+  if (l.type === 'days') h += daysHtml(l);
+  else for (const s of l.sections) {
     h += '<table class="l-sec"><tr><th>' + esc(s.title) + '</th><th class="d">' + esc(s.date) + '</th></tr>';
     for (const r of s.rows) h += '<tr><td>' + esc(r.name) + '</td><td class="t">' + esc(r.text) + '</td></tr>';
     if (s.zmanim.length) {
@@ -23,7 +35,15 @@ export function luachText(l) {
   const lines = ['*' + l.title + '*'];
   if (l.shul) lines.push(l.shul);
   lines.push(l.dates);
-  for (const s of l.sections) {
+  if (l.type === 'days') {
+    l.days.forEach((d, i) => {
+      const items = r => r.filter(x => x.cells[i] != null).map(x => x.name + ' ' + x.cells[i]);
+      lines.push('', '*' + d.name + ' ' + d.date + '*' + (d.special ? ' – ' + d.special : ''));
+      const rows = items(l.rows), z = items(l.zmanim);
+      if (rows.length) lines.push(rows.join(' · '));
+      if (z.length) lines.push('_' + z.join(' · ') + '_');
+    });
+  } else for (const s of l.sections) {
     lines.push('', '*' + s.title + '* – ' + s.date);
     for (const r of s.rows) lines.push(r.name + ' ' + r.text);
     if (s.zmanim.length) lines.push('_' + s.zmanim.map(z => z[0] + ' ' + z[1]).join(' · ') + '_');

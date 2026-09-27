@@ -2,10 +2,11 @@
  * בניית לוח לשבת/חג: מציאת האירוע, חישוב הכללים, ומבנה נתונים לתצוגה.
  */
 
-import { dow, hm, gDate } from './dates.js';
-import { yomTov, cholHamoed, parasha, hebDateString } from './hebrew.js';
+import { dow, hm, gDate, toYmd } from './dates.js';
+import { yomTov, cholHamoed, parasha, hebDateString, toHebrew, fromHebrew, gematria, monthName, TISHREI } from './hebrew.js';
 import { zmanim, roundZman } from './zmanim.js';
-import { BASES } from './config.js';
+import { BASES, DAY_APPLIES, appliesOnDay, isBuiltin } from './config.js';
+import { isMoed, specialDay } from './moadim.js';
 
 const MIN = 60000;
 
@@ -36,7 +37,84 @@ export function findOccasion(from, il, dir = 1) {
   else if (days[0].chol) title = 'שבת חול המועד ' + days[0].chol;
   else title = days[0].parasha ? 'שבת פרשת ' + days[0].parasha : 'שבת';
 
-  return { id: first, erev: first - 1, first, last, days, title };
+  return { mode: 'holy', id: first, erev: first - 1, first, last, days, title };
+}
+
+/* ---------- ימות השבוע וחול המועד ---------- */
+
+const DAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי'];
+const dm = d => { const [, m, x] = toYmd(d).split('-'); return +x + '.' + +m; };
+
+/** הלוח של ימי החול שהיום d (לא שבת ולא חג) שייך אליו: כל חול המועד, או ימי החול של אותו שבוע */
+function daysPeriodAt(d, il) {
+  let list, kind, title;
+  const chol = cholHamoed(d, il);
+  if (chol) {
+    const { y, m } = toHebrew(d);
+    const from = fromHebrew(y, m, il ? 16 : 17), to = fromHebrew(y, m, m === TISHREI ? 21 : 20);
+    list = [];
+    for (let x = from; x <= to; x++) if (!isHoly(x, il)) list.push(x);
+    kind = 'chol'; title = 'חול המועד ' + chol;
+  } else {
+    const sun = d - dow(d);
+    list = [];
+    for (let x = sun; x <= sun + 5; x++) if (!isHoly(x, il) && !cholHamoed(x, il)) list.push(x);
+    const p = parasha(sun + 6, il);
+    kind = 'week'; title = p ? 'שבוע פרשת ' + p : 'ימות השבוע';
+  }
+  const days = list.map((x, i) => ({ day: x, dow: dow(x), erev: isHoly(x + 1, il), key: 'd' + (kind === 'week' ? dow(x) : i),
+    name: DAY_NAMES[dow(x)], date: dm(x), special: specialDay(x) }));
+  const first = list[0], last = list[list.length - 1];
+  return { mode: 'days', kind, id: first, first, last, days, title };
+}
+
+/** לוח ימי החול שמכיל את from, או הקרוב אחריו (dir=1) או לפניו (dir=-1) */
+function findDays(from, il, dir = 1) {
+  let d = from;
+  for (let n = 0; n < 30 && isHoly(d, il); n++) d += dir;
+  return isHoly(d, il) ? null : daysPeriodAt(d, il);
+}
+
+/** הלוח שמכיל את היום from או הקרוב אליו. mode: holy – שבתות וחגים, days – ימות השבוע */
+export function findPeriod(mode, from, il, dir = 1) {
+  return mode === 'days' ? findDays(from, il, dir) : findOccasion(from, il, dir);
+}
+
+/** הלוח הבא (dir=1) או הקודם (dir=-1) מאותו סוג */
+export function stepPeriod(p, il, dir) {
+  if (p.mode !== 'days') return dir > 0 ? findOccasion(p.last + 1, il) : findOccasion(p.first - 1, il, -1);
+  // ימי חול המועד לא תמיד רצופים (שבת באמצע), ולכן מחפשים לוח שמתחיל אחרי (או לפני) הלוח הנוכחי
+  for (let d = p.first + dir, n = 0; n < 60; d += dir, n++) {
+    if (isHoly(d, il)) continue;
+    const q = daysPeriodAt(d, il);
+    if (dir > 0 ? q.first > p.first : q.first < p.first) return q;
+  }
+  return null;
+}
+
+/* ---------- בחירת התבנית ---------- */
+
+/**
+ * התבנית של הלוח: תבנית של המשתמש שאחד המועדים שלה חל בלוח, ואם אין – התבנית הקבועה
+ * (חגים / שבתות / חול המועד / ימות השבוע).
+ */
+export function templateFor(cfg, p) {
+  const days = p.days.map(x => x.day);
+  const own = cfg.templates.find(t => !isBuiltin(t) && t.kind === p.mode &&
+    (t.moadim || []).some(id => days.some(d => isMoed(id, d, cfg.il))));
+  if (own) return own;
+  const id = p.mode === 'days' ? p.kind : p.days.some(x => x.chag) ? 'chag' : 'shabbat';
+  return cfg.templates.find(t => t.id === id);
+}
+
+/** הלוח הקרוב (מהיום from והלאה) שמשתמש בתבנית t, או null אם אין בשנה הקרובה */
+export function nextPeriodFor(cfg, t, from) {
+  let p = findPeriod(t.kind, from, cfg.il);
+  for (let n = 0; p && n < 200; n++) {
+    if (templateFor(cfg, p) === t) return p;
+    p = stepPeriod(p, cfg.il, 1);
+  }
+  return null;
 }
 
 /* ---------- זמנים ---------- */
@@ -101,6 +179,7 @@ function parentTime(rule, ctx, seen) {
 }
 
 function applies(rule, day) {
+  if (DAY_APPLIES.indexOf(rule.applies) >= 0) return day.dow != null && appliesOnDay(rule.applies, day);
   return !rule.applies || rule.applies === 'שבת וחג' ||
     (rule.applies === 'שבת בלבד' && day.shabbat) || (rule.applies === 'חג בלבד' && !!day.chag);
 }
@@ -172,6 +251,65 @@ export function buildLuach(cfg, occ) {
       firstDay: first.day,
       multiDay: occ.days.length > 1
     }
+  };
+}
+
+/** "כ״ז תשרי – ב׳ חשון תשפ״ז · 18.10–23.10.2026" */
+function rangeDates(first, last) {
+  const a = toHebrew(first), b = toHebrew(last);
+  const heb = first === last ? hebDateString(first)
+    : gematria(a.d) + (a.m === b.m ? '' : ' ' + monthName(a.y, a.m)) + (a.y === b.y ? '' : ' ' + gematria(a.y)) + ' – ' + hebDateString(last);
+  // LRI … PDI: הטווח הלועזי נשאר משמאל לימין בתוך טקסט עברי
+  return heb + ' · ⁦' + (first === last ? '' : dm(first) + '–') + dm(last) + '.' + toYmd(last).slice(0, 4) + '⁩';
+}
+
+/**
+ * לוח של ימי חול (שבועי או חול המועד): טבלה שבה כל עמודה היא יום.
+ * { days, rows:[{name, cells}], zmanim:[{name, cells}] } – תא ריק (null) כשהתפילה לא חלה באותו יום.
+ */
+export function buildDaysLuach(cfg, p) {
+  const tz = cfg.tz;
+  const cols = p.days.map(x => ({ ...x, t: timesFor(cfg, x.day) }));
+  const rules = (cfg.rules || []).filter(r => r && String(r.name || '').trim());
+  const names = [...new Set(rules.map(r => String(r.name).trim()))];
+  const rows = names.map(name => {
+    let key = 9999;
+    const cells = cols.map(c => {
+      // כשכמה כללים של אותה תפילה חלים ביום, הספציפי גובר (למשל "ראשון" על "כל הימים")
+      const r = rules.filter(x => String(x.name).trim() === name && applies(x, c))
+        .sort((a, b) => DAY_APPLIES.indexOf(b.applies) - DAY_APPLIES.indexOf(a.applies))[0];
+      if (!r) return null;
+      const v = ruleTime(r, { cfg, when: 'כל יום', day: c, t: c.t });
+      if (v) key = Math.min(key, v.key);
+      return v ? v.text : '—';
+    });
+    return { name, cells, key };
+  }).filter(r => r.cells.some(c => c != null)).sort((a, b) => a.key - b.key).map(({ key, ...r }) => r);
+  const zmanim = [['הנץ', 'sunrise'], ['סו"ז ק"ש גר"א', 'sofZmanShma'], ['שקיעה', 'sunset']]
+    .map(([name, k]) => ({ name, cells: cols.map(c => c.t[k] == null ? null : hm(c.t[k], tz)) }));
+
+  // ערכים לתבנית מקובץ: לפי היום בלוח (d0…d5)
+  const texts = t => { const o = {}; for (const k in t) if (t[k] != null) o[k] = hm(t[k], tz); return o; };
+  const values = { zmanim: {}, rules: {} };
+  cols.forEach((c, i) => {
+    values.zmanim[c.key] = texts(c.t);
+    rows.forEach(r => { if (r.cells[i] != null) values.rules[c.key + '|' + r.name] = r.cells[i]; });
+  });
+  const first = p.days[0], shabbat = p.kind === 'week' ? parasha(first.day - first.dow + 6, cfg.il) : null;
+  Object.assign(values, {
+    title: p.title, parasha: shabbat ? 'פרשת ' + shabbat : p.title, parashaName: shabbat || p.title,
+    hebDay: first.day, firstDay: first.day, multiDay: false
+  });
+
+  return {
+    type: 'days',
+    shul: String(cfg.shul || '').trim(),
+    title: p.title,
+    dates: rangeDates(first.day, p.days[p.days.length - 1].day),
+    days: p.days.map(({ name, date, special }) => ({ name, date, special })),
+    rows, zmanim,
+    notes: String(cfg.notes || '').trim(),
+    values
   };
 }
 

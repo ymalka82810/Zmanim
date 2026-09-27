@@ -43,7 +43,8 @@ function layout(ctx, l, draw) {
   for (const line of wrap(ctx, l.title, inner)) { y += 60; text(line, W / 2, y, '900 50px ' + SERIF, C.ink, 'center'); }
   y += 32; text(l.dates, W / 2, y, '400 18px ' + SANS, C.muted, 'center');
 
-  for (const s of l.sections) {
+  if (l.type === 'days') y = daysGrid(ctx, l, y, text, rect);
+  else for (const s of l.sections) {
     y += 52;
     text(s.title, R, y, '700 24px ' + SANS, C.ink, 'right');
     text(s.date, M, y, '400 16px ' + SANS, C.muted, 'left');
@@ -92,6 +93,38 @@ function layout(ctx, l, draw) {
     y += h;
   }
   return y + 48;
+}
+
+/** לוח ימי חול: עמודת שמות מימין ועמודה לכל יום. מחזיר את ה-y בסוף הטבלה */
+function daysGrid(ctx, l, y, text, rect) {
+  const R = W - M, inner = W - 2 * M, labelW = 150, n = l.days.length, colW = (inner - labelW) / n;
+  const cx = i => R - labelW - colW * (i + 0.5);
+  const specials = l.days.some(d => d.special);
+
+  y += 50;
+  l.days.forEach((d, i) => {
+    text(d.name, cx(i), y, '700 19px ' + SANS, C.ink, 'center');
+    text(d.date, cx(i), y + 22, '400 15px ' + SANS, C.muted, 'center');
+    if (d.special) {
+      ctx.font = '700 13px ' + SANS;
+      wrap(ctx, d.special.replace(/ · /g, '\n'), colW - 6).slice(0, 2)
+        .forEach((line, k) => text(line, cx(i), y + 42 + k * 16, '700 13px ' + SANS, C.blue, 'center'));
+    }
+  });
+  y += specials ? 70 : 32;
+  rect(M, y, inner, 3, C.blue); y += 3;
+
+  const row = (r, size, weight, color) => {
+    ctx.font = weight + ' ' + size + 'px ' + SANS;
+    const lines = wrap(ctx, r.name, labelW - 10), top = y;
+    lines.forEach((line, k) => text(line, R, top + size + 12 + k * (size + 7), weight + ' ' + size + 'px ' + SANS, color, 'right'));
+    r.cells.forEach((c, i) => { if (c != null) text(c, cx(i), top + size + 12, '700 ' + size + 'px ' + SANS, color, 'center'); });
+    y = top + size + 24 + (lines.length - 1) * (size + 7);
+  };
+  for (const r of l.rows) { row(r, 20, 400, C.ink); rect(M, y - 1, inner, 1, C.soft); }
+  y += 6;
+  for (const r of l.zmanim) row(r, 15, 400, C.muted);
+  return y;
 }
 
 async function loadFonts() {

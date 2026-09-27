@@ -374,12 +374,19 @@ export function inferRule(minutes, when, times, tz, name = '') {
   return { base: BASE_LABEL[best.k], offset: String(best.diff), round: 'ללא' };
 }
 
+const DAY_WORDS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי']
+  .map((w, i) => [new RegExp('(^|[^א-ת])(' + w + '|יום ' + 'אבגדהו'[i] + '[\'׳]?)($|[^א-ת])'), i]);
+/** היום בשבוע (0–5) שמוזכר בטקסט, או null */
+export const dowOf = s => { for (const [re, i] of DAY_WORDS) if (re.test(s)) return i; return null; };
+
 /**
  * הצעה ראשונית לכל האזורים בתבנית.
  * day – יום השבת/החג של הלוח הישן (dayNum), או null אם לא ידוע.
+ * period – בלוח של ימי חול: הלוח הישן (findPeriod), ואז כל שעה משויכת ליום (d0…d5) לפי הטקסט שלידה.
  */
-export function suggestSlots(tokens, cfg, day) {
+export function suggestSlots(tokens, cfg, day, period) {
   const texts = tokens.filter(t => t.kind !== 'time');
+  if (period && period.mode === 'days') return suggestDaySlots(tokens, texts, cfg, period);
   const slots = [];
   const tErev = day != null ? timesFor(cfg, day - 1) : null;
   const tDay = day != null ? timesFor(cfg, day) : null;
@@ -421,6 +428,42 @@ export function suggestSlots(tokens, cfg, day) {
       const rule = tDay ? inferRule(t.minutes, when, when === 'כניסה' ? tErev : tDay, cfg.tz, label)
         : { base: 'שעה קבועה', offset: t.str, round: 'ללא' };
       slots.push({ box, kind: 'rule', when, name: name || 'תפילה', old: t.str, label: name, ...rule });
+    }
+  }
+  return slots;
+}
+
+/** כמו suggestSlots, ללוח של ימי חול: היום נקבע לפי שם היום בשורה או בכותרת שמעל */
+function suggestDaySlots(tokens, texts, cfg, period) {
+  const slots = [];
+  for (const t of tokens) {
+    const box = { x: t.x, y: t.y, w: t.w, h: t.h, baseline: t.baseline, size: t.size, font: t.font };
+    if (t.kind === 'title' || t.kind === 'parasha' || t.kind === 'hebDate') {
+      slots.push({ box, kind: t.kind, old: t.str, ascii: /["']/.test(t.str) && !/[״׳]/.test(t.str), noYear: t.kind === 'hebDate' && !HEB_DATE_RE.exec(t.str)[3] });
+      continue;
+    }
+    if (t.kind === 'gregDate') { slots.push({ box, kind: 'gregDate', old: t.str, fmt: gregFormat(t.str) }); continue; }
+    if (t.kind !== 'time') continue;
+
+    const lab = labelFor(t, texts), heads = headersAbove(t, texts);
+    let label = lab ? lab.str : '';
+    // בטבלה שבה השורה היא היום – שם התפילה בכותרת שמעל
+    if ((!label || dowOf(label) != null) && heads.length) {
+      const h = heads.find(x => PRAYER_WORDS.test(x.str) || ZMAN_WORDS.some(z => z[0].test(x.str)));
+      if (h) label = h.str;
+    }
+    let w = null;
+    for (const s of [lab ? lab.str : '', ...texts.filter(x => sameLine(x, t)).map(x => x.str), ...heads.map(h => h.str)]) {
+      w = dowOf(s);
+      if (w != null) break;
+    }
+    const col = period.days.find(x => x.dow === w) || period.days[0];
+    const zm = !PRAYER_WORDS.test(label) && ZMAN_WORDS.find(z => z[0].test(label));
+    const name = label.replace(/[:\-–|]+$/g, '').trim();
+    if (zm) slots.push({ box, kind: 'zman', zman: zm[1], when: col.key, old: t.str, label: name });
+    else {
+      const rule = inferRule(t.minutes, 'כל יום', timesFor(cfg, col.day), cfg.tz, label);
+      slots.push({ box, kind: 'rule', when: col.key, name: name || 'תפילה', old: t.str, label: name, ...rule });
     }
   }
   return slots;

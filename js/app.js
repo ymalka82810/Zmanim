@@ -1,7 +1,9 @@
 /** ממשק האתר: לוח, הגדרות, שיתוף וגיבוי. הכל נשמר מקומית בדפדפן. */
 
-import { CITIES, BASES, WHEN, APPLIES, ROUND, FONTS, DEFAULT_CONFIG, prayerBases, fontFamilies, fontsHref, normalize, loadConfig, saveConfig, clearConfig } from './config.js';
-import { findOccasion, buildLuach } from './luach.js';
+import { CITIES, BASES, WHEN, APPLIES, ROUND, FONTS, DEFAULT_CONFIG, DAY_APPLIES, BUILTIN, isBuiltin, newTemplate, designOf, activeDesign,
+  prayerBases, fontFamilies, fontsHref, normalize, loadConfig, saveConfig, clearConfig } from './config.js';
+import { findPeriod, stepPeriod, templateFor, nextPeriodFor, buildLuach, buildDaysLuach } from './luach.js';
+import { MOADIM } from './moadim.js';
 import { luachHtml, luachText, esc } from './render.js';
 import { todayIn } from './dates.js';
 import { luachCanvas, pngBlob, pdfBlob } from './image.js';
@@ -13,7 +15,14 @@ const BASE_LABELS = Object.keys(BASES);
 
 let { cfg, saved } = loadConfig();
 let cursor = null;       // היום שממנו מחפשים את האירוע המוצג
+let period = null;       // השבת/החג או ימי החול של הלוח המוצג
 let current = null;      // הלוח המוצג כרגע
+let sel = 'shabbat';     // התבנית שנבחרה בהגדרות
+
+/* סוג הלוח שמוצג: holy – שבתות וחגים, days – ימות השבוע וחול המועד. נשמר במכשיר */
+const MODE_KEY = 'zmanim.mode';
+let mode = 'holy';
+try { if (localStorage.getItem(MODE_KEY) === 'days') mode = 'days'; } catch (e) { /* אין גישה לאחסון */ }
 
 /* ---------- הודעות ---------- */
 
@@ -37,11 +46,27 @@ $('tab-luach').onclick = () => showTab('luach');
 $('tab-settings').onclick = () => showTab('settings');
 $('goSettings').onclick = () => showTab('settings');
 
+function setMode(m) {
+  mode = m; cursor = null;
+  try { localStorage.setItem(MODE_KEY, m); } catch (e) { /* אין גישה לאחסון */ }
+  renderLuach();
+}
+$('modeHoly').onclick = () => setMode('holy');
+$('modeDays').onclick = () => setMode('days');
+
 /* ---------- הלוח ---------- */
 
-/** עיצוב מהקובץ הישן – רק לשבת/חג של יום אחד, כמו בלוח המקורי */
-const useTemplate = l => !!(cfg.template && cfg.template.enabled && !l.values.multiDay);
-const drawLuach = l => useTemplate(l) ? templateCanvas(cfg.template, l.values) : luachCanvas(l, cfg.font);
+/** הלוח לפי התבנית שחלה עליו. l.design – העיצוב מהקובץ הישן, רק לשבת/חג של יום אחד כמו בלוח המקורי */
+function build(p) {
+  const t = templateFor(cfg, p), c = { ...cfg, rules: t.rules };
+  const l = p.mode === 'days' ? buildDaysLuach(c, p) : buildLuach(c, p);
+  const d = activeDesign(cfg, t);
+  l.design = d && !l.values.multiDay ? d : null;
+  l.designSkipped = !!d && !l.design;
+  l.tpl = t;
+  return l;
+}
+const drawLuach = l => l.design ? templateCanvas(l.design, l.values) : luachCanvas(l, cfg.font);
 
 /** טעינת הגופן שנבחר מ-Google Fonts והחלתו על הלוח ועל הדוגמה בהגדרות */
 function applyFont() {
@@ -63,30 +88,35 @@ function applyFont() {
 
 function renderLuach() {
   $('welcome').hidden = saved;
+  $('modeHoly').setAttribute('aria-pressed', String(mode === 'holy'));
+  $('modeDays').setAttribute('aria-pressed', String(mode === 'days'));
   if (cursor == null) cursor = todayIn(cfg.tz);
-  const occ = findOccasion(cursor, cfg.il);
-  if (!occ || !isFinite(cfg.lat) || !isFinite(cfg.lng)) {
-    current = null;
+  const p = findPeriod(mode, cursor, cfg.il);
+  if (!p || !isFinite(cfg.lat) || !isFinite(cfg.lng)) {
+    current = period = null;
     $('luach').innerHTML = '<p class="luach-empty">לא ניתן לחשב לוח. בדקו את המיקום בהגדרות.</p>';
+    $('luachTpl').textContent = '';
     return;
   }
-  cursor = occ.first;
-  current = buildLuach(cfg, occ);
-  if (useTemplate(current)) {
+  cursor = p.first; period = p;
+  current = build(p);
+  $('luachTpl').textContent = 'תבנית: ' + current.tpl.name;
+  if (current.design) {
     const l = current;
     $('luach').innerHTML = '<img class="luach-img" alt="' + esc(l.title) + '">';
-    templateCanvas(cfg.template, l.values).then(c => {
+    templateCanvas(l.design, l.values).then(c => {
       if (current === l) $('luach').querySelector('img').src = c.toDataURL('image/png');
     }).catch(() => { if (current === l) $('luach').innerHTML = luachHtml(l); });
   } else {
-    $('luach').innerHTML = luachHtml(current) + (cfg.template && cfg.template.enabled
+    $('luach').innerHTML = luachHtml(current) + (current.designSkipped
       ? '<p class="hint">העיצוב מהקובץ מתאים לשבת או חג של יום אחד, ולכן הלוח הזה מוצג בעיצוב הרגיל.</p>' : '');
   }
-  $('todayOcc').disabled = findOccasion(todayIn(cfg.tz), cfg.il).first === occ.first;
+  const now = findPeriod(mode, todayIn(cfg.tz), cfg.il);
+  $('todayOcc').disabled = !!now && now.first === p.first;
 }
 
-$('prevOcc').onclick = () => { const o = findOccasion(cursor - 1, cfg.il, -1); if (o) { cursor = o.first; renderLuach(); } };
-$('nextOcc').onclick = () => { const o = findOccasion(cursor, cfg.il); if (o) { cursor = o.last + 1; renderLuach(); } };
+$('prevOcc').onclick = () => { const o = period && stepPeriod(period, cfg.il, -1); if (o) { cursor = o.first; renderLuach(); } };
+$('nextOcc').onclick = () => { const o = period && stepPeriod(period, cfg.il, 1); if (o) { cursor = o.first; renderLuach(); } };
 $('todayOcc').onclick = () => { cursor = null; renderLuach(); };
 
 async function copyText(text) {
@@ -174,9 +204,12 @@ $('tz').innerHTML = zones.map(z => '<option>' + esc(z) + '</option>').join('');
 $('font').innerHTML = FONTS.map(f => '<option value="' + f[0] + '">' + esc(f[1]) + '</option>').join('');
 
 const opts = (list, v) => list.map(x => '<option' + (x === v ? ' selected' : '') + '>' + esc(x) + '</option>').join('');
+const selTpl = () => cfg.templates.find(t => t.id === sel) || cfg.templates[0];
+const rules = () => selTpl().rules;
+
 /** אפשרויות "לפי": זמני היום, ואחריהם התפילות האחרות (שעה שתלויה בתפילה) */
 const baseOpts = r => {
-  const names = prayerBases(cfg.rules, r);
+  const names = prayerBases(rules(), r);
   if (r.base && !(r.base in BASES) && names.indexOf(r.base) < 0) names.push(r.base);
   return opts(BASE_LABELS, r.base) + (names.length ? '<optgroup label="לפי תפילה">' + opts(names, r.base) + '</optgroup>' : '');
 };
@@ -194,19 +227,121 @@ function fill() {
   $('font').value = cfg.font;
   applyFont();
   $('custom').hidden = cfg.city !== 'custom';
+  renderTemplates();
+}
+
+/* ---------- תבניות ---------- */
+
+const RULES_HINT = {
+  holy: '"כניסה" הוא ערב שבת או חג, "כל יום" חל על כל יום של השבת או החג, ו"יציאה" הוא המוצאי. בשעה קבועה כותבים את השעה בשדה, למשל 08:00.',
+  days: 'בלוח של ימי חול כל עמודה היא יום. ב"חל על" בוחרים באילו ימים התפילה מתקיימת. מנחה וערבית של ערב שבת או חג מופיעות בלוח השבת או החג. בשעה קבועה כותבים את השעה בשדה, למשל 06:30.'
+};
+
+function renderTemplates() {
+  if (!cfg.templates.some(t => t.id === sel)) sel = cfg.templates[0].id;
+  const t = selTpl();
+  $('tplList').innerHTML = cfg.templates.map(x => '<button type="button" class="chip" data-t="' + esc(x.id) + '" aria-pressed="' + (x === t) + '">' +
+    esc(x.name) + '</button>').join('') + '<button type="button" class="chip add" id="tplAdd">+ תבנית חדשה</button>';
+  const b = BUILTIN.find(x => x.id === t.id);
+  if (b) $('tplInfo').innerHTML = '<p class="hint">' + esc(b.about) + ' תבנית שתוסיפו למועד מסוים גוברת עליה.</p>';
+  else {
+    const groups = [...new Set(MOADIM.filter(m => m[2] === t.kind).map(m => m[3]))];
+    $('tplInfo').innerHTML =
+      '<div class="field"><label for="tplName">שם התבנית</label><input id="tplName" value="' + esc(t.name) + '" autocomplete="off"></div>' +
+      '<label>מתי התבנית חלה</label>' +
+      groups.map(g => '<fieldset class="moadim"><legend>' + esc(g) + '</legend>' +
+        MOADIM.filter(m => m[3] === g).map(m => '<label class="check"><input type="checkbox" data-moed="' + m[0] + '"' +
+          (t.moadim.indexOf(m[0]) >= 0 ? ' checked' : '') + '> ' + esc(m[1]) + '</label>').join('') + '</fieldset>').join('') +
+      '<p class="hint" id="moadimHint"></p>' +
+      '<p class="hint">' + (t.kind === 'days' ? 'לוח ימי חול (שבועי או חול המועד) שיש בו אחד המועדים יוצג בתבנית הזו.'
+        : 'שבת או חג שהם אחד המועדים יוצגו בתבנית הזו.') + '</p>' +
+      '<div class="actions left"><button type="button" class="danger" id="tplDelete">מחיקת התבנית</button></div>';
+    renderMoadimHint();
+  }
+  $('rulesTplName').textContent = t.name;
+  $('designTplName').textContent = t.name;
+  $('rulesHint').textContent = RULES_HINT[t.kind];
   renderRules();
   renderTemplateStatus();
 }
 
+function renderMoadimHint() {
+  const t = selTpl();
+  if (isBuiltin(t)) return;
+  $('moadimHint').textContent = t.moadim.length ? '' : 'בחרו לפחות מועד אחד. בלי מועד התבנית לא תופעל.';
+}
+
+$('tplList').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.id === 'tplAdd') { openNewTemplate(); return; }
+  sel = b.dataset.t;
+  $('tplNew').hidden = true;
+  renderTemplates();
+});
+
+$('tplInfo').addEventListener('input', e => {
+  const t = selTpl();
+  if (e.target.id === 'tplName') {
+    t.name = e.target.value.trim() || 'תבנית';
+    $('tplList').querySelector('[aria-pressed="true"]').textContent = t.name;
+    $('rulesTplName').textContent = t.name;
+    $('designTplName').textContent = t.name;
+    changed();
+  }
+  const id = e.target.dataset.moed;
+  if (id) {
+    t.moadim = t.moadim.filter(x => x !== id);
+    if (e.target.checked) t.moadim.push(id);
+    renderMoadimHint();
+    changed();
+  }
+});
+$('tplInfo').addEventListener('click', e => {
+  if (e.target.id !== 'tplDelete') return;
+  const t = selTpl();
+  if (!confirm('למחוק את התבנית "' + t.name + '"?')) return;
+  cfg.templates = cfg.templates.filter(x => x !== t);
+  sel = 'shabbat';
+  renderTemplates(); changed();
+});
+
+function fillNewFrom() {
+  const kind = $('tplNewKind').value;
+  $('tplNewFrom').innerHTML = cfg.templates.filter(t => t.kind === kind)
+    .map(t => '<option value="' + esc(t.id) + '">העתקה מ' + esc(t.name) + '</option>').join('') + '<option value="">בלי תפילות</option>';
+}
+function openNewTemplate() {
+  $('tplNew').hidden = false;
+  $('tplNewName').value = '';
+  $('tplNewKind').value = 'holy';
+  fillNewFrom();
+  $('tplNewName').focus();
+}
+$('tplNewKind').onchange = fillNewFrom;
+$('tplNewCancel').onclick = () => { $('tplNew').hidden = true; };
+$('tplNewOk').onclick = () => {
+  const name = $('tplNewName').value.trim();
+  if (!name) { $('tplNewName').focus(); toast('כתבו שם לתבנית', true); return; }
+  const from = cfg.templates.find(t => t.id === $('tplNewFrom').value);
+  const t = newTemplate(name, $('tplNewKind').value, from ? from.rules : []);
+  cfg.templates.push(t);
+  sel = t.id;
+  $('tplNew').hidden = true;
+  renderTemplates(); changed();
+  toast('התבנית נוצרה. בחרו מתי היא חלה');
+};
+
 function renderRules() {
-  $('rules').innerHTML = cfg.rules.map((r, i) => {
+  const days = selTpl().kind === 'days';
+  $('rules').innerHTML = rules().map((r, i) => {
     const fixed = r.base === 'שעה קבועה';
     return '<div class="rule" data-i="' + i + '"><div class="rule-top">' +
       '<input data-k="name" value="' + esc(r.name) + '" placeholder="שם התפילה או השיעור" aria-label="שם התפילה">' +
       '<button type="button" data-del="' + i + '" aria-label="מחיקת ' + esc(r.name) + '">מחיקה</button></div>' +
       '<div class="rgrid">' +
-      '<div><label>מתי</label><select data-k="when">' + opts(WHEN, r.when) + '</select></div>' +
-      '<div><label>חל על</label><select data-k="applies">' + opts(APPLIES, r.applies) + '</select></div>' +
+      (days ? '' : '<div><label>מתי</label><select data-k="when">' + opts(WHEN, r.when) + '</select></div>') +
+      '<div><label>חל על</label><select data-k="applies">' + opts(days ? DAY_APPLIES : APPLIES, r.applies) + '</select></div>' +
       '<div><label>לפי</label><select data-k="base">' + baseOpts(r) + '</select></div>' +
       '<div><label>' + (fixed ? 'שעה' : 'הפרש (דקות)') + '</label><input data-k="offset" value="' + esc(r.offset) +
       '" placeholder="' + (fixed ? '08:00' : '-20') + '" dir="ltr" inputmode="' + (fixed ? 'text' : 'numeric') + '"></div>' +
@@ -228,7 +363,7 @@ const nameRef = new WeakMap();   // כלל ששמו נמחק זמנית ← הש
 $('rules').addEventListener('input', e => {
   const box = e.target.closest('.rule'), k = e.target.getAttribute('data-k');
   if (!box || !k) return;
-  const r = cfg.rules[+box.getAttribute('data-i')];
+  const list = rules(), r = list[+box.getAttribute('data-i')];
   const oldName = String(r.name || '').trim();
   r[k] = e.target.value;
   if (k === 'name') {
@@ -238,11 +373,11 @@ $('rules').addEventListener('input', e => {
     if (!name) nameRef.set(r, ref);
     else {
       nameRef.delete(r);
-      if (ref && ref !== name && !cfg.rules.some(x => x !== r && String(x.name || '').trim() === ref))
-        cfg.rules.forEach(x => { if (x.base === ref) x.base = name; });
+      if (ref && ref !== name && !list.some(x => x !== r && String(x.name || '').trim() === ref))
+        list.forEach(x => { if (x.base === ref) x.base = name; });
     }
     $('rules').querySelectorAll('.rule').forEach(el => {
-      el.querySelector('[data-k="base"]').innerHTML = baseOpts(cfg.rules[+el.getAttribute('data-i')]);
+      el.querySelector('[data-k="base"]').innerHTML = baseOpts(list[+el.getAttribute('data-i')]);
     });
   }
   if (k === 'base') {
@@ -255,10 +390,10 @@ $('rules').addEventListener('input', e => {
 $('rules').addEventListener('click', e => {
   const i = e.target.getAttribute('data-del');
   if (i === null) return;
-  cfg.rules.splice(+i, 1); renderRules(); changed();
+  rules().splice(+i, 1); renderRules(); changed();
 });
 $('addRule').onclick = () => {
-  cfg.rules.push({ name: '', when: 'כל יום', applies: 'שבת וחג', base: 'שקיעה', offset: '0', round: 'ללא' });
+  rules().push({ name: '', when: 'כל יום', applies: selTpl().kind === 'days' ? 'כל הימים' : 'שבת וחג', base: 'שקיעה', offset: '0', round: 'ללא' });
   renderRules(); changed();
   $('rules').lastElementChild.querySelector('input').focus();
 };
@@ -283,32 +418,41 @@ bind('font', v => { cfg.font = v; applyFont(); });
 /* ---------- עיצוב מלוח קיים ---------- */
 
 function renderTemplateStatus() {
-  const t = cfg.template;
-  $('tplStatus').hidden = !t;
-  $('tplUseWrap').hidden = !t;
-  $('tplEdit').hidden = !t;
-  $('tplRemove').hidden = !t;
-  $('tplUpload').textContent = t ? 'העלאת לוח אחר' : 'העלאת לוח ישן (PDF או תמונה)';
-  if (t) {
-    $('tplStatus').textContent = 'תבנית: ' + t.name + ' (' + t.slots.length + ' אזורים)';
-    $('tplUse').checked = !!t.enabled;
+  const t = selTpl(), d = designOf(cfg, t), shared = !!(t.design && t.design.ref);
+  $('tplStatus').hidden = !d;
+  $('tplUseWrap').hidden = !d;
+  $('tplEdit').hidden = !d;
+  $('tplRemove').hidden = !d;
+  $('designShared').hidden = !(d && shared);
+  $('tplUpload').textContent = d ? 'העלאת לוח אחר' : 'העלאת לוח ישן (PDF או תמונה)';
+  if (d) {
+    $('tplStatus').textContent = 'קובץ: ' + d.name + ' (' + d.slots.length + ' אזורים)';
+    $('tplUse').checked = !!activeDesign(cfg, t);
+    if (shared) {
+      const src = cfg.templates.find(x => x.id === t.design.ref);
+      $('designShared').textContent = 'העיצוב משותף עם התבנית "' + src.name + '". עריכה או העלאה כאן יוצרות עיצוב נפרד לתבנית הזו.';
+    }
   }
 }
 
 function templateDone(result) {
   if (result) {
-    const prev = cfg.template;
-    cfg.template = result.template;
-    cfg.rules = mergeRules(cfg.rules, result.rules, result.replace);
+    const t = result.tpl, prev = { design: t.design, rules: t.rules };
+    t.design = result.template;
+    t.rules = mergeRules(t.rules, result.rules, result.replace, t.kind);
     if (!saveConfig(cfg)) {
-      cfg.template = prev;
+      Object.assign(t, prev);
       toast('הקובץ גדול מדי לשמירה במכשיר. נסו קובץ קטן יותר', true);
       showTab('settings');
       return;
     }
     saved = true;
+    sel = t.id;
     fill();
-    cursor = null;
+    // מציגים את הלוח הקרוב שמשתמש בתבנית
+    if (mode !== t.kind) setMode(t.kind);
+    const p = nextPeriodFor(cfg, t, todayIn(cfg.tz));
+    cursor = p ? p.first : null;
     showTab('luach');
     toast('התבנית נשמרה');
   } else showTab('settings');
@@ -321,7 +465,7 @@ $('tplFile').onchange = async () => {
   if (!f) return;
   toast('קורא את הקובץ…');
   try {
-    await editFromFile(f, cfg, templateDone);
+    await editFromFile(f, cfg, selTpl(), templateDone);
     showTab('template');
   } catch (e) {
     console.error(e);
@@ -329,14 +473,23 @@ $('tplFile').onchange = async () => {
   }
 };
 $('tplEdit').onclick = async () => {
-  try { await editExisting(cfg.template, cfg, templateDone); showTab('template'); }
+  try { await editExisting(selTpl(), cfg, templateDone); showTab('template'); }
   catch (e) { toast('לא ניתן לפתוח את התבנית', true); }
 };
 $('tplRemove').onclick = () => {
-  if (!confirm('להסיר את התבנית? זמני התפילות בהגדרות יישארו.')) return;
-  delete cfg.template; fill(); changed();
+  const t = selTpl();
+  if (!confirm('להסיר את העיצוב מהתבנית "' + t.name + '"? זמני התפילות יישארו.')) return;
+  // תבניות שמשתמשות באותו עיצוב מקבלות עותק משלהן
+  if (t.design && !t.design.ref) {
+    for (const x of cfg.templates) if (x.design && x.design.ref === t.id) x.design = { ...t.design, enabled: x.design.enabled !== false };
+  }
+  t.design = null; fill(); changed();
 };
-$('tplUse').onchange = () => { cfg.template.enabled = $('tplUse').checked; changed(); };
+$('tplUse').onchange = () => {
+  // בעיצוב משותף ההפעלה נשמרת בתבנית עצמה, כך שאפשר לכבות אותו רק בחגים למשל
+  selTpl().design.enabled = $('tplUse').checked;
+  changed();
+};
 
 /* ---------- גיבוי ---------- */
 
@@ -355,7 +508,7 @@ $('importFile').onchange = async () => {
   if (!f) return;
   try {
     const data = JSON.parse(await f.text());
-    if (!data || typeof data !== 'object' || !Array.isArray(data.rules)) throw new Error();
+    if (!data || typeof data !== 'object' || !(Array.isArray(data.rules) || Array.isArray(data.templates))) throw new Error();
     cfg = normalize(data); cursor = null; fill(); saveConfig(cfg); saved = true;
     toast('ההגדרות נטענו');
   } catch (e) { toast('הקובץ לא תקין', true); }
@@ -363,7 +516,7 @@ $('importFile').onchange = async () => {
 $('reset').onclick = () => {
   if (!confirm('למחוק את כל ההגדרות במכשיר הזה ולחזור לברירת המחדל?')) return;
   clearConfig();
-  cfg = normalize(DEFAULT_CONFIG); saved = false; cursor = null; fill();
+  cfg = normalize(DEFAULT_CONFIG); saved = false; cursor = null; sel = 'shabbat'; fill();
   toast('ההגדרות אופסו');
 };
 

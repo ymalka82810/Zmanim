@@ -7,6 +7,7 @@ import { HDate, Sedra, Zmanim, GeoLocation, HebrewCalendar, flags } from '@hebca
 import { toHebrew, yomTov, parashaIndices } from '../js/hebrew.js';
 import { zmanim } from '../js/zmanim.js';
 import { toDayNum, toYmd, dow } from '../js/dates.js';
+import { isMoed } from '../js/moadim.js';
 
 let failures = 0;
 const fail = (msg) => { if (++failures <= 30) console.log('  ✗ ' + msg); };
@@ -49,7 +50,33 @@ for (const il of [true, false]) {
   }
 }
 
-// 4. זמני היום (סטייה מותרת: דקה)
+// 4. מועדים לתבניות: ימי חול מיוחדים ושבתות מיוחדות
+{
+  console.log('מועדים לתבניות (חנוכה, פורים, צומות, ראש חודש, שבתות מיוחדות)');
+  const MOADIM_FROM = toDayNum('2000-01-01'), MOADIM_TO = toDayNum('2060-12-31');
+  const ids = {};
+  const add = (id, dn) => (ids[id] || (ids[id] = new Set())).add(dn);
+  const SPECIAL = { 'Shabbat Shuva': 'shuva', 'Shabbat Zachor': 'zachor', 'Shabbat HaGadol': 'hagadol', 'Shabbat Chazon': 'chazon', 'Shabbat Nachamu': 'nachamu' };
+  const FASTS = ['Tzom Gedaliah', "Asara B'Tevet", "Ta'anit Esther", 'Tzom Tammuz'];
+  for (const e of HebrewCalendar.calendar({ start: refDate(MOADIM_FROM), end: refDate(MOADIM_TO), il: true })) {
+    const dn = Math.round(Date.UTC(...ymdParts(e.getDate().greg())) / 86400000), desc = e.getDesc();
+    if (SPECIAL[desc]) add(SPECIAL[desc], dn);
+    if (FASTS.includes(desc)) add('fast', dn);
+    if (desc === "Tish'a B'Av" || desc === "Tish'a B'Av (observed)") add('tishaBav', dn);
+    if (desc === 'Purim' || desc === 'Shushan Purim') add('purim', dn);
+    if (e.getFlags() & flags.ROSH_CHODESH) add('rch', dn);
+    // הנר הראשון נדלק בערב כ"ד בכסלו, ולכן ימי חנוכה הם הימים של נר 2–8 ו"היום השמיני"
+    if (/^Chanukah: [2-8] Candles|^Chanukah: 8th Day/.test(desc)) add('chanukah', dn);
+  }
+  for (const id in ids) {
+    for (let dn = MOADIM_FROM; dn <= MOADIM_TO; dn++) {
+      const mine = isMoed(id, dn, true), theirs = ids[id].has(dn);
+      if (mine !== theirs) fail(toYmd(dn) + ' ' + id + ': ' + mine + ' ≠ ' + theirs);
+    }
+  }
+}
+
+// 5. זמני היום (סטייה מותרת: דקה)
 const PLACES = [['ירושלים', 31.769, 35.2163, 'Asia/Jerusalem'], ['חיפה', 32.8184, 34.9885, 'Asia/Jerusalem'],
   ['אילת', 29.5581, 34.9482, 'Asia/Jerusalem'], ['ניו יורק', 40.7128, -74.006, 'America/New_York'],
   ['לונדון', 51.5074, -0.1278, 'Europe/London'], ['מלבורן', -37.8136, 144.9631, 'Australia/Melbourne']];

@@ -68,31 +68,120 @@ export function fontsHref(key) {
     fams.map(([name, w]) => 'family=' + name.replace(/ /g, '+') + ':wght@' + w).join('&') + '&display=swap';
 }
 
-export const DEFAULT_CONFIG = {
-  version: 1,
-  shul: '', city: 'jerusalem', lat: 31.769, lng: 35.2163, tz: 'Asia/Jerusalem', il: true,
-  candle: 40, havdalah: '8.5', notes: '', font: 'classic',
-  rules: [
-    { name: 'מנחה וקבלת שבת', when: 'כניסה', applies: 'שבת וחג', base: 'הדלקת נרות', offset: '15', round: 'ללא' },
-    { name: 'שחרית', when: 'כל יום', applies: 'שבת וחג', base: 'שעה קבועה', offset: '08:00', round: 'ללא' },
-    { name: 'מנחה', when: 'כל יום', applies: 'שבת וחג', base: 'שקיעה', offset: '-40', round: 'למטה ל-5' },
-    { name: 'ערבית', when: 'יציאה', applies: 'שבת וחג', base: 'צאת שבת/חג', offset: '0', round: 'ללא' }
-  ]
+/** ימים בלוח של ימות השבוע ובחול המועד ("חל על") */
+export const DAY_APPLIES = ['כל הימים', 'חוץ מערב שבת וחג', 'ערב שבת וחג', 'א׳–ה׳', 'ב׳ וה׳',
+  'ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי'];
+const DOW_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי'];
+
+/** האם כלל של ימי חול חל על היום. day: { dow, erev } – erev: מחר שבת או חג */
+export function appliesOnDay(applies, day) {
+  switch (applies) {
+    case 'חוץ מערב שבת וחג': return !day.erev;
+    case 'ערב שבת וחג': return !!day.erev;
+    case 'א׳–ה׳': return day.dow <= 4;
+    case 'ב׳ וה׳': return day.dow === 1 || day.dow === 4;
+    default: { const i = DOW_NAMES.indexOf(applies); return i < 0 || i === day.dow; }
+  }
+}
+
+/**
+ * התבניות הקבועות. כל תבנית: זמני תפילות (rules) ועיצוב מלוח קיים (design).
+ * kind: holy – לוח שבת/חג (ערב, יום, מוצאי); days – לוח של כמה ימי חול בטבלה.
+ * תבנית שהמשתמש מוסיף חלה על המועדים שבחר (moadim) וגוברת על התבנית הקבועה.
+ */
+export const BUILTIN = [
+  { id: 'shabbat', name: 'שבתות', kind: 'holy', about: 'שבת רגילה, וגם שבת חול המועד.' },
+  { id: 'chag', name: 'חגים', kind: 'holy', about: 'ימים טובים, כולל חג שצמוד לשבת.' },
+  { id: 'chol', name: 'חול המועד', kind: 'days', about: 'ימי החול של חול המועד סוכות ופסח, בלוח אחד.' },
+  { id: 'week', name: 'ימות השבוע', kind: 'days', about: 'לוח שבועי מיום ראשון עד שישי.' }
+];
+export const isBuiltin = t => BUILTIN.some(b => b.id === t.id);
+
+const HOLY_RULES = [
+  { name: 'מנחה וקבלת שבת', when: 'כניסה', applies: 'שבת וחג', base: 'הדלקת נרות', offset: '15', round: 'ללא' },
+  { name: 'שחרית', when: 'כל יום', applies: 'שבת וחג', base: 'שעה קבועה', offset: '08:00', round: 'ללא' },
+  { name: 'מנחה', when: 'כל יום', applies: 'שבת וחג', base: 'שקיעה', offset: '-40', round: 'למטה ל-5' },
+  { name: 'ערבית', when: 'יציאה', applies: 'שבת וחג', base: 'צאת שבת/חג', offset: '0', round: 'ללא' }
+];
+const dayRule = (name, applies, base, offset, round = 'ללא') => ({ name, when: 'כל יום', applies, base, offset, round });
+const DEFAULT_RULES = {
+  shabbat: HOLY_RULES,
+  chag: HOLY_RULES,
+  chol: [dayRule('שחרית', 'כל הימים', 'שעה קבועה', '07:30'), dayRule('מנחה', 'חוץ מערב שבת וחג', 'שקיעה', '-15', 'למטה ל-5'),
+    dayRule('ערבית', 'חוץ מערב שבת וחג', 'צאת הכוכבים', '0')],
+  week: [dayRule('שחרית', 'כל הימים', 'שעה קבועה', '06:30'), dayRule('מנחה', 'חוץ מערב שבת וחג', 'שקיעה', '-15', 'למטה ל-5'),
+    dayRule('ערבית', 'חוץ מערב שבת וחג', 'צאת הכוכבים', '0')]
 };
 
-const KEY = 'zmanim.config';
 const clone = o => JSON.parse(JSON.stringify(o));
+const builtinTemplate = b => ({ id: b.id, name: b.name, kind: b.kind, rules: clone(DEFAULT_RULES[b.id]), design: null });
+
+export const DEFAULT_CONFIG = {
+  version: 2,
+  shul: '', city: 'jerusalem', lat: 31.769, lng: 35.2163, tz: 'Asia/Jerusalem', il: true,
+  candle: 40, havdalah: '8.5', notes: '', font: 'classic',
+  templates: BUILTIN.map(builtinTemplate)
+};
+
+/** תבנית חדשה של המשתמש. rules – זמני התפילות להתחלה */
+export function newTemplate(name, kind, rules) {
+  return { id: 'u' + Date.now().toString(36), name, kind, moadim: [], rules: clone(rules || []), design: null };
+}
+
+/** העיצוב של התבנית. { ref } – העיצוב של תבנית אחרת (למשל חגים שמשתמשים בעיצוב של שבתות) */
+export function designOf(cfg, t) {
+  const d = t && t.design;
+  if (d && d.ref) { const o = cfg.templates.find(x => x.id === d.ref); return o && o.design && !o.design.ref ? o.design : null; }
+  return d || null;
+}
+
+const KEY = 'zmanim.config';
 
 /** משלים שדות חסרים (הגדרות ישנות או קובץ מיובא) */
 export function normalize(c) {
   const cfg = Object.assign(clone(DEFAULT_CONFIG), c || {});
-  if (!Array.isArray(cfg.rules)) cfg.rules = [];
+  if (c && !Array.isArray(c.templates)) migrate(cfg, c);
+  delete cfg.rules; delete cfg.template;
+  cfg.templates = cfg.templates.filter(t => t && typeof t === 'object' && t.id);
+  BUILTIN.forEach((b, i) => {
+    const t = cfg.templates.find(x => x.id === b.id);
+    if (!t) cfg.templates.splice(i, 0, builtinTemplate(b));
+    else t.kind = b.kind;
+  });
+  for (const t of cfg.templates) {
+    if (!Array.isArray(t.rules)) t.rules = [];
+    if (t.kind !== 'days') t.kind = 'holy';
+    t.name = String(t.name || '').trim() || 'תבנית';
+    if (!isBuiltin(t) && !Array.isArray(t.moadim)) t.moadim = [];
+    if (t.design === undefined) t.design = null;
+  }
+  cfg.version = DEFAULT_CONFIG.version;
   cfg.lat = Number(cfg.lat); cfg.lng = Number(cfg.lng);
   cfg.candle = Number(cfg.candle) || 0;
   cfg.havdalah = String(cfg.havdalah || '8.5');
   cfg.il = cfg.il !== false;
   if (!FONTS.some(f => f[0] === cfg.font)) cfg.font = 'classic';
   return cfg;
+}
+
+/**
+ * הגדרות מגרסה 1 (רשימת תפילות אחת ועיצוב אחד): התפילות עוברות לתבניות שבתות וחגים
+ * כך שהלוחות נשארים כמו שהיו, והעיצוב עובר לשבתות ומשמש גם לחגים.
+ */
+function migrate(cfg, old) {
+  const rules = Array.isArray(old.rules) ? old.rules : HOLY_RULES;
+  cfg.templates = BUILTIN.map(builtinTemplate);
+  const [shabbat, chag] = cfg.templates;
+  shabbat.rules = clone(rules.filter(r => r && r.applies !== 'חג בלבד'));
+  chag.rules = clone(rules);
+  if (old.template) { shabbat.design = old.template; chag.design = { ref: 'shabbat', enabled: old.template.enabled !== false }; }
+}
+
+/** העיצוב של התבנית אם הוא מופעל ("להשתמש בעיצוב מהקובץ"), אחרת null */
+export function activeDesign(cfg, t) {
+  const d = designOf(cfg, t);
+  if (!d) return null;
+  return (t.design.ref ? t.design.enabled !== false : d.enabled) ? d : null;
 }
 
 export function loadConfig() {
