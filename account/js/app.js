@@ -42,9 +42,16 @@ async function loadAll(){
   if (S.isAuthenticated){
     try {
       const [me] = await Promise.all([client.query('users:me', {}), refreshSynagogues(), refreshInvitations()]);
-      S.me = me;
+      if (me === null){
+        /* יש טוקן ב-localStorage אבל השרת לא מזהה אותו (פג תוקף/בוטל) - מתייחסים כאל מנותק */
+        A.clearAuth();
+        S.isAuthenticated = false; S.me = null; S.synagogues = []; S.invitations = [];
+        toast('ההתחברות פגה. נא להתחבר מחדש.');
+      } else {
+        S.me = me;
+      }
     } catch(e){ console.warn(e); }
-    if (S.joinCode){
+    if (S.isAuthenticated && S.joinCode){
       try {
         const id = await client.mutation('invites:join', { code: S.joinCode });
         const joined = S.joinInfo;
@@ -120,7 +127,15 @@ async function createSynagogue(form){
     await refreshSynagogues();
     closeSheet(); toast('הקהילה נפתחה');
     render();
-  } catch(e){ toast(errMsg(e)); btn.disabled = false; }
+  } catch(e){
+    if (errMsg(e) === 'יש להתחבר'){
+      A.clearAuth();
+      S.isAuthenticated = false; S.me = null; S.synagogues = []; S.invitations = [];
+      closeSheet(); toast('ההתחברות פגה. נא להתחבר מחדש.'); render();
+      return;
+    }
+    toast(errMsg(e)); btn.disabled = false;
+  }
 }
 
 async function loadManagerData(id){

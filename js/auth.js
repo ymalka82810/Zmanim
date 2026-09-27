@@ -78,6 +78,11 @@ async function signOut(){
   write(ACTIVE_KEY, null);
 }
 
+/* מנקה טוקן שגוי/שפג תוקפו בלי לפנות לשרת (למשל אחרי שהתברר שהשרת לא מזהה את המשתמש) */
+function clearAuth(){
+  applyTokens(null);
+}
+
 /* הקהילה הפעילה משותפת ללוח הזמנים, ללוח הקידושים ולקופה */
 const ACTIVE_KEY = 'site.activeSynagogue';
 
@@ -90,5 +95,6 @@ window.SiteAuth = {
   signInWithGoogle,
   completeSignInFromRedirect,
   signOut,
+  clearAuth,
 };
 })();
