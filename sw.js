@@ -1,9 +1,10 @@
 /**
  * Service worker: מאפשר לאתר לעבוד בלי אינטרנט.
  * קבצי האתר: קודם מהרשת (כדי לקבל עדכונים), ואם אין חיבור – מהמטמון.
+ * הבקשה לרשת עוקפת את המטמון של הדפדפן, כי GitHub Pages מורה לשמור קבצים 10 דקות.
  * גופנים: מהמטמון, ואם אין – מהרשת.
  */
-const CACHE = 'luach-v9';
+const CACHE = 'luach-v10';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/app.js', 'js/menu.js', 'js/theme.js', 'js/astro.js', 'js/config.js', 'js/dates.js', 'js/hebrew.js', 'js/image.js', 'js/luach.js', 'js/template-read.js', 'js/template-render.js', 'js/template-ui.js', 'js/render.js', 'js/zmanim.js',
@@ -29,7 +30,7 @@ self.addEventListener('fetch', e => {
   const url = new URL(req.url);
 
   if (url.origin === location.origin) {
-    e.respondWith(fetch(req).then(res => {
+    e.respondWith(fetch(req, { cache: 'no-cache' }).then(res => {
       if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
       return res;
     }).catch(() => caches.match(req, { ignoreSearch: true })));
