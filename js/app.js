@@ -1,0 +1,213 @@
+/** ממשק האתר: לוח, הגדרות, שיתוף וגיבוי. הכל נשמר מקומית בדפדפן. */
+
+import { CITIES, BASES, WHEN, APPLIES, ROUND, DEFAULT_CONFIG, normalize, loadConfig, saveConfig, clearConfig } from './config.js';
+import { findOccasion, buildLuach } from './luach.js';
+import { luachHtml, luachText, esc } from './render.js';
+import { todayIn } from './dates.js';
+
+const $ = id => document.getElementById(id);
+const BASE_LABELS = Object.keys(BASES);
+
+let { cfg, saved } = loadConfig();
+let cursor = null;       // היום שממנו מחפשים את האירוע המוצג
+let current = null;      // הלוח המוצג כרגע
+
+/* ---------- הודעות ---------- */
+
+let toastTimer;
+function toast(text, err) {
+  const t = $('status');
+  t.textContent = text;
+  t.className = 'toast show' + (err ? ' err' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.className = 'toast'; }, 2200);
+}
+
+/* ---------- לשוניות ---------- */
+
+function showTab(name) {
+  for (const n of ['luach', 'settings']) {
+    $('tab-' + n).setAttribute('aria-selected', String(n === name));
+    $('view-' + n).hidden = n !== name;
+  }
+  if (name === 'luach') renderLuach();
+}
+$('tab-luach').onclick = () => showTab('luach');
+$('tab-settings').onclick = () => showTab('settings');
+$('goSettings').onclick = () => showTab('settings');
+
+/* ---------- הלוח ---------- */
+
+function renderLuach() {
+  $('welcome').hidden = saved;
+  if (cursor == null) cursor = todayIn(cfg.tz);
+  const occ = findOccasion(cursor, cfg.il);
+  if (!occ || !isFinite(cfg.lat) || !isFinite(cfg.lng)) {
+    current = null;
+    $('luach').innerHTML = '<p class="luach-empty">לא ניתן לחשב לוח. בדקו את המיקום בהגדרות.</p>';
+    return;
+  }
+  cursor = occ.first;
+  current = buildLuach(cfg, occ);
+  $('luach').innerHTML = luachHtml(current);
+  $('todayOcc').disabled = findOccasion(todayIn(cfg.tz), cfg.il).first === occ.first;
+}
+
+$('prevOcc').onclick = () => { const o = findOccasion(cursor - 1, cfg.il, -1); if (o) { cursor = o.first; renderLuach(); } };
+$('nextOcc').onclick = () => { const o = findOccasion(cursor, cfg.il); if (o) { cursor = o.last + 1; renderLuach(); } };
+$('todayOcc').onclick = () => { cursor = null; renderLuach(); };
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand('copy'); ta.remove(); return ok;
+  }
+}
+
+$('share').onclick = async () => {
+  if (!current) return;
+  const text = luachText(current);
+  if (navigator.share) {
+    try { await navigator.share({ title: current.title, text }); return; }
+    catch (e) { if (e.name === 'AbortError') return; }
+  }
+  toast(await copyText(text) ? 'הלוח הועתק. אפשר להדביק בוואטסאפ או במייל' : 'ההעתקה נכשלה', false);
+};
+$('copy').onclick = async () => {
+  if (current) toast(await copyText(luachText(current)) ? 'הלוח הועתק' : 'ההעתקה נכשלה');
+};
+$('print').onclick = () => {
+  const prev = document.title;
+  if (current) document.title = 'לוח זמנים - ' + current.title;   // שם קובץ ה-PDF
+  window.print();
+  document.title = prev;
+};
+
+/* ---------- הגדרות ---------- */
+
+$('city').innerHTML = CITIES.map(c => '<option value="' + c[0] + '">' + esc(c[1]) + '</option>').join('') +
+  '<option value="custom">מיקום אחר (קואורדינטות)</option>';
+
+const zones = (Intl.supportedValuesOf && Intl.supportedValuesOf('timeZone')) || ['Asia/Jerusalem', 'Europe/London', 'America/New_York'];
+$('tz').innerHTML = zones.map(z => '<option>' + esc(z) + '</option>').join('');
+
+const opts = (list, v) => list.map(x => '<option' + (x === v ? ' selected' : '') + '>' + esc(x) + '</option>').join('');
+
+function fill() {
+  $('shul').value = cfg.shul || '';
+  $('city').value = cfg.city || 'custom';
+  $('candle').value = cfg.candle;
+  $('lat').value = cfg.lat; $('lng').value = cfg.lng;
+  if (zones.indexOf(cfg.tz) < 0) $('tz').insertAdjacentHTML('afterbegin', '<option>' + esc(cfg.tz) + '</option>');
+  $('tz').value = cfg.tz;
+  $('il').value = cfg.il ? '1' : '0';
+  $('havdalah').value = String(cfg.havdalah);
+  $('notes').value = cfg.notes || '';
+  $('custom').hidden = cfg.city !== 'custom';
+  renderRules();
+}
+
+function renderRules() {
+  $('rules').innerHTML = cfg.rules.map((r, i) => {
+    const fixed = r.base === 'שעה קבועה';
+    return '<div class="rule" data-i="' + i + '"><div class="rule-top">' +
+      '<input data-k="name" value="' + esc(r.name) + '" placeholder="שם התפילה או השיעור" aria-label="שם התפילה">' +
+      '<button type="button" data-del="' + i + '" aria-label="מחיקת ' + esc(r.name) + '">מחיקה</button></div>' +
+      '<div class="rgrid">' +
+      '<div><label>מתי</label><select data-k="when">' + opts(WHEN, r.when) + '</select></div>' +
+      '<div><label>חל על</label><select data-k="applies">' + opts(APPLIES, r.applies) + '</select></div>' +
+      '<div><label>לפי</label><select data-k="base">' + opts(BASE_LABELS, r.base) + '</select></div>' +
+      '<div><label>' + (fixed ? 'שעה' : 'הפרש (דקות)') + '</label><input data-k="offset" value="' + esc(r.offset) +
+      '" placeholder="' + (fixed ? '08:00' : '-20') + '" dir="ltr" inputmode="' + (fixed ? 'text' : 'numeric') + '"></div>' +
+      '<div><label>עיגול</label><select data-k="round"' + (fixed ? ' disabled' : '') + '>' + opts(ROUND, r.round) + '</select></div>' +
+      '</div></div>';
+  }).join('');
+}
+
+let saveTimer;
+function changed() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    if (saveConfig(cfg)) { saved = true; toast('נשמר'); }
+    else toast('לא ניתן לשמור במכשיר הזה (מצב גלישה פרטית?)', true);
+  }, 400);
+}
+
+$('rules').addEventListener('input', e => {
+  const box = e.target.closest('.rule'), k = e.target.getAttribute('data-k');
+  if (!box || !k) return;
+  const r = cfg.rules[+box.getAttribute('data-i')];
+  r[k] = e.target.value;
+  if (k === 'base') {
+    if (r.base === 'שעה קבועה' && r.offset.indexOf(':') < 0) r.offset = '08:00';
+    if (r.base !== 'שעה קבועה' && r.offset.indexOf(':') >= 0) r.offset = '0';
+    renderRules();
+  }
+  changed();
+});
+$('rules').addEventListener('click', e => {
+  const i = e.target.getAttribute('data-del');
+  if (i === null) return;
+  cfg.rules.splice(+i, 1); renderRules(); changed();
+});
+$('addRule').onclick = () => {
+  cfg.rules.push({ name: '', when: 'כל יום', applies: 'שבת וחג', base: 'שקיעה', offset: '0', round: 'ללא' });
+  renderRules(); changed();
+  $('rules').lastElementChild.querySelector('input').focus();
+};
+
+$('city').onchange = () => {
+  cfg.city = $('city').value;
+  const c = CITIES.find(x => x[0] === cfg.city);
+  if (c) Object.assign(cfg, { lat: c[2], lng: c[3], candle: c[4], tz: 'Asia/Jerusalem', il: true });
+  cursor = null; fill(); changed();
+};
+const bind = (id, fn) => $(id).addEventListener('input', () => { fn($(id).value); changed(); });
+bind('shul', v => { cfg.shul = v; });
+bind('candle', v => { cfg.candle = Number(v) || 0; });
+bind('lat', v => { cfg.lat = Number(v); });
+bind('lng', v => { cfg.lng = Number(v); });
+bind('tz', v => { cfg.tz = v; cursor = null; });
+bind('il', v => { cfg.il = v === '1'; cursor = null; });
+bind('havdalah', v => { cfg.havdalah = v; });
+bind('notes', v => { cfg.notes = v; });
+
+/* ---------- גיבוי ---------- */
+
+$('export').onclick = () => {
+  const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'luach-settings' + (cfg.shul ? '-' + cfg.shul.replace(/[\\/:*?"<>|]/g, '') : '') + '.json';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+$('import').onclick = () => $('importFile').click();
+$('importFile').onchange = async () => {
+  const f = $('importFile').files[0];
+  $('importFile').value = '';
+  if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    if (!data || typeof data !== 'object' || !Array.isArray(data.rules)) throw new Error();
+    cfg = normalize(data); cursor = null; fill(); saveConfig(cfg); saved = true;
+    toast('ההגדרות נטענו');
+  } catch (e) { toast('הקובץ לא תקין', true); }
+};
+$('reset').onclick = () => {
+  if (!confirm('למחוק את כל ההגדרות במכשיר הזה ולחזור לברירת המחדל?')) return;
+  clearConfig();
+  cfg = normalize(DEFAULT_CONFIG); saved = false; cursor = null; fill();
+  toast('ההגדרות אופסו');
+};
+
+/* ---------- הפעלה ---------- */
+
+fill();
+renderLuach();
+
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}

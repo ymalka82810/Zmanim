@@ -1,0 +1,14 @@
+{
+  "name": "zmanim",
+  "version": "1.0.0",
+  "private": true,
+  "description": "לוח זמנים לבית הכנסת - אתר סטטי שעובד אופליין",
+  "type": "module",
+  "scripts": {
+    "start": "node tools/serve.js",
+    "test": "node test/verify.js"
+  },
+  "devDependencies": {
+    "@hebcal/core": "^5.0.0"
+  }
+}
