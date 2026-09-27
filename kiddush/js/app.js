@@ -9,7 +9,8 @@ const ERR = {
   'no-gate': 'הלוח עדיין לא חובר לשירות ההרשמה של האתר. בעל האתר צריך להשלים את ההתקנה.',
   'no-access': 'הגיליון לא נמצא. ודאו שהקישור נכון, ושהגיליון נוצר מתוך הלוח.',
   'not-board': 'הקישור מוביל לגיליון שאינו לוח קידושים שנוצר מתוך הלוח.',
-  'bad-sheet': 'הקישור לא תקין.'
+  'bad-sheet': 'הקישור לא תקין.',
+  closed: 'לא הצלחנו לקרוא את הגיליון. ודאו שהקישור נכון ושהגיליון משותף ל"כל מי שיש לו את הקישור".'
 };
 const errText = e => ERR[e && e.code] || 'לא הצלחנו לקרוא את הלוח. נסו שוב בעוד רגע.';
 const $ = s => document.querySelector(s);
@@ -151,14 +152,18 @@ function calHTML(){
 
 /* Start: הקמת גיליון או חיבור לגיליון קיים */
 function renderStart(app){
-  const canCreate = G.hasClientId() && G.hasGate();
-  app.innerHTML = `<div class="hero"><h1>לוח קידושים</h1><p class="muted">הלוח מציג את גיליון הקידושים של בית הכנסת. המתפללים נרשמים בלוח, והרישומים נשמרים בגיליון גוגל של הגבאי.</p></div>
+  const canCreate = G.hasClientId(), gated = G.hasGate();
+  app.innerHTML = `<div class="hero"><h1>לוח קידושים</h1><p class="muted">הלוח מציג את גיליון הקידושים של בית הכנסת. ${gated
+      ? 'המתפללים נרשמים בלוח, והרישומים נשמרים בגיליון גוגל של הגבאי.'
+      : 'המתפללים נרשמים בגיליון גוגל של הגבאי, והלוח מסדר את הרישומים לפי שבתות וחגים.'}</p></div>
     <div class="card"><h3>קיבלתי קישור מהגבאי</h3>
       <label class="f" for="fLink">הדביקו כאן את הקישור ללוח או לגיליון</label>
       <input type="text" id="fLink" dir="ltr" placeholder="https://docs.google.com/spreadsheets/d/…">
       <div class="row" style="margin-top:12px"><button class="btn" data-act="connect">פתיחת הלוח</button></div></div>
     <div class="card"><h3>אני גבאי: הקמת גיליון חדש</h3>
-      <p class="small muted" style="margin:0 0 4px">הגיליון ייווצר בגוגל דרייב שלך ויהיה שייך לך. יהיו בו שורות לכל השבתות והחגים בשנה הקרובה. רק את/ה יכול/ה לערוך אותו. המתפללים נרשמים דרך הלוח, והלוח כותב רק לשבת פנויה.</p>
+      <p class="small muted" style="margin:0 0 4px">הגיליון ייווצר בגוגל דרייב שלך ויהיה שייך לך. יהיו בו שורות לכל השבתות והחגים בשנה הקרובה. ${gated
+        ? 'רק את/ה יכול/ה לערוך אותו. המתפללים נרשמים דרך הלוח, והלוח כותב רק לשבת פנויה.'
+        : 'כל מי שיקבל ממך את הקישור יוכל לכתוב בו.'}</p>
       <label class="f" for="fName">שם בית הכנסת</label><input type="text" id="fName" maxlength="80">
       <label class="f" for="fIl">מיקום (קובע את סדר הפרשות והחגים)</label>
       <select id="fIl"><option value="1">ארץ ישראל</option><option value="0">חוץ לארץ</option></select>
@@ -184,10 +189,13 @@ function slotSheet(k){
       ${r.note?`<dt>הערה</dt><dd>${esc(r.note)}</dd>`:''}</dl>`;
   } else if (r) html += `<p><span class="chip ${past?'block':'free'}">${past?'לא נקבע קידוש':'פנוי לקידוש'}</span></p>`;
   else html += `<p class="muted">התאריך הזה עדיין לא נמצא בגיליון.${past?'':' הגבאי יכול להוסיף את השנה הבאה מתפריט ההגדרות.'}</p>`;
-  if (r && !past){
+  if (r && !past && G.hasGate()){
     html += r.sponsor
       ? '<p class="meta">לשינוי או לביטול הרישום פנו לגבאי.</p>'
       : `<div class="row" style="margin-top:14px"><button class="btn" data-act="register" data-k="${k}">הרשמה לקידוש</button></div>`;
+  } else if (r && !past){ // בלי שומר סף: נרשמים ישירות בגיליון
+    html += `<div class="row" style="margin-top:14px"><a class="btn" href="${esc(G.editUrl(S.id, r.row))}" target="_blank" rel="noopener">${r.sponsor ? 'עריכה בגיליון' : 'להרשמה בגיליון'}</a></div>
+      <p class="meta">הגיליון ייפתח בשורה של השבת הזו. אחרי ההרשמה חזרו ללוח ולחצו על כפתור הרענון.</p>`;
   }
   openSheet(html);
 }
@@ -213,8 +221,10 @@ function shareBlock(id){
 }
 function createdSheet(res){
   openSheet(sheetHead('הגיליון מוכן') + `
-    <p>הגיליון נוצר בגוגל דרייב שלך, ורק את/ה יכול/ה לערוך אותו.</p>
-    <p class="small muted">שלחו למתפללים את הקישור ללוח. הם יירשמו דרך הלוח, והרישום ייכתב בגיליון. בגיליון אפשר לתקן או למחוק רישומים.</p>
+    ${G.hasGate() ? `<p>הגיליון נוצר בגוגל דרייב שלך, ורק את/ה יכול/ה לערוך אותו.</p>
+    <p class="small muted">שלחו למתפללים את הקישור ללוח. הם יירשמו דרך הלוח, והרישום ייכתב בגיליון. בגיליון אפשר לתקן או למחוק רישומים.</p>`
+    : `<p>הגיליון נוצר בגוגל דרייב שלך, וכל מי שיש לו את הקישור יכול לכתוב בו.</p>
+    <p class="small muted">שלחו למתפללים את הקישור ללוח. בלוח, ליד כל שבת פנויה, יש כפתור שפותח את הגיליון בדיוק בשורה של אותה שבת.</p>`}
     ${res.formatted ? '' : '<div class="warn">חלק מהעיצוב של הגיליון (רשימת הבחירה והצבעים) לא הושלם. הגיליון עצמו תקין.</div>'}
     ${shareBlock(res.id)}`);
 }
