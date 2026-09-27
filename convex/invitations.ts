@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { assertRabbiAvailable, getMembership, normalizeEmail, requireManager, requireUser, roleValidator } from "./roles";
@@ -37,17 +38,30 @@ export const create = mutation({
       .query("invitations")
       .withIndex("by_synagogue_email", (q) => q.eq("synagogueId", args.synagogueId).eq("email", email))
       .unique();
+    let invitationId: Id<"invitations">;
     if (existing !== null) {
       await ctx.db.patch(existing._id, { role: args.role, invitedBy: userId, createdAt: Date.now() });
-      return existing._id;
+      invitationId = existing._id;
+    } else {
+      invitationId = await ctx.db.insert("invitations", {
+        synagogueId: args.synagogueId,
+        email,
+        role: args.role,
+        invitedBy: userId,
+        createdAt: Date.now(),
+      });
     }
-    return await ctx.db.insert("invitations", {
-      synagogueId: args.synagogueId,
+
+    const synagogue = await ctx.db.get(args.synagogueId);
+    const inviter = await ctx.db.get(userId);
+    await ctx.scheduler.runAfter(0, internal.email.sendInvitationEmail, {
       email,
       role: args.role,
-      invitedBy: userId,
-      createdAt: Date.now(),
+      synagogueName: synagogue?.name ?? "",
+      invitedByName: inviter?.name ?? inviter?.email ?? "מנהל הקהילה",
     });
+
+    return invitationId;
   },
 });
 
