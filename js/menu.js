@@ -27,13 +27,17 @@ const css = `
 .sm-drawer a{display:block;padding:12px 14px;border-radius:10px;color:inherit;text-decoration:none;font-size:1.05rem;font-weight:600}
 .sm-drawer a:hover{background:#eef3fa}
 .sm-drawer a[aria-current="page"]{background:#e3e9f2;color:#2c4a7c}
-@media (prefers-color-scheme:dark){
-  .sm-bar{background:#1b2d56}
-  .sm-drawer{background:#1a1f28;color:#e8ecf2}
-  .sm-drawer h2{color:#9ba4b3}
-  .sm-drawer a:hover{background:#232a36}
-  .sm-drawer a[aria-current="page"]{background:#2a3446;color:#fff}
-}
+.sm-theme{display:flex;margin:0 10px;padding:3px;border:1px solid #d6dce8;border-radius:999px}
+.sm-theme button{flex:1;padding:7px 4px;border:0;border-radius:999px;background:none;color:#5d6b82;font:inherit;font-weight:600;cursor:pointer}
+.sm-theme button[aria-pressed="true"]{background:#2c4a7c;color:#fff}
+:root[data-theme="dark"] .sm-bar{background:#1b2d56}
+:root[data-theme="dark"] .sm-drawer{background:#1a1f28;color:#e8ecf2}
+:root[data-theme="dark"] .sm-drawer h2{color:#9ba4b3}
+:root[data-theme="dark"] .sm-drawer a:hover{background:#232a36}
+:root[data-theme="dark"] .sm-drawer a[aria-current="page"]{background:#2a3446;color:#fff}
+:root[data-theme="dark"] .sm-theme{border-color:#2d3440}
+:root[data-theme="dark"] .sm-theme button{color:#9ba4b3}
+:root[data-theme="dark"] .sm-theme button[aria-pressed="true"]{background:#8fb0ec;color:#0f1524}
 @media print{.sm-bar,.sm-layer{display:none!important}}
 `;
 
@@ -60,6 +64,29 @@ function build(){
     a.textContent = p.title;
     if (p === current) a.setAttribute('aria-current', 'page');
     nav.appendChild(a);
+  }
+
+  if (window.SiteTheme){
+    const h = document.createElement('h2');
+    h.textContent = 'תצוגה';
+    h.style.marginTop = '22px';
+    const seg = document.createElement('div');
+    seg.className = 'sm-theme';
+    seg.setAttribute('role', 'group');
+    seg.setAttribute('aria-label', 'מצב תצוגה');
+    const choices = [['auto', 'אוטומטי'], ['light', 'יום'], ['dark', 'לילה']];
+    const mark = () => seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.pref === SiteTheme.pref)));
+    for (const [pref, label] of choices){
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.dataset.pref = pref;
+      b.textContent = label;
+      b.addEventListener('click', () => { SiteTheme.set(pref); mark(); });
+      seg.appendChild(b);
+    }
+    mark();
+    document.addEventListener('sitethemechange', mark);
+    nav.append(h, seg);
   }
 
   const btn = bar.querySelector('.sm-btn');
