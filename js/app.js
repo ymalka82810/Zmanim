@@ -4,6 +4,7 @@ import { CITIES, BASES, WHEN, APPLIES, ROUND, DEFAULT_CONFIG, normalize, loadCon
 import { findOccasion, buildLuach } from './luach.js';
 import { luachHtml, luachText, esc } from './render.js';
 import { todayIn } from './dates.js';
+import { luachCanvas, pngBlob, pdfBlob } from './image.js';
 
 const $ = id => document.getElementById(id);
 const BASE_LABELS = Object.keys(BASES);
@@ -66,6 +67,55 @@ async function copyText(text) {
   }
 }
 
+/*
+ * קבצי תמונה ו-PDF מוכנים מראש לכל לוח שמוצג. בספארי (אייפון) השיתוף חייב לקרות
+ * מיד אחרי הלחיצה, ולכן אי אפשר לחכות ליצירת הקובץ בזמן הלחיצה.
+ */
+let files = null;   // { luach, promise }
+let prepTimer;
+
+function makeFiles(l) {
+  const name = ('לוח זמנים - ' + l.title).replace(/[\\/:*?"<>|]/g, '');
+  const promise = luachCanvas(l).then(async canvas => ({
+    png: new File([await pngBlob(canvas)], name + '.png', { type: 'image/png' }),
+    pdf: new File([await pdfBlob(canvas)], name + '.pdf', { type: 'application/pdf' })
+  }));
+  promise.catch(() => {});
+  files = { luach: l, promise };
+}
+function prepareFiles() {
+  clearTimeout(prepTimer);
+  const l = current;
+  if (l) prepTimer = setTimeout(() => makeFiles(l), 250);
+}
+function getFiles() {
+  if (!files || files.luach !== current) { clearTimeout(prepTimer); makeFiles(current); }
+  return files.promise;
+}
+
+function download(file) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file);
+  a.download = file.name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+async function shareFile(kind) {
+  if (!current) return;
+  let file;
+  try { file = (await getFiles())[kind]; }
+  catch (e) { toast('יצירת הקובץ נכשלה', true); return; }
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: current.title }); return; }
+    catch (e) { if (e.name === 'AbortError') return; }
+  }
+  download(file);
+  toast('הקובץ נשמר בהורדות');
+}
+$('shareImg').onclick = () => shareFile('png');
+$('sharePdf').onclick = () => shareFile('pdf');
+
 $('share').onclick = async () => {
   if (!current) return;
   const text = luachText(current);
@@ -74,9 +124,6 @@ $('share').onclick = async () => {
     catch (e) { if (e.name === 'AbortError') return; }
   }
   toast(await copyText(text) ? 'הלוח הועתק. אפשר להדביק בוואטסאפ או במייל' : 'ההעתקה נכשלה', false);
-};
-$('copy').onclick = async () => {
-  if (current) toast(await copyText(luachText(current)) ? 'הלוח הועתק' : 'ההעתקה נכשלה');
 };
 $('print').onclick = () => {
   const prev = document.title;
