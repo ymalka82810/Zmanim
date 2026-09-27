@@ -4,11 +4,11 @@
  * הבקשה לרשת עוקפת את המטמון של הדפדפן, כי GitHub Pages מורה לשמור קבצים 10 דקות.
  * גופנים: מהמטמון, ואם אין – מהרשת.
  */
-const CACHE = 'luach-v18';
+const CACHE = 'luach-v19';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/app.js', 'js/menu.js', 'js/theme.js', 'js/astro.js', 'js/config.js', 'js/dates.js', 'js/hebrew.js', 'js/image.js', 'js/luach.js', 'js/moadim.js', 'js/template-read.js', 'js/template-render.js', 'js/template-ui.js', 'js/render.js', 'js/zmanim.js',
-  'js/convex-config.js', 'js/auth.js',
+  'js/convex-config.js', 'js/auth.js', 'js/community.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
   'vendor/hebcal/hebcal-core-6.9.3.min.js',
   'vendor/convex/convex-browser-1.46.0.js',

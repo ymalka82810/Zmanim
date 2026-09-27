@@ -105,6 +105,19 @@ export default defineSchema({
     .index("by_synagogue", ["synagogueId"])
     .index("by_synagogue_donor", ["synagogueId", "donorId"]),
 
+  scheduleFiles: defineTable({
+    synagogueId: v.id("synagogues"),
+    storageId: v.id("_storage"),
+    title: v.string(),
+    firstDate: v.string(),
+    mode: v.union(v.literal("holy"), v.literal("days")),
+    status: v.union(v.literal("pending"), v.literal("approved")),
+    submittedBy: v.id("users"),
+    submittedAt: v.number(),
+    approvedBy: v.optional(v.id("users")),
+    approvedAt: v.optional(v.number()),
+  }).index("by_synagogue_first", ["synagogueId", "firstDate"]),
+
   fundSettings: defineTable({
     synagogueId: v.id("synagogues"),
     openMain: v.number(),

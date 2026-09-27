@@ -1,14 +1,15 @@
-/** ממשק האתר: לוח, הגדרות, שיתוף וגיבוי. הכל נשמר מקומית בדפדפן. */
+/** ממשק האתר: לוח, הגדרות, שיתוף וגיבוי. ההגדרות נשמרות מקומית בדפדפן, והלוחות המאושרים נשמרים בקהילה (community.js). */
 
 import { CITIES, BASES, WHEN, APPLIES, ROUND, FONTS, THEMES, SIZE_PARTS, SIZES, DEFAULT_CONFIG, DAY_APPLIES, BUILTIN, isBuiltin, newTemplate, designOf, activeDesign,
   prayerBases, fontFamilies, fontsHref, themeColors, normalize, loadConfig, saveConfig, clearConfig } from './config.js';
 import { findPeriod, stepPeriod, templateFor, nextPeriodFor, buildLuach, buildDaysLuach } from './luach.js';
 import { MOADIM } from './moadim.js';
 import { luachHtml, luachText, esc } from './render.js';
-import { todayIn } from './dates.js';
+import { todayIn, toYmd } from './dates.js';
 import { luachCanvas, pngBlob, pdfBlob } from './image.js';
 import { templateCanvas } from './template-render.js';
 import { editFromFile, editExisting, mergeRules } from './template-ui.js';
+import { initCommunity } from './community.js';
 
 const $ = id => document.getElementById(id);
 const BASE_LABELS = Object.keys(BASES);
@@ -629,6 +630,15 @@ $('reset').onclick = () => {
 
 fill();
 renderLuach();
+
+initCommunity({
+  toast,
+  async getLuachFile() {
+    if (!current || !period) return null;
+    const { png } = await getFiles();
+    return { file: png, title: current.title, firstDate: toYmd(period.first), mode: period.mode === 'days' ? 'days' : 'holy' };
+  }
+});
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});

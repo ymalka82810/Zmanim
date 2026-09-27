@@ -17,6 +17,7 @@ import type * as invites from "../invites.js";
 import type * as kiddush from "../kiddush.js";
 import type * as members from "../members.js";
 import type * as roles from "../roles.js";
+import type * as schedules from "../schedules.js";
 import type * as synagogues from "../synagogues.js";
 import type * as users from "../users.js";
 
@@ -36,6 +37,7 @@ declare const fullApi: ApiFromModules<{
   kiddush: typeof kiddush;
   members: typeof members;
   roles: typeof roles;
+  schedules: typeof schedules;
   synagogues: typeof synagogues;
   users: typeof users;
 }>;

@@ -19,14 +19,21 @@
 <div class="stripes" aria-hidden="true"></div>
 <header class="wrap top">
   <h1>לוח זמנים לבית הכנסת</h1>
-  <nav class="tabs" role="tablist">
+  <nav class="tabs" role="tablist" hidden>
     <button role="tab" id="tab-luach" aria-selected="true" aria-controls="view-luach">הלוח</button>
     <button role="tab" id="tab-settings" aria-selected="false" aria-controls="view-settings">הגדרות</button>
   </nav>
 </header>
 
 <main class="wrap">
-  <section id="view-luach" role="tabpanel" aria-labelledby="tab-luach">
+  <section id="view-gate"><div class="panel gate"><p>טוען…</p></div></section>
+
+  <section id="view-community" hidden>
+    <h2 class="community-title">לוח הזמנים – <span id="memberCommunityName"></span></h2>
+    <div id="communityList"></div>
+  </section>
+
+  <section id="view-luach" role="tabpanel" aria-labelledby="tab-luach" hidden>
     <div id="welcome" class="panel hint-panel" hidden>
       ברוכים הבאים! הלוח מחושב כרגע לפי הגדרות לדוגמה.
       <button type="button" class="link" id="goSettings">להגדרת בית הכנסת והתפילות ←</button>
@@ -47,6 +54,12 @@
       <button type="button" id="sharePdf">שיתוף PDF</button>
       <button type="button" id="share">שיתוף טקסט</button>
       <button type="button" id="print">הדפסה</button>
+    </div>
+    <div class="panel community-panel" id="communityPanel" hidden>
+      <h2>לוח לקהילה – <span id="communityName"></span></h2>
+      <p class="hint">חברי הקהילה רואים רק לוחות שגבאי או רב אישרו. התפקיד שלך: <span id="communityRole"></span>.</p>
+      <div class="actions left"><button type="button" class="primary" id="submitLuach">שליחת הלוח המוצג לאישור</button></div>
+      <div id="communityFiles"></div>
     </div>
   </section>
 
@@ -201,9 +214,12 @@
 </main>
 
 <div class="toast" id="status" role="status" aria-live="polite"></div>
-<footer class="wrap credit">החישובים נעשים במכשיר שלך. שום מידע לא נשלח לשרת.</footer>
+<footer class="wrap credit">זמני היום והתפילות מחושבים במכשיר שלך.</footer>
 
 <script src="js/menu.js"></script>
+<script src="js/convex-config.js"></script>
+<script src="vendor/convex/convex-browser-1.46.0.js"></script>
+<script src="js/auth.js"></script>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>
