@@ -12,10 +12,15 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.2",
-    "@hebcal/core": "^5.0.0"
+    "@hebcal/core": "^5.0.0",
+    "@types/node": "^26.6.3",
+    "typescript": "^7.0.2"
   },
   "dependencies": {
+    "@auth/core": "^0.41.3",
     "@capacitor/android": "^8.5.2",
-    "@capacitor/core": "^8.5.2"
+    "@capacitor/core": "^8.5.2",
+    "@convex-dev/auth": "^0.0.95",
+    "convex": "^1.46.0"
   }
 }

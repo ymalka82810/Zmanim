@@ -8,7 +8,8 @@ const ROOT = new URL('..', document.currentScript.src);
 const PAGES = [
   { path: '',         title: 'לוח זמנים' },
   { path: 'kiddush/', title: 'לוח קידושים' },
-  { path: 'gabbai/',  title: 'קופת בית הכנסת' }
+  { path: 'gabbai/',  title: 'קופת בית הכנסת' },
+  { path: 'account/', title: 'החשבון שלי' }
 ];
 const here = location.pathname.replace(/index\.html$/, '');
 const current = PAGES.slice().reverse().find(p => here === new URL(p.path, ROOT).pathname) || PAGES[0];
