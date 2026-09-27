@@ -3,11 +3,14 @@
  * קבצי האתר: קודם מהרשת (כדי לקבל עדכונים), ואם אין חיבור – מהמטמון.
  * גופנים: מהמטמון, ואם אין – מהרשת.
  */
-const CACHE = 'luach-v6';
+const CACHE = 'luach-v7';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/app.js', 'js/astro.js', 'js/config.js', 'js/dates.js', 'js/hebrew.js', 'js/image.js', 'js/luach.js', 'js/template-read.js', 'js/template-render.js', 'js/template-ui.js', 'js/render.js', 'js/zmanim.js',
-  'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'
+  'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
+  'vendor/hebcal/hebcal-core-6.9.3.min.js',
+  'kiddush/', 'kiddush/index.html', 'kiddush/css/styles.css', 'kiddush/js/local-store.js', 'kiddush/js/default-terms.js', 'kiddush/js/calendar.js', 'kiddush/js/app.js',
+  'gabbai/', 'gabbai/index.html', 'gabbai/css/styles.css', 'gabbai/js/app.js'
 ];
 
 self.addEventListener('install', e => {

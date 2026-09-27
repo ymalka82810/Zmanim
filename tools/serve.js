@@ -13,7 +13,9 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; ch
   '.json': 'application/json', '.mjs': 'text/javascript; charset=utf-8', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png' };
 
 createServer(async (req, res) => {
-  let path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+  let path;
+  try { path = decodeURIComponent(new URL(req.url, 'http://x').pathname); }
+  catch { res.writeHead(400).end('Bad request'); return; }
   if (path.endsWith('/')) path += 'index.html';
   const file = normalize(join(ROOT, path));
   if (!file.startsWith(ROOT) || /[\\/](node_modules|\.git|test|tools)[\\/]/.test(file.slice(ROOT.length - 1))) {

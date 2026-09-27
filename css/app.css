@@ -11,6 +11,10 @@ main.wrap { padding-bottom: 40px; }
 h1 { font-family: "Frank Ruhl Libre", Georgia, serif; font-weight: 900; font-size: 1.7rem; margin: 10px 0 8px; }
 h2 { font-family: "Frank Ruhl Libre", Georgia, serif; font-size: 1.2rem; margin: 0 0 10px; }
 
+.apps { display: flex; gap: 14px; justify-content: flex-end; padding-top: 8px; font-size: .88rem; }
+.apps a { color: var(--muted); text-decoration: none; }
+.apps a:hover { color: var(--blue); text-decoration: underline; }
+
 .tabs { display: flex; gap: 4px; border-bottom: 2px solid var(--line); margin-bottom: 16px; }
 .tabs button { border: none; border-radius: 6px 6px 0 0; padding: 8px 18px; margin-bottom: -2px; border-bottom: 2px solid transparent; color: var(--muted); }
 .tabs button[aria-selected="true"] { color: var(--blue); border-bottom-color: var(--blue); }
