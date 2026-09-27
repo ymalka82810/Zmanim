@@ -1,7 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { requireGabbai } from "./synagogues";
+import { requireManager } from "./roles";
 import { randomInviteCode } from "./inviteCode";
 
 export const preview = query({
@@ -54,7 +54,7 @@ export const join = mutation({
 export const rotate = mutation({
   args: { synagogueId: v.id("synagogues") },
   handler: async (ctx, args) => {
-    await requireGabbai(ctx, args.synagogueId);
+    await requireManager(ctx, args.synagogueId);
     const newCode = randomInviteCode();
     await ctx.db.patch(args.synagogueId, { inviteCode: newCode });
     return newCode;

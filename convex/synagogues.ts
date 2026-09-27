@@ -1,24 +1,8 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
-import type { MutationCtx } from "./_generated/server";
 import { randomInviteCode } from "./inviteCode";
-
-export async function requireGabbai(ctx: MutationCtx, synagogueId: Id<"synagogues">) {
-  const userId = await getAuthUserId(ctx);
-  if (userId === null) {
-    throw new Error("יש להתחבר");
-  }
-  const membership = await ctx.db
-    .query("memberships")
-    .withIndex("by_synagogue_user", (q) => q.eq("synagogueId", synagogueId).eq("userId", userId))
-    .unique();
-  if (membership === null || membership.role !== "gabbai") {
-    throw new Error("פעולה זו מותרת לגבאי בלבד");
-  }
-  return { userId, membership };
-}
+import { isManager, requireManager } from "./roles";
 
 export const create = mutation({
   args: {
@@ -71,7 +55,7 @@ export const mine = query({
           name: synagogue.name,
           city: synagogue.city,
           il: synagogue.il,
-          inviteCode: synagogue.inviteCode,
+          inviteCode: isManager(membership.role) ? synagogue.inviteCode : null,
           role: membership.role,
         };
       }),
@@ -88,7 +72,7 @@ export const update = mutation({
     il: v.boolean(),
   },
   handler: async (ctx, args) => {
-    await requireGabbai(ctx, args.synagogueId);
+    await requireManager(ctx, args.synagogueId);
     await ctx.db.patch(args.synagogueId, {
       name: args.name,
       city: args.city,

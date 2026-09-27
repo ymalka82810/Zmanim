@@ -75,10 +75,16 @@ async function completeSignInFromRedirect(){
 async function signOut(){
   try { await getClient().action('auth:signOut', {}); } catch(e){ /* כנראה כבר מנותק */ }
   applyTokens(null);
+  write(ACTIVE_KEY, null);
 }
+
+/* הקהילה הפעילה משותפת ללוח הזמנים, ללוח הקידושים ולקופה */
+const ACTIVE_KEY = 'site.activeSynagogue';
 
 window.SiteAuth = {
   client: getClient,
+  activeSynagogueId(){ return read(ACTIVE_KEY); },
+  setActiveSynagogueId(id){ write(ACTIVE_KEY, id); },
   isAuthenticated(){ return !!read(TOKEN_KEY); },
   onChange(fn){ listeners.add(fn); return () => listeners.delete(fn); },
   signInWithGoogle,

@@ -10,9 +10,11 @@
 
 import type * as auth from "../auth.js";
 import type * as http from "../http.js";
+import type * as invitations from "../invitations.js";
 import type * as inviteCode from "../inviteCode.js";
 import type * as invites from "../invites.js";
 import type * as members from "../members.js";
+import type * as roles from "../roles.js";
 import type * as synagogues from "../synagogues.js";
 import type * as users from "../users.js";
 
@@ -25,9 +27,11 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   http: typeof http;
+  invitations: typeof invitations;
   inviteCode: typeof inviteCode;
   invites: typeof invites;
   members: typeof members;
+  roles: typeof roles;
   synagogues: typeof synagogues;
   users: typeof users;
 }>;

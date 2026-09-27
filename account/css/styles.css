@@ -73,6 +73,12 @@ input[type=text],select{width:100%;border:1px solid var(--line);background:var(-
 .role-chip{display:inline-flex;align-items:center;border-radius:999px;padding:4px 11px;font-size:.8rem;font-weight:700;white-space:nowrap}
 .role-chip.gabbai{background:var(--wine-soft);color:var(--wine)}
 .role-chip.member{background:var(--block-soft);color:var(--block)}
+.role-chip.rabbi{background:var(--pend-soft);color:var(--pend)}
+.active-badge{display:inline-block;margin-inline-start:6px;background:var(--free-soft);color:var(--free);border-radius:999px;padding:2px 9px;font-size:.75rem;font-weight:700}
+.invite-item{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 4px;border-bottom:1px solid var(--line)}
+.invite-item:last-child{border-bottom:0}
+.invite-item .info .n{font-weight:700}
+.invite-item .info .c{color:var(--muted);font-size:.85rem}
 
 /* חברי בית הכנסת */
 .member-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}

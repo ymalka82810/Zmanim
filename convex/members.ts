@@ -1,31 +1,25 @@
-import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
-import { requireGabbai } from "./synagogues";
+import type { MutationCtx } from "./_generated/server";
+import {
+  countManagers,
+  getMembership,
+  isManager,
+  requireManager,
+  requireUser,
+  roleValidator,
+} from "./roles";
 
 export const list = query({
   args: { synagogueId: v.id("synagogues") },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error("יש להתחבר");
-    }
-    const requesterMembership = await ctx.db
-      .query("memberships")
-      .withIndex("by_synagogue_user", (q) =>
-        q.eq("synagogueId", args.synagogueId).eq("userId", userId),
-      )
-      .unique();
-    if (requesterMembership === null || requesterMembership.role !== "gabbai") {
-      throw new Error("פעולה זו מותרת לגבאי בלבד");
-    }
+    await requireManager(ctx, args.synagogueId);
     const memberships = await ctx.db
       .query("memberships")
       .withIndex("by_synagogue", (q) => q.eq("synagogueId", args.synagogueId))
       .collect();
-    const members = await Promise.all(
+    return await Promise.all(
       memberships.map(async (membership) => {
         const user = await ctx.db.get(membership.userId);
         return {
@@ -38,40 +32,29 @@ export const list = query({
         };
       }),
     );
-    return members;
   },
 });
 
-async function countGabbaim(ctx: MutationCtx, synagogueId: Id<"synagogues">) {
-  const memberships = await ctx.db
-    .query("memberships")
-    .withIndex("by_synagogue", (q) => q.eq("synagogueId", synagogueId))
-    .collect();
-  return memberships.filter((m) => m.role === "gabbai").length;
+async function assertNotLastManager(ctx: MutationCtx, synagogueId: Id<"synagogues">, message: string) {
+  if ((await countManagers(ctx, synagogueId)) <= 1) {
+    throw new Error(message);
+  }
 }
 
 export const setRole = mutation({
   args: {
     synagogueId: v.id("synagogues"),
     userId: v.id("users"),
-    role: v.union(v.literal("gabbai"), v.literal("member")),
+    role: roleValidator,
   },
   handler: async (ctx, args) => {
-    await requireGabbai(ctx, args.synagogueId);
-    const membership = await ctx.db
-      .query("memberships")
-      .withIndex("by_synagogue_user", (q) =>
-        q.eq("synagogueId", args.synagogueId).eq("userId", args.userId),
-      )
-      .unique();
+    await requireManager(ctx, args.synagogueId);
+    const membership = await getMembership(ctx, args.synagogueId, args.userId);
     if (membership === null) {
-      throw new Error("החבר לא נמצא בבית הכנסת");
+      throw new Error("החבר לא נמצא בקהילה");
     }
-    if (membership.role === "gabbai" && args.role === "member") {
-      const gabbaiCount = await countGabbaim(ctx, args.synagogueId);
-      if (gabbaiCount <= 1) {
-        throw new Error("צריך להישאר לפחות גבאי אחד");
-      }
+    if (isManager(membership.role) && !isManager(args.role)) {
+      await assertNotLastManager(ctx, args.synagogueId, "צריך להישאר לפחות גבאי או רב אחד");
     }
     await ctx.db.patch(membership._id, { role: args.role });
   },
@@ -83,21 +66,13 @@ export const remove = mutation({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    await requireGabbai(ctx, args.synagogueId);
-    const membership = await ctx.db
-      .query("memberships")
-      .withIndex("by_synagogue_user", (q) =>
-        q.eq("synagogueId", args.synagogueId).eq("userId", args.userId),
-      )
-      .unique();
+    await requireManager(ctx, args.synagogueId);
+    const membership = await getMembership(ctx, args.synagogueId, args.userId);
     if (membership === null) {
       return;
     }
-    if (membership.role === "gabbai") {
-      const gabbaiCount = await countGabbaim(ctx, args.synagogueId);
-      if (gabbaiCount <= 1) {
-        throw new Error("צריך להישאר לפחות גבאי אחד");
-      }
+    if (isManager(membership.role)) {
+      await assertNotLastManager(ctx, args.synagogueId, "צריך להישאר לפחות גבאי או רב אחד");
     }
     await ctx.db.delete(membership._id);
   },
@@ -106,24 +81,13 @@ export const remove = mutation({
 export const leave = mutation({
   args: { synagogueId: v.id("synagogues") },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error("יש להתחבר");
-    }
-    const membership = await ctx.db
-      .query("memberships")
-      .withIndex("by_synagogue_user", (q) =>
-        q.eq("synagogueId", args.synagogueId).eq("userId", userId),
-      )
-      .unique();
+    const userId = await requireUser(ctx);
+    const membership = await getMembership(ctx, args.synagogueId, userId);
     if (membership === null) {
       return;
     }
-    if (membership.role === "gabbai") {
-      const gabbaiCount = await countGabbaim(ctx, args.synagogueId);
-      if (gabbaiCount <= 1) {
-        throw new Error("גבאי אחרון לא יכול לעזוב את בית הכנסת");
-      }
+    if (isManager(membership.role)) {
+      await assertNotLastManager(ctx, args.synagogueId, "הגבאי או הרב האחרון לא יכול לעזוב את הקהילה");
     }
     await ctx.db.delete(membership._id);
   },
