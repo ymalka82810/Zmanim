@@ -68,12 +68,7 @@ function ruleTime(rule, t, cfg) {
   }
   const b = base === 'candles' ? (t.candles ?? (t.sunset == null ? null : t.sunset - cfg.candle * MIN)) : t[base];
   if (b == null) return null;
-  let ms = b + (Number(offset) || 0) * MIN;
-  const r = 5 * MIN;
-  if (rule.round === 'למטה ל-5') ms = Math.floor(ms / r) * r;
-  if (rule.round === 'למעלה ל-5') ms = Math.ceil(ms / r) * r;
-  if (rule.round === 'לקרוב ל-5') ms = Math.round(ms / r) * r;
-  const text = hm(ms, cfg.tz), p = text.split(':');
+  const text = hm(applyOffset(b, offset, rule.round), cfg.tz), p = text.split(':');
   return { text, key: +p[0] * 60 + +p[1] };
 }
 
@@ -123,11 +118,47 @@ export function buildLuach(cfg, occ) {
     zmanim: zlist([['צאת ה' + kind(last), tl.havdalah]])
   });
 
+  // ערכים לתבנית מקובץ: זמני היום וזמני התפילות לפי "מתי", והטקסטים של הכותרת
+  const t1 = times(first.day);
+  const texts = t => { const o = {}; for (const k in t) if (t[k] != null) o[k] = hm(t[k], tz); return o; };
+  const rules = {};
+  const addRows = (when, rows) => rows.forEach(r => { rules[when + '|' + r.name] = r.text; });
+  addRows('כניסה', sections[0].rows);
+  addRows('כל יום', sections[1].rows);
+  addRows('יציאה', sections[sections.length - 1].rows);
+
   return {
     shul: String(cfg.shul || '').trim(),
     title: occ.title,
     dates: hebDateString(first.day) + ', ' + gDate(first.day, true),
     sections,
-    notes: String(cfg.notes || '').trim()
+    notes: String(cfg.notes || '').trim(),
+    values: {
+      zmanim: { 'כניסה': texts(te), 'כל יום': texts(t1), 'יציאה': texts(tl) },
+      rules,
+      title: occ.title,
+      parasha: first.parasha ? 'פרשת ' + first.parasha : (first.chag || occ.title),
+      parashaName: first.parasha || first.chag || occ.title,
+      hebDay: first.day,
+      firstDay: first.day,
+      multiDay: occ.days.length > 1
+    }
   };
+}
+
+/** זמני היום (במילישניות) ליום נתון, כולל הדלקת נרות – לזיהוי כללים מלוח ישן */
+export function timesFor(cfg, d) {
+  const t = dayTimes(cfg, d);
+  t.candles = candlesOn(cfg, d, t, cfg.il);
+  return t;
+}
+
+/** הוספת הפרש בדקות ועיגול ל-5 לפי כלל */
+export function applyOffset(ms, offset, round) {
+  let x = ms + (Number(offset) || 0) * MIN;
+  const r = 5 * MIN;
+  if (round === 'למטה ל-5') x = Math.floor(x / r) * r;
+  if (round === 'למעלה ל-5') x = Math.ceil(x / r) * r;
+  if (round === 'לקרוב ל-5') x = Math.round(x / r) * r;
+  return x;
 }

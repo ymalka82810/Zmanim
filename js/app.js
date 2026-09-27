@@ -5,6 +5,8 @@ import { findOccasion, buildLuach } from './luach.js';
 import { luachHtml, luachText, esc } from './render.js';
 import { todayIn } from './dates.js';
 import { luachCanvas, pngBlob, pdfBlob } from './image.js';
+import { templateCanvas } from './template-render.js';
+import { editFromFile, editExisting, mergeRules } from './template-ui.js';
 
 const $ = id => document.getElementById(id);
 const BASE_LABELS = Object.keys(BASES);
@@ -27,10 +29,8 @@ function toast(text, err) {
 /* ---------- לשוניות ---------- */
 
 function showTab(name) {
-  for (const n of ['luach', 'settings']) {
-    $('tab-' + n).setAttribute('aria-selected', String(n === name));
-    $('view-' + n).hidden = n !== name;
-  }
+  for (const n of ['luach', 'settings']) $('tab-' + n).setAttribute('aria-selected', String(n === name));
+  for (const n of ['luach', 'settings', 'template']) $('view-' + n).hidden = n !== name;
   if (name === 'luach') renderLuach();
 }
 $('tab-luach').onclick = () => showTab('luach');
@@ -38,6 +38,10 @@ $('tab-settings').onclick = () => showTab('settings');
 $('goSettings').onclick = () => showTab('settings');
 
 /* ---------- הלוח ---------- */
+
+/** עיצוב מהקובץ הישן – רק לשבת/חג של יום אחד, כמו בלוח המקורי */
+const useTemplate = l => !!(cfg.template && cfg.template.enabled && !l.values.multiDay);
+const drawLuach = l => useTemplate(l) ? templateCanvas(cfg.template, l.values) : luachCanvas(l);
 
 function renderLuach() {
   $('welcome').hidden = saved;
@@ -50,7 +54,16 @@ function renderLuach() {
   }
   cursor = occ.first;
   current = buildLuach(cfg, occ);
-  $('luach').innerHTML = luachHtml(current);
+  if (useTemplate(current)) {
+    const l = current;
+    $('luach').innerHTML = '<img class="luach-img" alt="' + esc(l.title) + '">';
+    templateCanvas(cfg.template, l.values).then(c => {
+      if (current === l) $('luach').querySelector('img').src = c.toDataURL('image/png');
+    }).catch(() => { if (current === l) $('luach').innerHTML = luachHtml(l); });
+  } else {
+    $('luach').innerHTML = luachHtml(current) + (cfg.template && cfg.template.enabled
+      ? '<p class="hint">העיצוב מהקובץ מתאים לשבת או חג של יום אחד, ולכן הלוח הזה מוצג בעיצוב הרגיל.</p>' : '');
+  }
   $('todayOcc').disabled = findOccasion(todayIn(cfg.tz), cfg.il).first === occ.first;
 }
 
@@ -76,7 +89,7 @@ let prepTimer;
 
 function makeFiles(l) {
   const name = ('לוח זמנים - ' + l.title).replace(/[\\/:*?"<>|]/g, '');
-  const promise = luachCanvas(l).then(async canvas => ({
+  const promise = drawLuach(l).then(async canvas => ({
     png: new File([await pngBlob(canvas)], name + '.png', { type: 'image/png' }),
     pdf: new File([await pdfBlob(canvas)], name + '.pdf', { type: 'application/pdf' })
   }));
@@ -154,6 +167,7 @@ function fill() {
   $('notes').value = cfg.notes || '';
   $('custom').hidden = cfg.city !== 'custom';
   renderRules();
+  renderTemplateStatus();
 }
 
 function renderRules() {
@@ -220,6 +234,64 @@ bind('tz', v => { cfg.tz = v; cursor = null; });
 bind('il', v => { cfg.il = v === '1'; cursor = null; });
 bind('havdalah', v => { cfg.havdalah = v; });
 bind('notes', v => { cfg.notes = v; });
+
+/* ---------- עיצוב מלוח קיים ---------- */
+
+function renderTemplateStatus() {
+  const t = cfg.template;
+  $('tplStatus').hidden = !t;
+  $('tplUseWrap').hidden = !t;
+  $('tplEdit').hidden = !t;
+  $('tplRemove').hidden = !t;
+  $('tplUpload').textContent = t ? 'העלאת לוח אחר' : 'העלאת לוח ישן (PDF או תמונה)';
+  if (t) {
+    $('tplStatus').textContent = 'תבנית: ' + t.name + ' (' + t.slots.length + ' אזורים)';
+    $('tplUse').checked = !!t.enabled;
+  }
+}
+
+function templateDone(result) {
+  if (result) {
+    const prev = cfg.template;
+    cfg.template = result.template;
+    cfg.rules = mergeRules(cfg.rules, result.rules, result.replace);
+    if (!saveConfig(cfg)) {
+      cfg.template = prev;
+      toast('הקובץ גדול מדי לשמירה במכשיר. נסו קובץ קטן יותר', true);
+      showTab('settings');
+      return;
+    }
+    saved = true;
+    fill();
+    cursor = null;
+    showTab('luach');
+    toast('התבנית נשמרה');
+  } else showTab('settings');
+}
+
+$('tplUpload').onclick = () => $('tplFile').click();
+$('tplFile').onchange = async () => {
+  const f = $('tplFile').files[0];
+  $('tplFile').value = '';
+  if (!f) return;
+  toast('קורא את הקובץ…');
+  try {
+    await editFromFile(f, cfg, templateDone);
+    showTab('template');
+  } catch (e) {
+    console.error(e);
+    toast(navigator.onLine ? 'לא ניתן לקרוא את הקובץ' : 'קריאת PDF דורשת חיבור לאינטרנט בפעם הראשונה', true);
+  }
+};
+$('tplEdit').onclick = async () => {
+  try { await editExisting(cfg.template, cfg, templateDone); showTab('template'); }
+  catch (e) { toast('לא ניתן לפתוח את התבנית', true); }
+};
+$('tplRemove').onclick = () => {
+  if (!confirm('להסיר את התבנית? זמני התפילות בהגדרות יישארו.')) return;
+  delete cfg.template; fill(); changed();
+};
+$('tplUse').onchange = () => { cfg.template.enabled = $('tplUse').checked; changed(); };
 
 /* ---------- גיבוי ---------- */
 

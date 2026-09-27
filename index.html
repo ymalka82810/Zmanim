@@ -78,6 +78,19 @@
     </div>
 
     <div class="panel">
+      <h2>עיצוב מלוח קיים</h2>
+      <p class="hint">רוצים שהלוח ייראה כמו הלוח שאתם מכירים? מעלים קובץ PDF או תמונה של לוח ישן, והאתר יחליף בו רק את השעות והתאריכים. הוא גם יזהה ממנו את זמני התפילות.</p>
+      <p id="tplStatus" class="tpl-status" hidden></p>
+      <label class="check" id="tplUseWrap" hidden><input type="checkbox" id="tplUse"> להשתמש בעיצוב מהקובץ</label>
+      <div class="actions left">
+        <button type="button" id="tplUpload">העלאת לוח ישן (PDF או תמונה)</button>
+        <input type="file" id="tplFile" accept="application/pdf,.pdf,image/*" hidden>
+        <button type="button" id="tplEdit" hidden>עריכת התבנית</button>
+        <button type="button" class="danger" id="tplRemove" hidden>הסרת התבנית</button>
+      </div>
+    </div>
+
+    <div class="panel">
       <h2>הודעה בתחתית הלוח</h2>
       <textarea id="notes" rows="2" aria-label="הודעה בתחתית הלוח"></textarea>
     </div>
@@ -91,6 +104,35 @@
         <input type="file" id="importFile" accept=".json,application/json" hidden>
         <button type="button" class="danger" id="reset">איפוס</button>
       </div>
+    </div>
+  </section>
+
+  <section id="view-template" hidden aria-labelledby="tplTitle">
+    <div class="panel">
+      <h2 id="tplTitle">תבנית מלוח קיים</h2>
+      <div class="row2">
+        <div><label for="tplDate">תאריך הלוח הישן</label><input type="date" id="tplDate"></div>
+        <p id="tplOcc" class="hint tpl-occ"></p>
+      </div>
+      <label class="check"><input type="checkbox" id="tplRules" checked> לעדכן את זמני התפילות בהגדרות לפי הקובץ</label>
+      <p class="hint">האזורים המסומנים בכחול יוחלפו בכל לוח. אפשר ללחוץ על אזור כדי לערוך אותו, או על טקסט אפור כדי להוסיף אותו (למשל שם הפרשה).</p>
+      <p class="hint" id="tplScanHint" hidden>זה נראה כמו מסמך סרוק, ולכן אי אפשר לזהות בו טקסט. לחצו "סימון אזור" וגררו על כל שעה או תאריך שצריך להחליף.</p>
+      <button type="button" id="tplDraw" aria-pressed="false">סימון אזור</button>
+    </div>
+    <div class="tpl-layout">
+      <div class="tpl-stage">
+        <div class="tpl-page" id="tplPage"><img id="tplImg" alt="הלוח הישן"><div id="tplBoxes"></div></div>
+      </div>
+      <div id="tplSlots" class="tpl-slots"></div>
+    </div>
+    <div class="panel" id="tplPreviewWrap" hidden>
+      <h2>תצוגה מקדימה – השבת הקרובה</h2>
+      <img id="tplPreviewImg" class="luach-img" alt="תצוגה מקדימה של הלוח">
+    </div>
+    <div class="actions sticky">
+      <button type="button" class="primary" id="tplSave">שמירה והפעלה</button>
+      <button type="button" id="tplPreview">תצוגה מקדימה</button>
+      <button type="button" id="tplCancel">ביטול</button>
     </div>
   </section>
 </main>

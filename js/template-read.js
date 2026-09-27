@@ -1,0 +1,348 @@
+/**
+ * קריאת לוח ישן (PDF או תמונה) כתבנית: ציור העמוד, חילוץ הטקסט עם המיקומים,
+ * זיהוי שעות, תאריכים ופרשה, והסקת הכללים (למשל "מנחה = שקיעה פחות 40").
+ * ספריית pdf.js נטענת רק כשמעלים קובץ PDF.
+ */
+
+import { hm, toDayNum } from './dates.js';
+import { PARSHIYOT, fromHebrew, TISHREI, CHESHVAN, KISLEV, TEVET, SHVAT, ADAR, ADAR2, NISAN, IYYAR, SIVAN, TAMUZ, AV, ELUL } from './hebrew.js';
+import { timesFor, applyOffset } from './luach.js';
+
+const PDFJS = new URL('../vendor/pdfjs/', import.meta.url).href;   // pdf.js 6.3.289, רישיון Apache 2.0
+const PAGE_W = 1600;   // רוחב התבנית בפיקסלים
+
+let pdfjsPromise;
+function loadPdfjs() {
+  if (!pdfjsPromise) {
+    pdfjsPromise = import(PDFJS + 'pdf.min.mjs').then(m => {
+      m.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.mjs';
+      return m;
+    });
+    pdfjsPromise.catch(() => { pdfjsPromise = null; });
+  }
+  return pdfjsPromise;
+}
+
+/* ---------- קריאת הקובץ ---------- */
+
+/**
+ * מחזיר { canvas, items } – העמוד הראשון כתמונה, ופריטי הטקסט עם תיבות בפיקסלים.
+ * לתמונה או ל-PDF סרוק items ריק.
+ */
+export async function readFile(file) {
+  const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+  return isPdf ? readPdf(file) : readImage(file);
+}
+
+async function readPdf(file) {
+  const pdfjs = await loadPdfjs();
+  const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false });
+  const doc = await task.promise;
+  const page = await doc.getPage(1);
+  const scale = PAGE_W / page.getViewport({ scale: 1 }).width;
+  const vp = page.getViewport({ scale });
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(vp.width); canvas.height = Math.round(vp.height);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport: vp }).promise;
+
+  const content = await page.getTextContent();
+  const items = [];
+  for (const it of content.items) {
+    const str = fixVisualOrder(String(it.str || '').replace(/\s+/g, ' ').trim());
+    if (!str) continue;
+    const tx = pdfjs.Util.transform(vp.transform, it.transform);
+    const size = Math.hypot(tx[2], tx[3]);
+    if (size < 4) continue;
+    const w = it.width * scale;
+    const baseline = tx[5];
+    items.push({ str, x: tx[4], w, baseline, size, y: baseline - size * 0.92, h: size * 1.2, rtl: it.dir === 'rtl' || /[א-ת]/.test(str) });
+  }
+  task.destroy();
+  return { canvas, items };
+}
+
+async function readImage(file) {
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(1, PAGE_W / bmp.width);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bmp.width * scale); canvas.height = Math.round(bmp.height * scale);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+  return { canvas, items: [] };
+}
+
+/**
+ * יש קובצי PDF שבהם העברית שמורה הפוכה (סדר ויזואלי). מזהים לפי אותיות סופיות:
+ * בטקסט תקין הן בסוף מילה, בטקסט הפוך – בתחילתה.
+ */
+function fixVisualOrder(s) {
+  let atStart = 0, atEnd = 0;
+  for (const w of s.match(/[א-ת]{2,}/g) || []) {
+    if (/[ךםןףץ]/.test(w[0])) atStart++;
+    if (/[ךםןףץ]/.test(w[w.length - 1])) atEnd++;
+  }
+  if (atStart <= atEnd) return s;
+  return s.split('').reverse().join('')
+    .replace(/[0-9A-Za-z:./-]+/g, m => m.split('').reverse().join(''))
+    .replace(/[()]/g, c => c === '(' ? ')' : '(');
+}
+
+/* ---------- פירוק לאסימונים: שעות, תאריכים וטקסט ---------- */
+
+const TIME_RE = /(?<![\d:./])(\d{1,2}):(\d{2})(?![\d:])/g;
+const GREG_RE = /(?<!\d)(\d{1,2})([./-])(\d{1,2})\2(\d{4}|\d{2})(?!\d)/;
+const HEB_MONTHS = [['מרחשון', CHESHVAN], ['חשוון', CHESHVAN], ['חשון', CHESHVAN], ['תשרי', TISHREI], ['כסליו', KISLEV], ['כסלו', KISLEV],
+  ['טבת', TEVET], ['שבט', SHVAT], ['אדר ב', ADAR2], ['אדר א', ADAR], ['אדר', ADAR], ['ניסן', NISAN], ['אייר', IYYAR],
+  ['סיוון', SIVAN], ['סיון', SIVAN], ['תמוז', TAMUZ], ['אלול', ELUL], ['אב', AV]];
+const HEB_DATE_RE = new RegExp('(?:^|\\s)([א-ת]{1,2}["\'״׳]?[א-ת]?)\\s+(?:ב|ל)?(' + HEB_MONTHS.map(m => m[0]).join('|') + ')[\'׳]?(?:\\s+([א-ת]{0,3}["״][א-ת]))?');
+
+let measureCtx;
+function textWidth(s, size) {
+  measureCtx = measureCtx || document.createElement('canvas').getContext('2d');
+  measureCtx.font = size + 'px Arial';
+  return measureCtx.measureText(s).width;
+}
+
+/**
+ * מפרק כל פריט טקסט לאסימונים: שעה (time) או טקסט (text). כשבפריט אחד יש גם תווית וגם שעה
+ * ("מנחה 17:40"), המיקום של השעה בתוך הפריט מוערך לפי רוחב התווים.
+ */
+export function tokenize(items) {
+  const tokens = [];
+  for (const raw of items) {
+    const it = trimSeparators(raw);
+    if (!it) continue;
+    const matches = [...it.str.matchAll(TIME_RE)];
+    if (!matches.length) { pushText(tokens, it); continue; }
+    let rest = it.str;
+    for (const m of matches) {
+      tokens.push({ ...it, ...subBox(it, m.index, m[0]), str: m[0], kind: 'time', minutes: +m[1] * 60 + +m[2] });
+      rest = rest.replace(m[0], ' ');
+    }
+    rest = rest.replace(/[\s|:–-]+/g, ' ').trim();
+    if (rest && /[א-תA-Za-z]/.test(rest)) tokens.push({ ...it, str: rest, kind: classifyText(rest), partOf: true });
+  }
+  return tokens;
+}
+
+/** המיקום המשוער של קטע טקסט בתוך פריט, לפי רוחב התווים */
+function subBox(it, index, s) {
+  const total = textWidth(it.str, it.size) || 1;
+  const w = it.w * textWidth(s, it.size) / total;
+  const before = textWidth(it.str.slice(0, index), it.size) / total;
+  // בפריט מימין לשמאל, מה שבא קודם בטקסט נמצא מימין
+  return { x: it.rtl ? it.x + it.w * (1 - before) - w : it.x + it.w * before, w };
+}
+
+const NAMES = [...PARSHIYOT].sort((a, b) => b.length - a.length).join('|');
+const PARASHA_RE = new RegExp('פרשת\\s+(?:' + NAMES + ')(?:\\s*[-–]\\s*(?:' + NAMES + '))?');
+
+/** טקסט רגיל; אם יש בו "פרשת …" באמצע שורה (למשל "זמני תפילות – פרשת וירא"), הפרשה הופכת לאזור נפרד */
+function pushText(tokens, it) {
+  const kind = classifyText(it.str);
+  const m = kind === 'text' && PARASHA_RE.exec(it.str);
+  if (!m) { tokens.push({ ...it, kind }); return; }
+  tokens.push({ ...it, ...subBox(it, m.index, m[0]), str: m[0], kind: 'parasha' });
+  const rest = (it.str.slice(0, m.index) + ' ' + it.str.slice(m.index + m[0].length)).replace(/[\s|–-]+/g, ' ').trim();
+  if (/[א-ת]/.test(rest)) tokens.push({ ...it, str: rest, kind: 'text', partOf: true });
+}
+
+/** מסיר מפרידים (| • – ,) מקצות הפריט ומקטין את התיבה בהתאם */
+function trimSeparators(it) {
+  const m = /^([\s|•·–\-,]*)(.*?)([\s|•·–\-,]*)$/.exec(it.str);
+  if (!m[2]) return null;
+  if (!m[1] && !m[3]) return it;
+  const total = textWidth(it.str, it.size) || 1;
+  const lead = it.w * textWidth(m[1], it.size) / total, trail = it.w * textWidth(m[3], it.size) / total;
+  // מימין לשמאל: ההתחלה בצד ימין והסוף בצד שמאל
+  const x = it.rtl ? it.x + trail : it.x + lead;
+  return { ...it, str: m[2], x, w: Math.max(1, it.w - lead - trail) };
+}
+
+function classifyText(s) {
+  if (GREG_RE.test(s)) return 'gregDate';
+  if (HEB_DATE_RE.test(s)) return 'hebDate';
+  if (/^שבת\s+פרשת/.test(s)) return 'title';
+  if (/^פרשת\s/.test(s)) return 'parasha';
+  return 'text';
+}
+
+/* ---------- זיהוי התאריך של הלוח הישן ---------- */
+
+const gemValue = s => [...s.replace(/["'״׳]/g, '')].reduce((a, c) => a + ({
+  'א': 1, 'ב': 2, 'ג': 3, 'ד': 4, 'ה': 5, 'ו': 6, 'ז': 7, 'ח': 8, 'ט': 9, 'י': 10, 'כ': 20, 'ך': 20, 'ל': 30, 'מ': 40, 'ם': 40,
+  'נ': 50, 'ן': 50, 'ס': 60, 'ע': 70, 'פ': 80, 'ף': 80, 'צ': 90, 'ץ': 90, 'ק': 100, 'ר': 200, 'ש': 300, 'ת': 400
+}[c] || 0), 0);
+
+/** מנסה למצוא בקובץ את תאריך הלוח. מחזיר dayNum או null */
+export function detectDate(tokens) {
+  for (const t of tokens) {
+    const m = t.kind === 'gregDate' && GREG_RE.exec(t.str);
+    if (m) {
+      const y = m[4].length === 2 ? 2000 + +m[4] : +m[4];
+      const d = toDayNum(y + '-' + String(m[3]).padStart(2, '0') + '-' + String(m[1]).padStart(2, '0'));
+      if (isFinite(d)) return d;
+    }
+  }
+  for (const t of tokens) {
+    const m = t.kind === 'hebDate' && HEB_DATE_RE.exec(t.str);
+    if (m && m[3]) {
+      const month = HEB_MONTHS.find(x => x[0] === m[2])[1];
+      const day = gemValue(m[1]), year = 5000 + gemValue(m[3]);
+      if (day >= 1 && day <= 30) return fromHebrew(year, month, day);
+    }
+  }
+  return null;
+}
+
+/** תבנית התאריך הלועזי כמו בקובץ הישן (מפריד, ספרות שנה, אפסים מובילים) */
+export function gregFormat(str) {
+  const m = GREG_RE.exec(str);
+  if (!m) return { sep: '/', year: 4, pad: false };
+  return { sep: m[2], year: m[4].length, pad: m[1].length === 2 && m[1][0] === '0' };
+}
+
+/* ---------- הסקת התפקיד של כל שעה ---------- */
+
+const ZMAN_WORDS = [
+  [/הדלק/, 'candles', 'כניסה'],
+  [/(צאת|יציאת|מוצ).{0,6}(שבת|חג|ש"ק|השבת|החג)|^צאת ש/, 'havdalah', 'יציאה'],
+  [/צאת הכוכבים|צה"כ/, 'tzeit', null],
+  [/שקיע/, 'sunset', null],
+  [/עלות/, 'alotHaShachar', 'כל יום'],
+  [/נץ|זריחה/, 'sunrise', 'כל יום'],
+  [/מג"?א|מגן אברהם/, 'sofZmanShmaMGA', 'כל יום'],
+  [/סו"?ז|סוף זמן|גר"?א/, 'sofZmanShma', 'כל יום'],
+  [/חצות/, 'chatzot', 'כל יום'],
+  [/מנחה גדולה/, 'minchaGedola', 'כל יום'],
+  [/פלג/, 'plagHaMincha', null]
+];
+const PRAYER_WORDS = /שחרית|מנחה|ערבית|מעריב|קבלת שבת|מוסף|שיעור|דף יומי|תהילים|לימוד|הלל|סליחות|ותיקין|אבות ובנים|תפילה|קריאת/;
+const WHEN_WORDS = [
+  ['יציאה', /מוצ|הבדלה|יציאת|צאת ה?(שבת|חג)/],
+  ['כניסה', /ערב שבת|ערב חג|עש"ק|ערש"ק|ליל שבת|ליל חג|קבלת שבת|כניסת|יום ו|שישי/],
+  ['כל יום', /יום שבת|שבת קודש|שבת בבוקר|בוקר|שחרית|מוסף|צהריים|יום החג|^שבת$|^חג$|יום השבת/]
+];
+const whenOf = s => { for (const [w, re] of WHEN_WORDS) if (re.test(s)) return w; return null; };
+const isOnlyDayWord = s => !!whenOf(s) && !PRAYER_WORDS.test(s) && s.length < 16;
+
+const BASE_BY_WHEN = {
+  'כניסה': ['candles', 'sunset', 'plagHaMincha', 'tzeit'],
+  'כל יום': ['sunrise', 'sofZmanShmaMGA', 'sofZmanShma', 'chatzot', 'minchaGedola', 'minchaKetana', 'plagHaMincha', 'sunset', 'tzeit'],
+  'יציאה': ['havdalah', 'tzeit', 'sunset']
+};
+const BASE_LABEL = { candles: 'הדלקת נרות', sunset: 'שקיעה', tzeit: 'צאת הכוכבים', havdalah: 'צאת שבת/חג', alotHaShachar: 'עלות השחר',
+  sunrise: 'הנץ', sofZmanShmaMGA: 'סו"ז ק"ש מג"א', sofZmanShma: 'סו"ז ק"ש גר"א', chatzot: 'חצות', minchaGedola: 'מנחה גדולה',
+  minchaKetana: 'מנחה קטנה', plagHaMincha: 'פלג המנחה' };
+
+const overlapX = (a, b) => Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+const sameLine = (a, b) => Math.abs(a.baseline - b.baseline) < Math.max(a.size, b.size) * 0.45;
+
+/** התווית של שעה: הטקסט הקרוב באותה שורה, קודם מימין (עברית) ואחר כך משמאל */
+function labelFor(t, texts) {
+  const line = texts.filter(x => sameLine(x, t));
+  const right = line.filter(x => x.x >= t.x + t.w * 0.5).sort((a, b) => a.x - b.x)[0];
+  const left = line.filter(x => x.x + x.w <= t.x + t.w * 0.5).sort((a, b) => (b.x + b.w) - (a.x + a.w))[0];
+  if (right && left) {
+    // אם שני הצדדים קרובים באותה מידה, בעברית התווית בדרך כלל מימין
+    const dr = right.x - (t.x + t.w), dl = t.x - (left.x + left.w);
+    return dl < dr * 0.5 ? left : right;
+  }
+  return right || left || null;
+}
+
+/** כותרות מעל השעה (באותה עמודה), מהקרובה לרחוקה */
+function headersAbove(t, texts) {
+  return texts.filter(x => x.baseline < t.baseline - t.size * 0.5 && overlapX(x, t) > -t.size)
+    .sort((a, b) => b.baseline - a.baseline);
+}
+
+/** הבסיס המקובל לפי שם התפילה, אם הוא בטווח סביר */
+const PREFER = [
+  [/קבלת שבת/, ['candles', 'sunset']],
+  [/מנחה(?! גדולה)/, ['sunset', 'candles']],
+  [/ערבית|מעריב/, ['havdalah', 'tzeit', 'sunset']],
+  [/ותיקין|כותיקין|נץ/, ['sunrise']]
+];
+
+/** מציאת בסיס, הפרש ועיגול שמסבירים את השעה. name – שם התפילה (לא חובה) */
+export function inferRule(minutes, when, times, tz, name = '') {
+  const toMin = ms => { const [h, m] = hm(ms, tz).split(':').map(Number); return h * 60 + m; };
+  const bases = BASE_BY_WHEN[when].filter(k => times[k] != null).map(k => ({ k, min: toMin(times[k]), ms: times[k] }));
+  const near = bases.map(b => ({ ...b, diff: minutes - b.min })).filter(b => Math.abs(b.diff) <= 120);
+  const pref = when === 'כניסה' ? 'candles' : when === 'יציאה' ? 'havdalah' : null;
+  const round5 = minutes % 5 === 0;
+  if (!near.length || (minutes < 12 * 60 && minutes % 15 === 0) || (when === 'כל יום' && minutes < 12 * 60 && round5)) {
+    return { base: 'שעה קבועה', offset: String(Math.floor(minutes / 60)).padStart(2, '0') + ':' + String(minutes % 60).padStart(2, '0'), round: 'ללא' };
+  }
+  near.sort((a, b) => Math.abs(a.diff) - Math.abs(b.diff));
+  const byName = (PREFER.find(p => p[0].test(name)) || [null, []])[1];
+  const best = byName.map(k => near.find(b => b.k === k && Math.abs(b.diff) <= 90)).find(Boolean) ||
+    near.find(b => b.k === pref && Math.abs(b.diff) <= 45) || near[0];
+  const target = best.ms + best.diff * 60000;
+  // אם השעה עגולה ל-5 והבסיס לא – מחפשים הפרש עגול עם עיגול שנותן בדיוק את השעה
+  if (round5 && best.min % 5 !== 0) {
+    const d5 = Math.round(best.diff / 5) * 5;
+    for (const round of ['למטה ל-5', 'למעלה ל-5', 'לקרוב ל-5']) {
+      for (const off of [d5, d5 - 5, d5 + 5]) {
+        if (toMin(applyOffset(best.ms, off, round)) === toMin(target)) return { base: BASE_LABEL[best.k], offset: String(off), round };
+      }
+    }
+  }
+  return { base: BASE_LABEL[best.k], offset: String(best.diff), round: 'ללא' };
+}
+
+/**
+ * הצעה ראשונית לכל האזורים בתבנית.
+ * day – יום השבת/החג של הלוח הישן (dayNum), או null אם לא ידוע.
+ */
+export function suggestSlots(tokens, cfg, day) {
+  const texts = tokens.filter(t => t.kind !== 'time');
+  const slots = [];
+  const tErev = day != null ? timesFor(cfg, day - 1) : null;
+  const tDay = day != null ? timesFor(cfg, day) : null;
+
+  for (const t of tokens) {
+    const box = { x: t.x, y: t.y, w: t.w, h: t.h, baseline: t.baseline, size: t.size };
+    if (t.kind === 'title' || t.kind === 'parasha' || t.kind === 'hebDate') {
+      slots.push({ box, kind: t.kind, old: t.str, ascii: /["']/.test(t.str) && !/[״׳]/.test(t.str), noYear: t.kind === 'hebDate' && !HEB_DATE_RE.exec(t.str)[3] });
+      continue;
+    }
+    if (t.kind === 'gregDate') { slots.push({ box, kind: 'gregDate', old: t.str, fmt: gregFormat(t.str) }); continue; }
+    if (t.kind !== 'time') continue;
+
+    const lab = labelFor(t, texts);
+    const heads = headersAbove(t, texts);
+    const rowLabel = lab ? lab.str : '';
+    let label = rowLabel;
+    // בטבלה שבה השורה היא היום והעמודה היא התפילה – השם בא מהכותרת שמעל
+    if ((!label || isOnlyDayWord(label)) && heads.length) {
+      const h = heads.find(x => PRAYER_WORDS.test(x.str) || ZMAN_WORDS.some(z => z[0].test(x.str)));
+      if (h) label = h.str;
+    }
+    let when = whenOf(rowLabel) || whenOf(label);
+    for (const h of heads) { if (when) break; when = whenOf(h.str); }
+    if (!when) when = 'כל יום';
+
+    const zm = !PRAYER_WORDS.test(label) && ZMAN_WORDS.find(z => z[0].test(label));
+    const name = label.replace(/[:\-–|]+$/g, '').trim();
+    if (zm) {
+      slots.push({ box, kind: 'zman', zman: zm[1], when: zm[2] || when, old: t.str, label: name });
+    } else {
+      const rule = tDay ? inferRule(t.minutes, when, when === 'כניסה' ? tErev : tDay, cfg.tz, label)
+        : { base: 'שעה קבועה', offset: t.str, round: 'ללא' };
+      slots.push({ box, kind: 'rule', when, name: name || 'תפילה', old: t.str, label: name, ...rule });
+    }
+  }
+  return slots;
+}
+
+/** טקסטים שאינם שעות ואינם מזוהים – אפשר ללחוץ עליהם ולהפוך אותם לאזור */
+export function textCandidates(tokens) {
+  return tokens.filter(t => t.kind === 'text').map(t => ({
+    box: { x: t.x, y: t.y, w: t.w, h: t.h, baseline: t.baseline, size: t.size }, old: t.str
+  }));
+}
