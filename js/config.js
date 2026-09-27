@@ -60,6 +60,25 @@ export function fontFamilies(key) {
   return { title: css(f[2]), body: css(f[3]), names: [f[2][0], f[3][0]] };
 }
 
+/**
+ * ערכות צבע מוכנות ללוח שהאתר מעצב (לא לעיצוב מלוח קיים): [מזהה, שם, צבעים].
+ * ink – טקסט, blue – צבע הדגשה (פסים וקווים), line/soft/note – מסגרות ורקעים, muted – טקסט משני, paper – רקע הלוח.
+ */
+export const THEMES = [
+  ['classic', 'כחול קלאסי', { ink: '#1d2b45', blue: '#2c4a7c', line: '#c9d5e6', soft: '#e3e9f2', muted: '#5d6b82', note: '#eef3fa', paper: '#ffffff' }],
+  ['wine', 'בורדו', { ink: '#3a1f22', blue: '#7c2c3f', line: '#e6c9d0', soft: '#f2e3e8', muted: '#8a5d63', note: '#faeef1', paper: '#ffffff' }],
+  ['olive', 'ירוק זית', { ink: '#20301f', blue: '#3f6b34', line: '#cbdcc5', soft: '#e4eee0', muted: '#5f6f57', note: '#eef4ea', paper: '#ffffff' }],
+  ['gold', 'זהב חגיגי', { ink: '#332615', blue: '#a67c1e', line: '#e8d9b0', soft: '#f5edd8', muted: '#8a7550', note: '#faf3e0', paper: '#fffdf7' }],
+  ['slate', 'אפור מינימלי', { ink: '#26282c', blue: '#54606e', line: '#d7dbe0', soft: '#eceef1', muted: '#767d87', note: '#f2f3f5', paper: '#ffffff' }],
+  ['mono', 'שחור-לבן', { ink: '#111111', blue: '#111111', line: '#cccccc', soft: '#eeeeee', muted: '#555555', note: '#f4f4f4', paper: '#ffffff' }]
+];
+
+/** צבעי ערכת הצבעים שנבחרה */
+export function themeColors(key) {
+  const t = THEMES.find(x => x[0] === key) || THEMES[0];
+  return t[2];
+}
+
 /** כתובת ה-CSS של Google Fonts לגופן שנבחר */
 export function fontsHref(key) {
   const f = FONTS.find(x => x[0] === key) || FONTS[0];
@@ -135,7 +154,7 @@ export const DEFAULT_CONFIG = {
 /** תבנית חדשה של המשתמש. rules – זמני התפילות להתחלה */
 export function newTemplate(name, kind, rules) {
   return { id: 'u' + Date.now().toString(36), name, kind, moadim: [], rules: clone(rules || []), design: null,
-    font: 'classic', sizes: { ...DEFAULT_SIZES } };
+    font: 'classic', theme: 'classic', sizes: { ...DEFAULT_SIZES } };
 }
 
 /** העיצוב של התבנית. { ref } – העיצוב של תבנית אחרת (למשל חגים שמשתמשים בעיצוב של שבתות) */
@@ -166,6 +185,7 @@ export function normalize(c) {
     if (t.design === undefined) t.design = null;
     // עד גרסה 2 הגופן היה אחד לכל הלוחות (cfg.font), ועכשיו הוא עובר לכל תבנית
     if (!FONTS.some(f => f[0] === t.font)) t.font = FONTS.some(f => f[0] === cfg.font) ? cfg.font : 'classic';
+    if (!THEMES.some(x => x[0] === t.theme)) t.theme = 'classic';
     const sizes = t.sizes && typeof t.sizes === 'object' ? t.sizes : {};
     t.sizes = {};
     for (const [k] of SIZE_PARTS) t.sizes[k] = SIZES.indexOf(Number(sizes[k])) >= 0 ? Number(sizes[k]) : 100;

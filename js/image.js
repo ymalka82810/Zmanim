@@ -3,8 +3,8 @@
  * העיצוב תואם לתצוגת הלוח באתר.
  */
 
-const C = { ink: '#1d2b45', blue: '#2c4a7c', muted: '#5d6b82', soft: '#e3e9f2', note: '#eef3fa', bg: '#ffffff' };
-import { fontFamilies } from './config.js';
+let C = { ink: '#1d2b45', blue: '#2c4a7c', muted: '#5d6b82', soft: '#e3e9f2', note: '#eef3fa', bg: '#ffffff' };
+import { fontFamilies, themeColors } from './config.js';
 
 let SERIF, SANS;   // גופן הכותרת וגופן הטקסט, לפי התבנית
 let SZ = { title: 1, name: 1, time: 1, zman: 1 };   // גדלי הטקסט של התבנית (1 = רגיל)
@@ -150,9 +150,11 @@ async function loadFonts(font) {
   } catch (e) { /* בלי חיבור ובלי מטמון – גופן חלופי */ }
 }
 
-/** מצייר את הלוח ומחזיר canvas. font – מזהה הגופן של התבנית, sizes – הגדלים שלה באחוזים */
-export async function luachCanvas(l, font, sizes = {}) {
+/** מצייר את הלוח ומחזיר canvas. font/theme – מזהי הגופן וערכת הצבעים של התבנית, sizes – הגדלים שלה באחוזים */
+export async function luachCanvas(l, font, sizes = {}, theme) {
   ({ title: SERIF, body: SANS } = fontFamilies(font));
+  const t = themeColors(theme);
+  C = { ink: t.ink, blue: t.blue, muted: t.muted, soft: t.soft, note: t.note, bg: t.paper };
   SZ = {};
   for (const k of ['title', 'name', 'time', 'zman']) SZ[k] = (Number(sizes[k]) || 100) / 100;
   await loadFonts(font);

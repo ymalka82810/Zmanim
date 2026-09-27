@@ -34,6 +34,7 @@ button.danger { border-color: var(--danger); color: var(--danger); }
 button.link { border: none; padding: 0 4px; text-decoration: underline; }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .hint { font-size: .85rem; color: var(--muted); margin: 6px 0 0; }
+#fontSample { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; color: var(--ink); }
 
 .rule { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 10px; background: var(--bg); }
 .rule-top { display: flex; gap: 8px; margin-bottom: 8px; }
@@ -75,7 +76,7 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .actions.left { justify-content: flex-start; }
 
 /* הלוח עצמו – נראה כמו דף מודפס */
-.luach { font-family: var(--f-body, inherit); background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px 22px; box-shadow: 0 2px 10px rgba(29, 43, 69, .06); }
+.luach { font-family: var(--f-body, inherit); color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px 22px; box-shadow: 0 2px 10px rgba(29, 43, 69, .06); }
 .luach .stripe { height: 5px; background: var(--blue); margin-bottom: 4px; }
 .luach .stripe.s { height: 2px; }
 .l-shul { text-align: center; font-size: 1rem; font-weight: 700; color: var(--blue); margin-top: 14px; }
