@@ -39,6 +39,7 @@ function toast(text, err) {
 /* ---------- לשוניות ---------- */
 
 function showTab(name) {
+  flush();
   for (const n of ['luach', 'settings']) $('tab-' + n).setAttribute('aria-selected', String(n === name));
   for (const n of ['luach', 'settings', 'template']) $('view-' + n).hidden = n !== name;
   if (name === 'luach') renderLuach();
@@ -380,6 +381,7 @@ $('tplList').addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b) return;
   if (b.id === 'tplAdd') { openNewTemplate(); return; }
+  flush();
   sel = b.dataset.t;
   $('tplNew').hidden = true;
   renderTemplates();
@@ -458,11 +460,18 @@ function renderRules() {
 let saveTimer;
 function changed() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    if (saveConfig(cfg)) { saved = true; toast('נשמר'); }
-    else toast('לא ניתן לשמור במכשיר הזה (מצב גלישה פרטית?)', true);
-  }, 400);
+  saveTimer = setTimeout(flush, 400);
 }
+/* שמירה מיידית של שינוי שממתין לדיבאונס – כדי שמעבר בין תבניות, לשוניות, או סגירת האתר לא יאבדו אותו */
+function flush() {
+  if (!saveTimer) return;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  if (saveConfig(cfg)) { saved = true; toast('נשמר'); }
+  else toast('לא ניתן לשמור במכשיר הזה (מצב גלישה פרטית?)', true);
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
+addEventListener('pagehide', flush);
 
 const nameRef = new WeakMap();   // כלל ששמו נמחק זמנית ← השם הקודם
 $('rules').addEventListener('input', e => {
