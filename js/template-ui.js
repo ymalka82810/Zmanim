@@ -3,7 +3,7 @@
  * מה ייכתב בכל אזור (תפילה, זמן היום, כותרת, תאריך). במסמך סרוק מסמנים אזורים ידנית.
  */
 
-import { BASES, WHEN, ROUND } from './config.js';
+import { BASES, WHEN, ROUND, prayerBases } from './config.js';
 import { readFile, tokenize, detectDate, suggestSlots, textCandidates, inferRule } from './template-read.js';
 import { analyzeSlot, refineBox, templateCanvas } from './template-render.js';
 import { findOccasion, buildLuach, timesFor } from './luach.js';
@@ -20,6 +20,12 @@ const zmanLabel = key => ZMANIM.find(l => BASES[l] === key) || ZMANIM[0];
 const opts = (list, v) => list.map(x => Array.isArray(x)
   ? '<option value="' + x[0] + '"' + (x[0] === v ? ' selected' : '') + '>' + esc(x[1]) + '</option>'
   : '<option' + (x === v ? ' selected' : '') + '>' + esc(x) + '</option>').join('');
+/** אפשרויות "לפי": זמני היום, ואחריהם התפילות מהאזורים ומההגדרות */
+const baseOpts = s => {
+  const names = prayerBases(st.slots.filter(x => x.kind === 'rule').concat(st.cfg.rules || []), s);
+  if (s.base && !(s.base in BASES) && names.indexOf(s.base) < 0) names.push(s.base);
+  return opts(BASE_LABELS, s.base) + (names.length ? '<optgroup label="לפי תפילה">' + opts(names, s.base) + '</optgroup>' : '');
+};
 const oldMinutes = s => { const m = /^(\d{1,2}):(\d{2})$/.exec(s.old || ''); return m ? +m[1] * 60 + +m[2] : null; };
 
 let st = null;   // { canvas, W, H, slots, candidates, fonts, day, cfg, name, onDone, drawing }
@@ -184,7 +190,7 @@ function slotFields(s) {
     return '<div class="rgrid">' +
       '<div class="wide"><label>שם</label><input data-k="name" value="' + esc(s.name) + '" placeholder="למשל: מנחה"></div>' +
       '<div><label>מתי</label><select data-k="when">' + opts(WHEN, s.when) + '</select></div>' +
-      '<div><label>לפי</label><select data-k="base">' + opts(BASE_LABELS, s.base) + '</select></div>' +
+      '<div><label>לפי</label><select data-k="base">' + baseOpts(s) + '</select></div>' +
       '<div><label>' + (fixed ? 'שעה' : 'הפרש (דקות)') + '</label><input data-k="offset" dir="ltr" value="' + esc(s.offset) + '"></div>' +
       '<div><label>עיגול</label><select data-k="round"' + (fixed ? ' disabled' : '') + '>' + opts(ROUND, s.round) + '</select></div></div>';
   }

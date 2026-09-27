@@ -1,6 +1,6 @@
 /** ממשק האתר: לוח, הגדרות, שיתוף וגיבוי. הכל נשמר מקומית בדפדפן. */
 
-import { CITIES, BASES, WHEN, APPLIES, ROUND, FONTS, DEFAULT_CONFIG, fontFamilies, fontsHref, normalize, loadConfig, saveConfig, clearConfig } from './config.js';
+import { CITIES, BASES, WHEN, APPLIES, ROUND, FONTS, DEFAULT_CONFIG, prayerBases, fontFamilies, fontsHref, normalize, loadConfig, saveConfig, clearConfig } from './config.js';
 import { findOccasion, buildLuach } from './luach.js';
 import { luachHtml, luachText, esc } from './render.js';
 import { todayIn } from './dates.js';
@@ -174,6 +174,12 @@ $('tz').innerHTML = zones.map(z => '<option>' + esc(z) + '</option>').join('');
 $('font').innerHTML = FONTS.map(f => '<option value="' + f[0] + '">' + esc(f[1]) + '</option>').join('');
 
 const opts = (list, v) => list.map(x => '<option' + (x === v ? ' selected' : '') + '>' + esc(x) + '</option>').join('');
+/** אפשרויות "לפי": זמני היום, ואחריהם התפילות האחרות (שעה שתלויה בתפילה) */
+const baseOpts = r => {
+  const names = prayerBases(cfg.rules, r);
+  if (r.base && !(r.base in BASES) && names.indexOf(r.base) < 0) names.push(r.base);
+  return opts(BASE_LABELS, r.base) + (names.length ? '<optgroup label="לפי תפילה">' + opts(names, r.base) + '</optgroup>' : '');
+};
 
 function fill() {
   $('shul').value = cfg.shul || '';
@@ -201,7 +207,7 @@ function renderRules() {
       '<div class="rgrid">' +
       '<div><label>מתי</label><select data-k="when">' + opts(WHEN, r.when) + '</select></div>' +
       '<div><label>חל על</label><select data-k="applies">' + opts(APPLIES, r.applies) + '</select></div>' +
-      '<div><label>לפי</label><select data-k="base">' + opts(BASE_LABELS, r.base) + '</select></div>' +
+      '<div><label>לפי</label><select data-k="base">' + baseOpts(r) + '</select></div>' +
       '<div><label>' + (fixed ? 'שעה' : 'הפרש (דקות)') + '</label><input data-k="offset" value="' + esc(r.offset) +
       '" placeholder="' + (fixed ? '08:00' : '-20') + '" dir="ltr" inputmode="' + (fixed ? 'text' : 'numeric') + '"></div>' +
       '<div><label>עיגול</label><select data-k="round"' + (fixed ? ' disabled' : '') + '>' + opts(ROUND, r.round) + '</select></div>' +
@@ -218,11 +224,27 @@ function changed() {
   }, 400);
 }
 
+const nameRef = new WeakMap();   // כלל ששמו נמחק זמנית ← השם הקודם
 $('rules').addEventListener('input', e => {
   const box = e.target.closest('.rule'), k = e.target.getAttribute('data-k');
   if (!box || !k) return;
   const r = cfg.rules[+box.getAttribute('data-i')];
+  const oldName = String(r.name || '').trim();
   r[k] = e.target.value;
+  if (k === 'name') {
+    // תפילות שתלויות בשם הקודם עוברות לשם החדש (גם אחרי מחיקה זמנית של כל השם),
+    // ורשימות "לפי" מתעדכנות בלי לאבד את הפוקוס
+    const name = r.name.trim(), ref = nameRef.has(r) ? nameRef.get(r) : oldName;
+    if (!name) nameRef.set(r, ref);
+    else {
+      nameRef.delete(r);
+      if (ref && ref !== name && !cfg.rules.some(x => x !== r && String(x.name || '').trim() === ref))
+        cfg.rules.forEach(x => { if (x.base === ref) x.base = name; });
+    }
+    $('rules').querySelectorAll('.rule').forEach(el => {
+      el.querySelector('[data-k="base"]').innerHTML = baseOpts(cfg.rules[+el.getAttribute('data-i')]);
+    });
+  }
   if (k === 'base') {
     if (r.base === 'שעה קבועה' && r.offset.indexOf(':') < 0) r.offset = '08:00';
     if (r.base !== 'שעה קבועה' && r.offset.indexOf(':') >= 0) r.offset = '0';

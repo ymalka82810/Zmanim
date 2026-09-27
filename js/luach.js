@@ -58,18 +58,46 @@ function candlesOn(cfg, d, t, il) {
   return t.sunset == null ? null : t.sunset - cfg.candle * MIN;
 }
 
-function ruleTime(rule, t, cfg) {
-  const base = BASES[rule.base] || 'sunset';
+/**
+ * שעת כלל. הבסיס הוא זמן היום, שעה קבועה, או שם של תפילה אחרת (ואז השעה נגזרת ממנה).
+ * ctx: { cfg, when, day, t }. seen – הגנה מפני תלות מעגלית.
+ */
+function ruleTime(rule, ctx, seen = new Set()) {
+  const { cfg, t } = ctx;
   const offset = String(rule.offset || '').trim();
+  const base = BASES[rule.base];
   if (base === 'fixed') {
     const m = /^(\d{1,2}):(\d{2})$/.exec(offset);
     if (!m) return null;
     return { text: ('0' + m[1]).slice(-2) + ':' + m[2], key: +m[1] * 60 + +m[2] };
   }
-  const b = base === 'candles' ? (t.candles ?? (t.sunset == null ? null : t.sunset - cfg.candle * MIN)) : t[base];
+  if (!base && String(rule.base || '').trim()) {
+    const p = parentTime(rule, ctx, seen);
+    if (!p) return null;
+    if (p.ms != null) return fromMs(applyOffset(p.ms, offset, rule.round), cfg.tz);
+    // תפילה בשעה קבועה: חישוב בדקות מתחילת היום
+    const x = Math.round(applyOffset(p.key * MIN, offset, rule.round) / MIN), key = (x % 1440 + 1440) % 1440;
+    return { text: ('0' + Math.floor(key / 60)).slice(-2) + ':' + ('0' + key % 60).slice(-2), key };
+  }
+  const k = base || 'sunset';
+  const b = k === 'candles' ? (t.candles ?? (t.sunset == null ? null : t.sunset - cfg.candle * MIN)) : t[k];
   if (b == null) return null;
-  const text = hm(applyOffset(b, offset, rule.round), cfg.tz), p = text.split(':');
-  return { text, key: +p[0] * 60 + +p[1] };
+  return fromMs(applyOffset(b, offset, rule.round), cfg.tz);
+}
+
+function fromMs(ms, tz) {
+  const text = hm(ms, tz), p = text.split(':');
+  return { text, key: +p[0] * 60 + +p[1], ms };
+}
+
+/** שעת התפילה שהכלל תלוי בה: עדיפות לתפילה באותו קטע (מתי) שחלה באותו יום */
+function parentTime(rule, ctx, seen) {
+  if (seen.has(rule)) return null;
+  seen.add(rule);
+  const name = String(rule.base).trim();
+  const list = (ctx.cfg.rules || []).filter(r => r && r !== rule && String(r.name || '').trim() === name);
+  const parent = list.find(r => r.when === ctx.when && applies(r, ctx.day)) || list.find(r => r.when === ctx.when) || list[0];
+  return parent ? ruleTime(parent, ctx, seen) : null;
 }
 
 function applies(rule, day) {
@@ -80,7 +108,8 @@ function applies(rule, day) {
 function rowsFor(cfg, when, day, t) {
   return (cfg.rules || [])
     .filter(r => r && String(r.name || '').trim() && r.when === when && applies(r, day))
-    .map(r => Object.assign({ name: String(r.name).trim() }, ruleTime(r, t, cfg) || { text: '—', key: 9999 }))
+    .map(r => Object.assign({ name: String(r.name).trim() }, ruleTime(r, { cfg, when, day, t }) || { text: '—', key: 9999 }))
+    .map(({ ms, ...r }) => r)
     .sort((a, b) => a.key - b.key);
 }
 

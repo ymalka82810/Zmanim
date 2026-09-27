@@ -111,3 +111,13 @@ export function saveConfig(cfg) {
 export function clearConfig() {
   try { localStorage.removeItem(KEY); } catch (e) { /* אין גישה לאחסון */ }
 }
+
+/** שמות תפילות שאפשר לגזור מהן שעה (לבסיס "לפי"), בלי השם של הכלל עצמו */
+export function prayerBases(rules, self) {
+  const own = String(self && self.name || '').trim(), out = [];
+  for (const r of rules || []) {
+    const n = String(r && r.name || '').trim();
+    if (n && n !== own && !(n in BASES) && out.indexOf(n) < 0) out.push(n);
+  }
+  return out;
+}

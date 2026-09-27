@@ -3,7 +3,7 @@
  * קבצי האתר: קודם מהרשת (כדי לקבל עדכונים), ואם אין חיבור – מהמטמון.
  * גופנים: מהמטמון, ואם אין – מהרשת.
  */
-const CACHE = 'luach-v5';
+const CACHE = 'luach-v6';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/app.js', 'js/astro.js', 'js/config.js', 'js/dates.js', 'js/hebrew.js', 'js/image.js', 'js/luach.js', 'js/template-read.js', 'js/template-render.js', 'js/template-ui.js', 'js/render.js', 'js/zmanim.js',
