@@ -1,12 +1,13 @@
 /**
  * ציור לוח על גבי תבנית מקובץ ישן: כל אזור מכוסה בצבע הרקע שלו,
- * והערך החדש נכתב במקומו בצבע ובגודל של הטקסט המקורי.
+ * והערך החדש נכתב במקומו בצבע, בגודל ובגופן של הטקסט המקורי.
+ * גופן שמוטמע ב-PDF הוא בדרך כלל חלקי: אות שאין בו נכתבת בגופן חלופי.
  */
 
 import { hebDateString } from './hebrew.js';
 import { toYmd } from './dates.js';
 
-const FONT = '"Assistant", Arial, sans-serif';
+const FALLBACK = '"Assistant", Arial, sans-serif';
 
 /* ---------- ניתוח צבעים (פעם אחת, בשמירת התבנית) ---------- */
 
@@ -112,6 +113,83 @@ function loadImage(src) {
   return imgCache.get(src);
 }
 
+/* ---------- גופנים מהקובץ ---------- */
+
+const faces = new Map();   // שם משפחה ← Promise<boolean>
+
+function hash(str) {
+  let h = 5381;
+  for (let i = 0; i < str.length; i += 7) h = (h * 33 + str.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36) + str.length.toString(36);
+}
+
+/** טעינת גופן מוטמע (base64) לדפדפן. מחזיר את שם המשפחה, או null אם הטעינה נכשלה */
+async function loadFace(data) {
+  const family = 'tpl-' + hash(data);
+  if (!faces.has(family)) {
+    faces.set(family, (async () => {
+      const bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+      const face = new FontFace(family, bytes);
+      await face.load();
+      document.fonts.add(face);
+      return true;
+    })().catch(() => false));
+  }
+  return (await faces.get(family)) ? family : null;
+}
+
+/** לכל גופן בתבנית: { family, map } לגופן מוטמע, או { css, bold } לגופן מערכת לפי השם */
+async function templateFonts(tpl) {
+  const out = {};
+  for (const [k, f] of Object.entries(tpl.fonts || {})) {
+    const family = f.data && f.map ? await loadFace(f.data) : null;
+    out[k] = family ? { family, map: f.map, bold: f.bold }
+      : { css: (f.family ? '"' + f.family.replace(/"/g, '') + '", ' : '') + FALLBACK, bold: f.bold };
+  }
+  return out;
+}
+
+const HEB = /[֐-׿]/;
+
+/**
+ * הטקסט בסדר ויזואלי (משמאל לימין), כי האותיות בגופן המוטמע נמצאות בקוד פרטי
+ * שהדפדפן לא מזהה כעברית. מספרים ואותיות לטיניות נשארים משמאל לימין.
+ */
+function visualOrder(text) {
+  if (!HEB.test(text)) return text;
+  const mirror = { '(': ')', ')': '(', '[': ']', ']': '[' };
+  return [...text].reverse().join('')
+    .replace(/[0-9A-Za-z:./-]+/g, m => [...m].reverse().join(''))
+    .replace(/[()[\]]/g, c => mirror[c]);
+}
+
+/**
+ * כותב טקסט במרכז (cx) בגופן מהקובץ. אות שאין בגופן נכתבת בגופן החלופי.
+ * draw=false – רק מודד ומחזיר את הרוחב.
+ */
+function embeddedText(ctx, text, f, size, cx, baseline, draw) {
+  const segs = [];
+  for (const ch of visualOrder(text)) {
+    const emb = !/\s/.test(ch) && ch in f.map;
+    const last = segs[segs.length - 1];
+    if (last && last.emb === emb) last.s += emb ? f.map[ch] : ch;
+    else segs.push({ emb, s: emb ? f.map[ch] : ch });
+  }
+  const fonts = { true: size + 'px "' + f.family + '"', false: (f.bold ? '700 ' : '400 ') + size + 'px ' + FALLBACK };
+  // LRO … PDF – כופה סדר משמאל לימין על קטע בגופן החלופי, שכבר נמצא בסדר ויזואלי
+  const str = sg => sg.emb ? sg.s : '\u202D' + sg.s + '\u202C';
+  let w = 0;
+  for (const sg of segs) { ctx.font = fonts[sg.emb]; sg.w = ctx.measureText(str(sg)).width; w += sg.w; }
+  if (draw) {
+    ctx.save();
+    ctx.direction = 'ltr'; ctx.textAlign = 'left';
+    let x = cx - w / 2;
+    for (const sg of segs) { ctx.font = fonts[sg.emb]; ctx.fillText(str(sg), x, baseline); x += sg.w; }
+    ctx.restore();
+  }
+  return w;
+}
+
 export async function templateCanvas(tpl, values) {
   const img = await loadImage(tpl.image);
   const canvas = document.createElement('canvas');
@@ -120,25 +198,35 @@ export async function templateCanvas(tpl, values) {
   ctx.drawImage(img, 0, 0);
   ctx.direction = 'rtl';
   ctx.textAlign = 'center';
+  const fonts = await templateFonts(tpl);
 
   for (const s of tpl.slots) {
     const text = slotValue(s, values);
     if (text == null) continue;
     const b = s.box, st = s.style || { bg: '#fff', fg: '#000', bold: false };
     let size = b.size || b.h * 0.72;
-    const font = sz => (st.bold ? '700 ' : '400 ') + sz + 'px ' + FONT;
-    ctx.font = font(size);
+    const cx = b.x + b.w / 2, baseline = b.baseline ?? (b.y + b.h * 0.78);
+    const f = fonts[b.font] || fonts[tpl.mainFont];
+    let write;
+    if (f && f.family) write = (sz, draw) => embeddedText(ctx, text, f, sz, cx, baseline, draw);
+    else {
+      // גופן שלא מוטמע בקובץ: לפי השם שלו, אם הוא מותקן במכשיר
+      const css = f ? f.css : FALLBACK, bold = f ? f.bold || st.bold : st.bold;
+      write = (sz, draw) => {
+        ctx.font = (bold ? '700 ' : '400 ') + sz + 'px ' + css;
+        if (draw) ctx.fillText(text, cx, baseline);
+        return ctx.measureText(text).width;
+      };
+    }
     // טקסט ארוך מהמקום: מקטינים עד 70%, ומעבר לזה מרחיבים את הכיסוי
-    let w = ctx.measureText(text).width;
+    let w = write(size, false);
     const room = Math.max(b.w * 1.15, b.w + size);
-    if (w > room) { size = Math.max(size * 0.7, size * room / w); ctx.font = font(size); w = ctx.measureText(text).width; }
-    const cx = b.x + b.w / 2;
+    if (w > room) { size = Math.max(size * 0.7, size * room / w); w = write(size, false); }
     const left = Math.min(b.x, cx - w / 2) - 2, right = Math.max(b.x + b.w, cx + w / 2) + 2;
     ctx.fillStyle = st.bg;
     ctx.fillRect(left, b.y - 1, right - left, b.h + 2);
     ctx.fillStyle = st.fg;
-    const baseline = b.baseline ?? (b.y + b.h * 0.78);
-    ctx.fillText(text, cx, baseline);
+    write(size, true);
   }
   return canvas;
 }

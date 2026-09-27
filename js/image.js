@@ -4,8 +4,9 @@
  */
 
 const C = { ink: '#1d2b45', blue: '#2c4a7c', muted: '#5d6b82', soft: '#e3e9f2', note: '#eef3fa', bg: '#ffffff' };
-const SERIF = '"Frank Ruhl Libre", Georgia, serif';
-const SANS = '"Assistant", Arial, sans-serif';
+import { fontFamilies } from './config.js';
+
+let SERIF, SANS;   // גופן הכותרת וגופן הטקסט, לפי הבחירה בהגדרות
 const W = 800, M = 56, SCALE = 2;   // רוחב לוגי, שוליים, רזולוציה (1600 פיקסלים)
 
 /** פירוק טקסט לשורות לפי רוחב */
@@ -95,14 +96,24 @@ function layout(ctx, l, draw) {
 
 async function loadFonts() {
   if (!document.fonts) return;
+  // הגדרות הגופן מ-Google Fonts עוד בטעינה (למשל מיד אחרי שהגופן הוחלף)
+  const link = document.getElementById('fontLink');
+  if (link && !link.sheet) {
+    await new Promise(ok => {
+      link.addEventListener('load', ok, { once: true });
+      link.addEventListener('error', ok, { once: true });
+      setTimeout(ok, 4000);
+    });
+  }
   try {
-    await Promise.all(['900 50px "Frank Ruhl Libre"', '400 20px "Assistant"', '700 20px "Assistant"']
-      .map(f => document.fonts.load(f, 'אבג')));
+    await Promise.all(['900 50px ' + SERIF, '400 20px ' + SANS, '700 20px ' + SANS]
+      .map(f => document.fonts.load(f, 'אבג 0123')));
   } catch (e) { /* בלי חיבור ובלי מטמון – גופן חלופי */ }
 }
 
-/** מצייר את הלוח ומחזיר canvas */
-export async function luachCanvas(l) {
+/** מצייר את הלוח ומחזיר canvas. font – מזהה הגופן מההגדרות */
+export async function luachCanvas(l, font) {
+  ({ title: SERIF, body: SANS } = fontFamilies(font));
   await loadFonts();
   const canvas = document.createElement('canvas');
   let ctx = canvas.getContext('2d');

@@ -25,10 +25,53 @@ export const WHEN = ['כניסה', 'כל יום', 'יציאה'];
 export const APPLIES = ['שבת וחג', 'שבת בלבד', 'חג בלבד'];
 export const ROUND = ['ללא', 'למטה ל-5', 'למעלה ל-5', 'לקרוב ל-5'];
 
+/**
+ * גופנים ללוח שהאתר מעצב (לא לעיצוב מלוח קיים): [מזהה, שם, גופן הכותרת, גופן הטקסט].
+ * כל גופן: [שם ב-Google Fonts, משקלים זמינים, גופן חלופי].
+ */
+const F = {
+  frank: ['Frank Ruhl Libre', '400;700;900', 'serif'], assistant: ['Assistant', '400;600;700;800', 'sans-serif'],
+  heebo: ['Heebo', '400;700;900', 'sans-serif'], rubik: ['Rubik', '400;700;900', 'sans-serif'],
+  notoSerif: ['Noto Serif Hebrew', '400;700;900', 'serif'], notoSans: ['Noto Sans Hebrew', '400;700;900', 'sans-serif'],
+  david: ['David Libre', '400;700', 'serif'], alef: ['Alef', '400;700', 'sans-serif'],
+  varela: ['Varela Round', '400', 'sans-serif'], secular: ['Secular One', '400', 'sans-serif'],
+  suez: ['Suez One', '400', 'serif'], bellefair: ['Bellefair', '400', 'serif']
+};
+export const FONTS = [
+  ['classic', 'קלאסי – Frank Ruhl וטקסט Assistant', F.frank, F.assistant],
+  ['assistant', 'Assistant', F.assistant, F.assistant],
+  ['heebo', 'Heebo', F.heebo, F.heebo],
+  ['rubik', 'Rubik', F.rubik, F.rubik],
+  ['notoSans', 'Noto Sans Hebrew', F.notoSans, F.notoSans],
+  ['frank', 'Frank Ruhl Libre', F.frank, F.frank],
+  ['notoSerif', 'Noto Serif Hebrew', F.notoSerif, F.notoSerif],
+  ['david', 'David Libre', F.david, F.david],
+  ['alef', 'Alef', F.alef, F.alef],
+  ['varela', 'Varela Round', F.varela, F.varela],
+  ['secular', 'כותרת Secular One וטקסט Assistant', F.secular, F.assistant],
+  ['suez', 'כותרת Suez One וטקסט Assistant', F.suez, F.assistant],
+  ['bellefair', 'כותרת Bellefair וטקסט Heebo', F.bellefair, F.heebo]
+];
+
+/** { title, body } – ערכי font-family לגופן שנבחר */
+export function fontFamilies(key) {
+  const f = FONTS.find(x => x[0] === key) || FONTS[0];
+  const css = ([name, , generic]) => '"' + name + '", ' + (generic === 'serif' ? 'Georgia, ' : 'Arial, ') + generic;
+  return { title: css(f[2]), body: css(f[3]), names: [f[2][0], f[3][0]] };
+}
+
+/** כתובת ה-CSS של Google Fonts לגופן שנבחר */
+export function fontsHref(key) {
+  const f = FONTS.find(x => x[0] === key) || FONTS[0];
+  const fams = [...new Map([f[2], f[3]].map(x => [x[0], x])).values()];
+  return 'https://fonts.googleapis.com/css2?' +
+    fams.map(([name, w]) => 'family=' + name.replace(/ /g, '+') + ':wght@' + w).join('&') + '&display=swap';
+}
+
 export const DEFAULT_CONFIG = {
   version: 1,
   shul: '', city: 'jerusalem', lat: 31.769, lng: 35.2163, tz: 'Asia/Jerusalem', il: true,
-  candle: 40, havdalah: '8.5', notes: '',
+  candle: 40, havdalah: '8.5', notes: '', font: 'classic',
   rules: [
     { name: 'מנחה וקבלת שבת', when: 'כניסה', applies: 'שבת וחג', base: 'הדלקת נרות', offset: '15', round: 'ללא' },
     { name: 'שחרית', when: 'כל יום', applies: 'שבת וחג', base: 'שעה קבועה', offset: '08:00', round: 'ללא' },
@@ -48,6 +91,7 @@ export function normalize(c) {
   cfg.candle = Number(cfg.candle) || 0;
   cfg.havdalah = String(cfg.havdalah || '8.5');
   cfg.il = cfg.il !== false;
+  if (!FONTS.some(f => f[0] === cfg.font)) cfg.font = 'classic';
   return cfg;
 }
 

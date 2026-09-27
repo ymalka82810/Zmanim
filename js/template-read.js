@@ -36,7 +36,8 @@ export async function readFile(file) {
 
 async function readPdf(file) {
   const pdfjs = await loadPdfjs();
-  const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false });
+  // fontExtraProperties: שומר את קובצי הגופנים אחרי הציור, כדי שאפשר יהיה לכתוב בהם את הערכים החדשים
+  const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false, fontExtraProperties: true });
   const doc = await task.promise;
   const page = await doc.getPage(1);
   const scale = PAGE_W / page.getViewport({ scale: 1 }).width;
@@ -57,10 +58,58 @@ async function readPdf(file) {
     if (size < 4) continue;
     const w = it.width * scale;
     const baseline = tx[5];
-    items.push({ str, x: tx[4], w, baseline, size, y: baseline - size * 0.92, h: size * 1.2, rtl: it.dir === 'rtl' || /[א-ת]/.test(str) });
+    items.push({ str, x: tx[4], w, baseline, size, y: baseline - size * 0.92, h: size * 1.2, rtl: it.dir === 'rtl' || /[א-ת]/.test(str), font: it.fontName });
   }
+  let fonts = {};
+  try { fonts = await readFonts(pdfjs, page); } catch (e) { console.warn('לא ניתן לקרוא את הגופנים מהקובץ', e); }
   task.destroy();
-  return { canvas, items };
+  return { canvas, items, fonts };
+}
+
+/**
+ * הגופנים שבקובץ. pdf.js ממיר כל גופן מוטמע לקובץ OpenType שבו כל אות נמצאת בקוד פרטי (PUA),
+ * ולכן שומרים גם מפה מהאות האמיתית לקוד שבגופן, לפי האותיות שמופיעות בעמוד.
+ * גופן מוטמע הוא בדרך כלל חלקי – יש בו רק האותיות שהיו בקובץ.
+ * מחזיר { [שם פנימי]: { family, bold, italic, data (base64) או null, map } }
+ */
+async function readFonts(pdfjs, page) {
+  const ops = await page.getOperatorList();
+  const maps = {};
+  let cur = null;
+  for (let i = 0; i < ops.fnArray.length; i++) {
+    const fn = ops.fnArray[i], args = ops.argsArray[i];
+    if (fn === pdfjs.OPS.setFont) { cur = args[0]; maps[cur] = maps[cur] || {}; continue; }
+    if (fn !== pdfjs.OPS.showText || !cur) continue;
+    for (const g of args[0]) {
+      if (!g || typeof g !== 'object' || !g.fontChar || typeof g.unicode !== 'string') continue;
+      const u = [...g.unicode];
+      // רווח לא נשמר: בגופן המומר הוא מופיע כריבוע
+      if (u.length === 1 && !/\s/.test(u[0]) && !(u[0] in maps[cur])) maps[cur][u[0]] = g.fontChar;
+    }
+  }
+  const out = {};
+  for (const name of Object.keys(maps)) {
+    let f;
+    try { f = page.commonObjs.get(name); } catch (e) { continue; }
+    if (!f || f.isType3Font) continue;
+    const raw = String(f.name || '');
+    const data = f.data && !f.missingFile && !f.disableFontFace ? toBase64(f.data) : null;
+    out[name] = { family: familyName(raw), bold: !!f.bold || /bold|black|heavy/i.test(raw), italic: !!f.italic, data, map: data ? maps[name] : null };
+  }
+  return out;
+}
+
+function toBase64(bytes) {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+/** שם גופן להצגה ולגופן מערכת: "ABCDEF+TimesNewRomanPS-BoldMT" ← "Times New Roman" */
+function familyName(raw) {
+  const n = raw.replace(/^[A-Z]{6}\+/, '').replace(/[-,](Bold|Italic|Regular|Black|Light|Medium|Oblique|Heavy|Semi\w*|Demi\w*)+.*$/i, '')
+    .replace(/(PSMT|PS|MT)$/, '').replace(/(Bold|Italic|Regular)+$/i, '');
+  return /\s/.test(n) ? n : n.replace(/([a-z])([A-Z])/g, '$1 $2');
 }
 
 async function readImage(file) {
@@ -71,7 +120,7 @@ async function readImage(file) {
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
-  return { canvas, items: [] };
+  return { canvas, items: [], fonts: {} };
 }
 
 /**
@@ -306,7 +355,7 @@ export function suggestSlots(tokens, cfg, day) {
   const tDay = day != null ? timesFor(cfg, day) : null;
 
   for (const t of tokens) {
-    const box = { x: t.x, y: t.y, w: t.w, h: t.h, baseline: t.baseline, size: t.size };
+    const box = { x: t.x, y: t.y, w: t.w, h: t.h, baseline: t.baseline, size: t.size, font: t.font };
     if (t.kind === 'title' || t.kind === 'parasha' || t.kind === 'hebDate') {
       slots.push({ box, kind: t.kind, old: t.str, ascii: /["']/.test(t.str) && !/[״׳]/.test(t.str), noYear: t.kind === 'hebDate' && !HEB_DATE_RE.exec(t.str)[3] });
       continue;
@@ -343,6 +392,6 @@ export function suggestSlots(tokens, cfg, day) {
 /** טקסטים שאינם שעות ואינם מזוהים – אפשר ללחוץ עליהם ולהפוך אותם לאזור */
 export function textCandidates(tokens) {
   return tokens.filter(t => t.kind === 'text').map(t => ({
-    box: { x: t.x, y: t.y, w: t.w, h: t.h, baseline: t.baseline, size: t.size }, old: t.str
+    box: { x: t.x, y: t.y, w: t.w, h: t.h, baseline: t.baseline, size: t.size, font: t.font }, old: t.str
   }));
 }

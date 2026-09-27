@@ -1,6 +1,6 @@
 /** ממשק האתר: לוח, הגדרות, שיתוף וגיבוי. הכל נשמר מקומית בדפדפן. */
 
-import { CITIES, BASES, WHEN, APPLIES, ROUND, DEFAULT_CONFIG, normalize, loadConfig, saveConfig, clearConfig } from './config.js';
+import { CITIES, BASES, WHEN, APPLIES, ROUND, FONTS, DEFAULT_CONFIG, fontFamilies, fontsHref, normalize, loadConfig, saveConfig, clearConfig } from './config.js';
 import { findOccasion, buildLuach } from './luach.js';
 import { luachHtml, luachText, esc } from './render.js';
 import { todayIn } from './dates.js';
@@ -41,7 +41,25 @@ $('goSettings').onclick = () => showTab('settings');
 
 /** עיצוב מהקובץ הישן – רק לשבת/חג של יום אחד, כמו בלוח המקורי */
 const useTemplate = l => !!(cfg.template && cfg.template.enabled && !l.values.multiDay);
-const drawLuach = l => useTemplate(l) ? templateCanvas(cfg.template, l.values) : luachCanvas(l);
+const drawLuach = l => useTemplate(l) ? templateCanvas(cfg.template, l.values) : luachCanvas(l, cfg.font);
+
+/** טעינת הגופן שנבחר מ-Google Fonts והחלתו על הלוח ועל הדוגמה בהגדרות */
+function applyFont() {
+  const href = fontsHref(cfg.font);
+  let link = document.getElementById('fontLink');
+  if (!link) {
+    link = document.createElement('link');
+    link.id = 'fontLink'; link.rel = 'stylesheet';
+    document.head.appendChild(link);
+  }
+  if (link.getAttribute('href') !== href) link.href = href;
+  const f = fontFamilies(cfg.font);
+  for (const el of [$('luach'), $('fontSample')]) {
+    el.style.setProperty('--f-title', f.title);
+    el.style.setProperty('--f-body', f.body);
+  }
+  $('fontSample').style.fontFamily = f.title;
+}
 
 function renderLuach() {
   $('welcome').hidden = saved;
@@ -153,6 +171,8 @@ $('city').innerHTML = CITIES.map(c => '<option value="' + c[0] + '">' + esc(c[1]
 const zones = (Intl.supportedValuesOf && Intl.supportedValuesOf('timeZone')) || ['Asia/Jerusalem', 'Europe/London', 'America/New_York'];
 $('tz').innerHTML = zones.map(z => '<option>' + esc(z) + '</option>').join('');
 
+$('font').innerHTML = FONTS.map(f => '<option value="' + f[0] + '">' + esc(f[1]) + '</option>').join('');
+
 const opts = (list, v) => list.map(x => '<option' + (x === v ? ' selected' : '') + '>' + esc(x) + '</option>').join('');
 
 function fill() {
@@ -165,6 +185,8 @@ function fill() {
   $('il').value = cfg.il ? '1' : '0';
   $('havdalah').value = String(cfg.havdalah);
   $('notes').value = cfg.notes || '';
+  $('font').value = cfg.font;
+  applyFont();
   $('custom').hidden = cfg.city !== 'custom';
   renderRules();
   renderTemplateStatus();
@@ -234,6 +256,7 @@ bind('tz', v => { cfg.tz = v; cursor = null; });
 bind('il', v => { cfg.il = v === '1'; cursor = null; });
 bind('havdalah', v => { cfg.havdalah = v; });
 bind('notes', v => { cfg.notes = v; });
+bind('font', v => { cfg.font = v; applyFont(); });
 
 /* ---------- עיצוב מלוח קיים ---------- */
 

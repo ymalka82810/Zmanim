@@ -43,11 +43,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .actions.left { justify-content: flex-start; }
 
 /* הלוח עצמו – נראה כמו דף מודפס */
-.luach { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px 22px; box-shadow: 0 2px 10px rgba(29, 43, 69, .06); }
+.luach { font-family: var(--f-body, inherit); background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px 22px; box-shadow: 0 2px 10px rgba(29, 43, 69, .06); }
 .luach .stripe { height: 5px; background: var(--blue); margin-bottom: 4px; }
 .luach .stripe.s { height: 2px; }
 .l-shul { text-align: center; font-size: 1rem; font-weight: 700; color: var(--blue); margin-top: 14px; }
-.l-title { text-align: center; font-family: "Frank Ruhl Libre", Georgia, serif; font-weight: 900; font-size: 2rem; margin: 4px 0; line-height: 1.2; }
+.l-title { text-align: center; font-family: var(--f-title, "Frank Ruhl Libre", Georgia, serif); font-weight: 900; font-size: 2rem; margin: 4px 0; line-height: 1.2; }
 .l-dates { text-align: center; font-size: .9rem; color: var(--muted); margin-bottom: 6px; }
 .l-sec { width: 100%; border-collapse: collapse; margin-top: 16px; }
 .l-sec th, .l-sec td { padding: 6px 2px; border-bottom: 1px solid var(--soft); text-align: right; }

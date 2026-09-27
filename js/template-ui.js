@@ -22,18 +22,18 @@ const opts = (list, v) => list.map(x => Array.isArray(x)
   : '<option' + (x === v ? ' selected' : '') + '>' + esc(x) + '</option>').join('');
 const oldMinutes = s => { const m = /^(\d{1,2}):(\d{2})$/.exec(s.old || ''); return m ? +m[1] * 60 + +m[2] : null; };
 
-let st = null;   // { canvas, W, H, slots, candidates, day, cfg, name, onDone, drawing }
+let st = null;   // { canvas, W, H, slots, candidates, fonts, day, cfg, name, onDone, drawing }
 
 /* ---------- פתיחה ---------- */
 
 /** פתיחת העורך מקובץ חדש */
 export async function editFromFile(file, cfg, onDone) {
-  const { canvas, items } = await readFile(file);
+  const { canvas, items, fonts } = await readFile(file);
   const tokens = tokenize(items);
   let day = detectDate(tokens);
   if (day != null) { const o = findOccasion(day, cfg.il); day = o ? o.first : day; }
   const fit = x => ({ ...x, box: refineBox(canvas, x.box) });
-  st = { canvas, W: canvas.width, H: canvas.height, cfg, name: file.name, onDone, day,
+  st = { canvas, W: canvas.width, H: canvas.height, cfg, name: file.name, onDone, day, fonts,
     slots: suggestSlots(tokens, cfg, day).map(fit), candidates: textCandidates(tokens).map(fit), scanned: !items.length };
   open();
 }
@@ -45,7 +45,7 @@ export async function editExisting(tpl, cfg, onDone) {
   const canvas = document.createElement('canvas');
   canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
   canvas.getContext('2d').drawImage(img, 0, 0);
-  st = { canvas, W: canvas.width, H: canvas.height, cfg, name: tpl.name, onDone, day: tpl.day ?? null,
+  st = { canvas, W: canvas.width, H: canvas.height, cfg, name: tpl.name, onDone, day: tpl.day ?? null, fonts: tpl.fonts || {},
     slots: JSON.parse(JSON.stringify(tpl.slots)), candidates: tpl.candidates || [], scanned: !(tpl.candidates || []).length };
   // כללים קיימים: להציג את ההגדרה הנוכחית שלהם
   for (const s of st.slots) {
@@ -269,8 +269,13 @@ function buildTemplate() {
     c.style = analyzeSlot(st.canvas, s.box);
     return c;
   }).filter(s => s.kind !== 'rule' || s.name);
+  // רק הגופנים שבשימוש נשמרים. אזור שסומן ידנית נכתב בגופן הנפוץ בשעות
+  const count = {};
+  for (const s of slots) if (s.box.font && st.fonts[s.box.font]) count[s.box.font] = (count[s.box.font] || 0) + (s.kind === 'rule' || s.kind === 'zman' ? 2 : 1);
+  const mainFont = Object.keys(count).sort((a, b) => count[b] - count[a])[0] || null;
+  const fonts = Object.fromEntries(Object.keys(count).map(k => [k, st.fonts[k]]));
   return { enabled: true, name: st.name, day: st.day, image: st.canvas.toDataURL('image/jpeg', 0.88),
-    slots, candidates: st.candidates };
+    slots, candidates: st.candidates, fonts, mainFont };
 }
 
 $('tplPreview').onclick = async () => {
