@@ -101,3 +101,15 @@ dialog::backdrop{background:rgba(10,16,32,.55)}
 .toast.on{opacity:1}
 @media (max-width:600px){ .hide-sm{display:none} .two{grid-template-columns:1fr} td,th{padding:8px 7px} }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+.printhead{display:none}
+@media print{
+  header.day,nav.tabs,.fab,.toast,.bar,dialog{display:none!important}
+  body{background:#fff}
+  .wrap{max-width:none;padding:0;margin:0}
+  .printhead{display:block;margin-bottom:12px}
+  .printhead h3{margin:0 0 4px;font-family:var(--serif)}
+  .panel.scroll{overflow:visible;box-shadow:none;border:0}
+  table{width:100%;border-collapse:collapse}
+  th,td{border-bottom:1px solid #ccc;color:#000}
+}

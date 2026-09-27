@@ -159,9 +159,11 @@ function viewLedger(){
     <div class="seg" role="group" aria-label="חשבון"><button data-acct="main" aria-pressed="${ui.acct==="main"}">עו״ש</button><button data-acct="petty" aria-pressed="${ui.acct==="petty"}">קופה קטנה</button></div>
     <label>מתאריך<input type="date" id="lf" lang="he" value="${ui.from}"></label>
     <label>עד תאריך<input type="date" id="lt" lang="he" value="${ui.to}"></label>
-    <button class="btn ghost" id="csv">הורדת הדוח (CSV לאקסל)</button>
+    <button class="btn ghost" id="csv">ייצוא ל-Excel (CSV)</button>
+    <button class="btn ghost" id="pdf">ייצוא ל-PDF (הדפסה)</button>
   </div>
   <div class="status">${esc(heb(ui.from).heb)} – ${esc(heb(ui.to).heb)}</div>
+  <div class="printhead"><h3>${esc(settings.synName||"")} – ${ui.acct==="main"?"דוח עו״ש":"דוח קופה קטנה"}</h3><div>${esc(gFmt.format(parseIso(ui.from)))} – ${esc(gFmt.format(parseIso(ui.to)))} (${esc(heb(ui.from).heb)} – ${esc(heb(ui.to).heb)})</div></div>
   <div class="panel scroll" style="margin-top:8px"><table><thead><tr><th>תאריך</th><th>תיאור</th><th class="num">זכות</th><th class="num">חובה</th><th class="num">יתרה</th></tr></thead><tbody>
     <tr class="total"><td colspan="4">יתרת פתיחה</td><td class="num">${money(s.opening)}</td></tr>
     ${s.rows.map(r=>`<tr><td>${dateCell(r.date)}</td><td>${esc(label(r.t))}<span class="sub">${esc(descOf(r.t))}</span></td><td class="num cr">${r.cr?money(r.cr):""}</td><td class="num dr">${r.dr?money(r.dr):""}</td><td class="num balc">${money(r.bal)}</td></tr>`).join("")}
@@ -351,6 +353,7 @@ $("#view").addEventListener("click",async e=>{
   if(b.dataset.del){const t=txs.find(x=>x.id===b.dataset.del);if(t&&confirm(`למחוק את הרישום "${label(t)}" על סך ${money(t.amount)}?`)){try{await delTx(t.id);toast("נמחק")}catch(err){toast(errText(err,"המחיקה נכשלה"))}}return}
   if(b.dataset.pay){const t=txs.find(x=>x.id===b.dataset.pay);if(t){try{await markPaid(t.id);toast("סומן כשולם")}catch(err){toast(errText(err,"העדכון נכשל"))}}return}
   if(b.id==="csv") return exportCsv();
+  if(b.id==="pdf") return print();
   if(b.id==="importLocal") return importLocal();
   if(b.id==="signIn") return Auth.signInWithGoogle(location.href).catch(()=>toast("ההתחברות נכשלה"));
   if(b.id==="pledgeBtn") return openPledge();
@@ -361,10 +364,14 @@ $("#view").addEventListener("change",e=>{if(e.target.id==="lf"){ui.from=e.target
 async function exportCsv(){
   const s=statement(ui.acct,ui.from,ui.to);
   const q=v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"';
-  const lines=[["תאריך לועזי","תאריך עברי","פרשת השבוע","סוג","פרטים","זכות","חובה","יתרה"].map(q).join(",")];
-  lines.push(["","","","יתרת פתיחה","","","",s.opening.toFixed(2)].map(q).join(","));
-  for(const r of s.rows){const h=heb(r.date);lines.push([gFmt.format(parseIso(r.date)),h.heb,h.parsha,label(r.t),descOf(r.t),r.cr?r.cr.toFixed(2):"",r.dr?r.dr.toFixed(2):"",r.bal.toFixed(2)].map(q).join(","))}
-  lines.push(["","","","סה״כ","",s.cr.toFixed(2),s.dr.toFixed(2),s.closing.toFixed(2)].map(q).join(","));
+  const n=v=>v?v.toFixed(2):"";
+  const lines=[[settings.synName||"",ui.acct==="main"?"דוח עו״ש":"דוח קופה קטנה"].map(q).join(",")];
+  lines.push([`${gFmt.format(parseIso(ui.from))} - ${gFmt.format(parseIso(ui.to))}`].map(q).join(","));
+  lines.push("");
+  lines.push(["תאריך לועזי","תאריך עברי","פרשת השבוע","סוג","פרטים","זכות","חובה","יתרה"].map(q).join(","));
+  lines.push([q(""),q(""),q(""),q("יתרת פתיחה"),q(""),"","",n(s.opening)].join(","));
+  for(const r of s.rows){const h=heb(r.date);lines.push([q(gFmt.format(parseIso(r.date))),q(h.heb),q(h.parsha),q(label(r.t)),q(descOf(r.t)),n(r.cr),n(r.dr),n(r.bal)].join(","))}
+  lines.push([q(""),q(""),q(""),q("סה״כ ויתרת סגירה"),q(""),n(s.cr),n(s.dr),n(s.closing)].join(","));
   const name=(ui.acct==="main"?"דוח-עוש":"דוח-קופה-קטנה")+`_${ui.from||"התחלה"}_${ui.to||"היום"}.csv`;
   const data="\uFEFF"+lines.join("\r\n");
   const url=URL.createObjectURL(new Blob([data],{type:"text/csv;charset=utf-8"}));
