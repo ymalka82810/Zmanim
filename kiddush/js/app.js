@@ -4,6 +4,14 @@
 const { H, esc, dkey, pkey, today0, gShort, gFull, heMonth, heDay, heYear, heFull,
   getSlots, slotFor, slotTitle, monthRange } = window.KiddushCalendar || {};
 const G = window.KiddushSheets;
+const ERR = {
+  network: 'אין חיבור לאינטרנט. מוצג המידע האחרון שנשמר במכשיר.',
+  'no-gate': 'הלוח עדיין לא חובר לשירות ההרשמה של האתר. בעל האתר צריך להשלים את ההתקנה.',
+  'no-access': 'הגיליון לא נמצא. ודאו שהקישור נכון, ושהגיליון נוצר מתוך הלוח.',
+  'not-board': 'הקישור מוביל לגיליון שאינו לוח קידושים שנוצר מתוך הלוח.',
+  'bad-sheet': 'הקישור לא תקין.'
+};
+const errText = e => ERR[e && e.code] || 'לא הצלחנו לקרוא את הלוח. נסו שוב בעוד רגע.';
 const $ = s => document.querySelector(s);
 const LS_ID = 'kd_sheet', LS_CACHE = 'kd_cache', LS_MODE = 'kd_mode';
 const YEAR_DAYS = 365;
@@ -12,7 +20,6 @@ const ICON = {
   right:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>',
   left:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m15 6-6 6 6 6"/></svg>',
   refresh:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg>',
-  table:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3.5" y="4" width="17" height="16" rx="2.5"/><path d="M3.5 9.5h17M3.5 15h17M10 9.5V20"/></svg>',
   gear:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>'
 };
 
@@ -51,9 +58,7 @@ async function refresh(){
     store.set(LS_CACHE, JSON.stringify({ id:S.id, info, rows, at:S.at }));
   } catch(e){
     console.warn(e);
-    S.error = e.code === 'closed'
-      ? 'לא הצלחנו לקרוא את הגיליון. ודאו שהקישור נכון ושהגיליון משותף ל"כל מי שיש לו את הקישור".'
-      : 'אין חיבור לאינטרנט. מוצג המידע האחרון שנשמר במכשיר.';
+    S.error = errText(e);
   }
   S.loading = false; render();
 }
@@ -79,7 +84,6 @@ function headerHTML(){
   return `<header class="top">
     <div class="shul"><h1>${esc(i.name || 'לוח קידושים')}</h1><small>${i.il?'ארץ ישראל':'חוץ לארץ'}${upd?' | '+upd:''}</small></div>
     <button class="iconbtn${S.loading?' spin':''}" data-act="refresh" aria-label="רענון">${ICON.refresh}</button>
-    <a class="iconbtn" href="${esc(G.editUrl(S.id))}" target="_blank" rel="noopener" aria-label="פתיחת הגיליון">${ICON.table}</a>
     <button class="iconbtn" data-act="settings" aria-label="הגדרות">${ICON.gear}</button>
   </header>`;
 }
@@ -147,14 +151,14 @@ function calHTML(){
 
 /* Start: הקמת גיליון או חיבור לגיליון קיים */
 function renderStart(app){
-  const canCreate = G.hasClientId();
-  app.innerHTML = `<div class="hero"><h1>לוח קידושים</h1><p class="muted">הלוח מציג את גיליון הקידושים של בית הכנסת. המתפללים נרשמים בגיליון, והלוח מסדר את הרישומים לפי שבתות וחגים.</p></div>
+  const canCreate = G.hasClientId() && G.hasGate();
+  app.innerHTML = `<div class="hero"><h1>לוח קידושים</h1><p class="muted">הלוח מציג את גיליון הקידושים של בית הכנסת. המתפללים נרשמים בלוח, והרישומים נשמרים בגיליון גוגל של הגבאי.</p></div>
     <div class="card"><h3>קיבלתי קישור מהגבאי</h3>
       <label class="f" for="fLink">הדביקו כאן את הקישור ללוח או לגיליון</label>
       <input type="text" id="fLink" dir="ltr" placeholder="https://docs.google.com/spreadsheets/d/…">
       <div class="row" style="margin-top:12px"><button class="btn" data-act="connect">פתיחת הלוח</button></div></div>
     <div class="card"><h3>אני גבאי: הקמת גיליון חדש</h3>
-      <p class="small muted" style="margin:0 0 4px">הגיליון ייווצר בגוגל דרייב שלך ויהיה שייך לך. יהיו בו שורות לכל השבתות והחגים בשנה הקרובה. כל מי שיקבל ממך את הקישור יוכל לכתוב בו.</p>
+      <p class="small muted" style="margin:0 0 4px">הגיליון ייווצר בגוגל דרייב שלך ויהיה שייך לך. יהיו בו שורות לכל השבתות והחגים בשנה הקרובה. רק את/ה יכול/ה לערוך אותו. המתפללים נרשמים דרך הלוח, והלוח כותב רק לשבת פנויה.</p>
       <label class="f" for="fName">שם בית הכנסת</label><input type="text" id="fName" maxlength="80">
       <label class="f" for="fIl">מיקום (קובע את סדר הפרשות והחגים)</label>
       <select id="fIl"><option value="1">ארץ ישראל</option><option value="0">חוץ לארץ</option></select>
@@ -177,28 +181,40 @@ function slotSheet(k){
     html += `<dl class="kv"><dt>קידוש ע״י</dt><dd>${esc(r.sponsor)}</dd>
       ${r.dname?`<dt>${r.dedic==='לזכות'?'לזכות':'לעילוי נשמת'}</dt><dd>${esc(r.dname)}</dd>`:''}
       ${r.reason?`<dt>סיבה</dt><dd>${esc(r.reason)}</dd>`:''}
-      ${r.phone?`<dt>טלפון</dt><dd dir="ltr" style="text-align:right"><a href="tel:${esc(r.phone.replace(/[^\d+]/g,''))}">${esc(r.phone)}</a></dd>`:''}
       ${r.note?`<dt>הערה</dt><dd>${esc(r.note)}</dd>`:''}</dl>`;
   } else if (r) html += `<p><span class="chip ${past?'block':'free'}">${past?'לא נקבע קידוש':'פנוי לקידוש'}</span></p>`;
   else html += `<p class="muted">התאריך הזה עדיין לא נמצא בגיליון.${past?'':' הגבאי יכול להוסיף את השנה הבאה מתפריט ההגדרות.'}</p>`;
   if (r && !past){
-    const label = r.sponsor ? 'עריכה בגיליון' : 'להרשמה בגיליון';
-    html += `<div class="row" style="margin-top:14px"><a class="btn" href="${esc(G.editUrl(S.id, r.row))}" target="_blank" rel="noopener">${label}</a></div>
-      <p class="meta">אחרי ההרשמה בגיליון חזרו ללוח ולחצו על כפתור הרענון.</p>`;
+    html += r.sponsor
+      ? '<p class="meta">לשינוי או לביטול הרישום פנו לגבאי.</p>'
+      : `<div class="row" style="margin-top:14px"><button class="btn" data-act="register" data-k="${k}">הרשמה לקידוש</button></div>`;
   }
   openSheet(html);
+}
+function registerSheet(k){
+  const sl = slotFor(k, !!S.info.il);
+  openSheet(sheetHead('הרשמה לקידוש', (sl.kind ? slotTitle(sl) : gFull(sl.date))+' | '+heFull(sl.hd)) + `
+    <label class="f" for="fSponsor">שם התורם (יוצג בלוח)</label><input type="text" id="fSponsor" maxlength="60" placeholder="לדוגמה: משפחת לוי">
+    <label class="f" for="fDedic">הקדשה</label>
+    <select id="fDedic"><option value="">ללא הקדשה</option><option>לעילוי נשמת</option><option>לזכות</option></select>
+    <div id="dnameBox" hidden><label class="f" for="fDname">שם</label><input type="text" id="fDname" maxlength="80"></div>
+    <label class="f" for="fReason">סיבה (לא חובה)</label><input type="text" id="fReason" maxlength="80" placeholder="בר מצווה, יארצייט, הולדת נכד…">
+    <label class="f" for="fPhone">טלפון (יוצג רק לגבאי)</label><input type="tel" id="fPhone" maxlength="20" dir="ltr" style="text-align:right">
+    <label class="f" for="fNote">הערה (לא חובה)</label><input type="text" id="fNote" maxlength="200">
+    <p class="meta">אחרי ההרשמה, שינוי או ביטול נעשים דרך הגבאי.</p>
+    <div class="row" style="margin-top:12px"><button class="btn" data-act="doRegister" data-k="${k}">הרשמה</button><button class="btn ghost" data-act="close">ביטול</button></div>`);
 }
 function shareBlock(id){
   const url = siteUrl(id);
   return `<label class="f">קישור ללוח (לשליחה למתפללים)</label>
     <input type="text" readonly dir="ltr" value="${esc(url)}" id="shareUrl">
     <div class="row" style="margin-top:10px"><button class="btn" data-act="copy">העתקה</button>${navigator.share?'<button class="btn sec" data-act="share">שיתוף</button>':''}
-      <a class="btn sec" href="${esc(G.editUrl(id))}" target="_blank" rel="noopener">פתיחת הגיליון</a></div>`;
+      <a class="btn sec" href="${esc(G.editUrl(id))}" target="_blank" rel="noopener">פתיחת הגיליון (לגבאי)</a></div>`;
 }
 function createdSheet(res){
   openSheet(sheetHead('הגיליון מוכן') + `
-    <p>הגיליון נוצר בגוגל דרייב שלך, וכל מי שיש לו את הקישור יכול לכתוב בו.</p>
-    <p class="small muted">שלחו למתפללים את הקישור ללוח. בלוח, ליד כל שבת פנויה, יש כפתור שפותח את הגיליון בדיוק בשורה של אותה שבת.</p>
+    <p>הגיליון נוצר בגוגל דרייב שלך, ורק את/ה יכול/ה לערוך אותו.</p>
+    <p class="small muted">שלחו למתפללים את הקישור ללוח. הם יירשמו דרך הלוח, והרישום ייכתב בגיליון. בגיליון אפשר לתקן או למחוק רישומים.</p>
     ${res.formatted ? '' : '<div class="warn">חלק מהעיצוב של הגיליון (רשימת הבחירה והצבעים) לא הושלם. הגיליון עצמו תקין.</div>'}
     ${shareBlock(res.id)}`);
 }
@@ -231,6 +247,25 @@ const A = {
   slot: d => slotSheet(d.k),
   close: closeSheet,
   refresh: () => refresh(),
+  register: d => registerSheet(d.k),
+  doRegister: async (d, btn) => {
+    const v = id => $(id).value.trim();
+    const data = { sponsor: v('#fSponsor'), dedic: v('#fDedic'), dname: v('#fDname'), reason: v('#fReason'), phone: v('#fPhone'), note: v('#fNote') };
+    if (!data.sponsor){ $('#fSponsor').focus(); return toast('נא למלא את שם התורם'); }
+    if (data.dedic && !data.dname){ $('#fDname').focus(); return toast('נא למלא את השם'); }
+    if (!data.dedic) data.dname = '';
+    btn.disabled = true; btn.textContent = 'שולח…';
+    try {
+      await G.register(S.id, d.k, data);
+      closeSheet(); toast('נרשמת לקידוש. תודה!');
+    } catch(e){
+      console.warn(e);
+      btn.disabled = false; btn.textContent = 'הרשמה';
+      if (e.code === 'taken'){ closeSheet(); toast('מישהו אחר כבר נרשם לשבת הזו'); }
+      else return toast(e.code === 'network' ? 'אין חיבור לאינטרנט. נסו שוב.' : 'ההרשמה לא נשמרה. נסו שוב.');
+    }
+    S.at = 0; refresh();
+  },
   settings: settingsSheet,
   connect: () => {
     const id = G.idFrom($('#fLink').value);
@@ -270,6 +305,9 @@ document.addEventListener('click', e => {
   const t = e.target.closest('[data-act]');
   if (t){ const f = A[t.dataset.act]; if (f){ e.preventDefault(); f(t.dataset, t); } return; }
   if (e.target === $('#sheetWrap')) closeSheet();
+});
+document.addEventListener('change', e => {
+  if (e.target.id === 'fDedic'){ $('#dnameBox').hidden = !e.target.value; $('label[for="fDname"]').textContent = e.target.value ? 'שם ('+e.target.value+')' : 'שם'; }
 });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !$('#sheetWrap').hidden) closeSheet();

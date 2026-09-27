@@ -1,12 +1,13 @@
 /* גישה לגיליון הגוגל של לוח הקידושים.
- * קריאה: דרך ממשק gviz של גוגל, בלי התחברות. הגיליון צריך להיות משותף ל"כל מי שיש לו קישור".
+ * קריאה והרשמה: דרך שומר הסף (apps-script/Code.gs), כי הגיליון משותף רק עם הגבאי ועם החשבון של השומר.
+ * השומר כותב רק לשבת פנויה, כך שמתפלל אחד לא יכול למחוק רישום של אחר.
  * יצירה והוספת שנה: דרך Sheets API ו-Drive API, אחרי התחברות של הגבאי (הרשאת drive.file,
  * שנותנת לאתר גישה רק לקבצים שהוא עצמו יצר).
  * חושף window.KiddushSheets.
  */
 (function(){
 "use strict";
-const { pad, dkey, heFull } = window.KiddushCalendar;
+const { pad, heFull } = window.KiddushCalendar;
 const cfg = window.KIDDUSH_CONFIG || {};
 
 const TAB = 'קידושים', TAB_ID = 0, SET_TAB = 'הגדרות', SET_ID = 1;
@@ -25,32 +26,19 @@ function idFrom(text){
 }
 const editUrl = (id, row) => 'https://docs.google.com/spreadsheets/d/'+id+'/edit#gid='+TAB_ID+(row ? '&range=D'+row : '');
 
-/* ---------- קריאה ---------- */
-function parseCsv(text){
-  const rows = []; let row = [], cell = '', q = false;
-  for (let i = 0; i < text.length; i++){
-    const c = text[i];
-    if (q){
-      if (c === '"'){ if (text[i+1] === '"'){ cell += '"'; i++; } else q = false; }
-      else cell += c;
-    } else if (c === '"') q = true;
-    else if (c === ','){ row.push(cell); cell = ''; }
-    else if (c === '\n' || c === '\r'){
-      if (c === '\r' && text[i+1] === '\n') i++;
-      row.push(cell); rows.push(row); row = []; cell = '';
-    } else cell += c;
-  }
-  if (cell !== '' || row.length){ row.push(cell); rows.push(row); }
-  return rows;
-}
-async function readTab(id, gid){
-  const url = 'https://docs.google.com/spreadsheets/d/'+encodeURIComponent(id)+'/gviz/tq?tqx=out:csv&headers=0&gid='+gid+'&t='+Date.now();
+/* ---------- שומר הסף ---------- */
+const gateErr = code => Object.assign(new Error(code), { code });
+async function gate(params, body){
+  if (!cfg.gateUrl) throw gateErr('no-gate');
+  const url = cfg.gateUrl + '?' + new URLSearchParams({ ...params, t: Date.now() });
   let res;
-  try { res = await fetch(url, { cache: 'no-store', credentials: 'omit' }); }
-  catch(e){ throw Object.assign(new Error('network'), { code: 'network' }); }
-  const text = res.ok ? await res.text() : '';
-  if (!res.ok || /^\s*</.test(text)) throw Object.assign(new Error('closed'), { code: 'closed' });
-  return parseCsv(text);
+  // text/plain כדי שהדפדפן לא ישלח בקשה מקדימה, ש-Apps Script לא עונה עליה
+  try { res = await fetch(url, body ? { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'text/plain;charset=utf-8' } } : { cache: 'no-store' }); }
+  catch(e){ throw gateErr('network'); }
+  let j = null; try { j = await res.json(); } catch(e){}
+  if (!j) throw gateErr('error');
+  if (!j.ok) throw gateErr(j.code || 'error');
+  return j;
 }
 function dateKeyOf(s){
   s = String(s || '').trim();
@@ -59,21 +47,14 @@ function dateKeyOf(s){
   m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   return m ? m[1]+'-'+pad(+m[2])+'-'+pad(+m[3]) : null;
 }
-/* מחזיר { info: {name, il}, rows: { [dateKey]: {row, label, sponsor, dedic, dname, reason, phone, note} } } */
+/* מחזיר { info: {name, il}, rows: { [dateKey]: {row, label, sponsor, dedic, dname, reason, note} } }. בלי טלפונים */
 async function load(id){
-  const [set, data] = await Promise.all([readTab(id, SET_ID).catch(() => []), readTab(id, TAB_ID)]);
-  const val = label => (set.find(r => (r[0] || '').trim() === label) || [])[1] || '';
-  const info = { name: val('שם בית הכנסת').trim(), il: val('מיקום').trim() !== 'חוץ לארץ' };
-  const rows = {};
-  data.forEach((r, i) => {
-    const k = dateKeyOf(r[0]);
-    if (!k || rows[k]) return;
-    const c = n => (r[n] || '').trim();
-    rows[k] = { row: i + 1, label: c(2), sponsor: c(3), dedic: c(4), dname: c(5), reason: c(6), phone: c(7), note: c(8) };
-  });
-  if (!info.name){ const t = ((data[0] || [])[0] || '').replace(/^לוח קידושים\s*[–-]\s*/, '').trim(); if (t) info.name = t; }
+  const { info, rows } = await gate({ sheet: id });
   return { info, rows };
 }
+/* רישום לשבת פנויה. אם השבת כבר תפוסה נזרקת שגיאה עם code = 'taken' */
+const register = (id, date, data) => gate({}, { sheet: id, date, ...data });
+const gateEmail = async () => (await gate({ who: 1 })).email;
 
 /* ---------- התחברות לגוגל ---------- */
 let gisPromise, tokenClient, waiting, token;
@@ -129,9 +110,10 @@ function formatRequests(){
 }
 
 async function create({ name, il, siteBase, slots }){
+  const email = await gateEmail(); // קודם כול, כדי לא ליצור גיליון שהשומר לא יוכל לגשת אליו
   const rows = [
     { values: [{ userEnteredValue: { formulaValue: '="לוח קידושים – "&\''+SET_TAB+'\'!B1' }, userEnteredFormat: { textFormat: { bold: true, fontSize: 16 }, horizontalAlignment: 'CENTER' } }] },
-    { values: [cell('מצאו את השבת שלכם ומלאו את הפרטים בשורה שלה. שורה צבועה בירוק = תפוסה. נא לא למחוק או לשנות רישומים של אחרים.', { wrapStrategy: 'WRAP', horizontalAlignment: 'CENTER', textFormat: { italic: true } })] },
+    { values: [cell('המתפללים נרשמים דרך הלוח באתר, והרישום נכתב כאן אוטומטית. שורה צבועה בירוק = תפוסה. הגבאי יכול לערוך ולמחוק רישומים כאן.', { wrapStrategy: 'WRAP', horizontalAlignment: 'CENTER', textFormat: { italic: true } })] },
     { values: HEAD.map(h => cell(h, { textFormat: { bold: true, foregroundColor: rgb('#FFFFFF') }, backgroundColor: rgb('#7B1E3B'), horizontalAlignment: 'CENTER', wrapStrategy: 'WRAP' })) },
     ...slots.map(slotRow)
   ];
@@ -155,10 +137,12 @@ async function create({ name, il, siteBase, slots }){
   };
   const ss = await api('POST', SHEETS, body);
   const id = ss.spreadsheetId;
-  await api('POST', 'https://www.googleapis.com/drive/v3/files/'+id+'/permissions', { role: 'writer', type: 'anyone', allowFileDiscovery: false });
+  await api('POST', 'https://www.googleapis.com/drive/v3/files/'+id+'/permissions?sendNotificationEmail=false', { role: 'writer', type: 'user', emailAddress: email });
   const extra = [{ updateCells: { start: { sheetId: SET_ID, rowIndex: 2, columnIndex: 1 }, rows: [{ values: [cell(siteBase + id)] }], fields: 'userEnteredValue' } },
     { setDataValidation: { range: { sheetId: SET_ID, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 1, endColumnIndex: 2 },
     rule: { condition: { type: 'ONE_OF_LIST', values: [{ userEnteredValue: 'ארץ ישראל' }, { userEnteredValue: 'חוץ לארץ' }] }, strict: true, showCustomUi: true } } }];
+  const mark = { createDeveloperMetadata: { developerMetadata: { metadataKey: 'kiddushBoard', metadataValue: '1', location: { spreadsheet: true }, visibility: 'DOCUMENT' } } };
+  await api('POST', SHEETS+'/'+id+':batchUpdate', { requests: [mark] }); // בלי הסימון הזה השומר מסרב לעבוד עם הגיליון
   let formatted = true;
   try { await api('POST', SHEETS+'/'+id+':batchUpdate', { requests: [...formatRequests(), ...extra] }); }
   catch(e){ console.warn('עיצוב הגיליון לא הושלם', e); formatted = false; }
@@ -178,5 +162,6 @@ async function extend(id, getSlotsFrom){
   return slots.length;
 }
 
-window.KiddushSheets = { idFrom, editUrl, load, loadGis, ready, signIn, create, extend, hasClientId: () => !!cfg.googleClientId, _parseCsv: parseCsv, _dateKeyOf: dateKeyOf, _slotLabel: slotLabel };
+window.KiddushSheets = { idFrom, editUrl, load, register, loadGis, ready, signIn, create, extend,
+  hasClientId: () => !!cfg.googleClientId, hasGate: () => !!cfg.gateUrl, _dateKeyOf: dateKeyOf, _slotLabel: slotLabel };
 })();
