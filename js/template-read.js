@@ -63,7 +63,37 @@ async function readPdf(file) {
   let fonts = {};
   try { fonts = await readFonts(pdfjs, page); } catch (e) { console.warn('לא ניתן לקרוא את הגופנים מהקובץ', e); }
   task.destroy();
-  return { canvas, items, fonts };
+  return { canvas, items: joinFragments(items), fonts };
+}
+
+/**
+ * ב-Word ובעוד תוכנות טקסט נשמר לפעמים בכמה פריטים צמודים: שעה ("1", "8", ":", "24")
+ * או כותרת ("מנחה ערב", "שבת"). מחברים פריטים סמוכים באותה שורה – ספרות עם ספרות ועברית עם עברית –
+ * כדי שהשעה והתווית שלה יזוהו בשלמותן.
+ */
+export function joinFragments(items) {
+  const kindOf = it => /^[\d:.]+$/.test(it.str) ? 'num' : /^[א-ת"'״׳,.()\s]+$/.test(it.str) && /[א-ת]/.test(it.str) ? 'heb' : null;
+  const list = items.map((it, i) => ({ ...it, i, k: kindOf(it) }));
+  const joinable = list.filter(it => it.k).sort((a, b) => a.baseline - b.baseline || a.x - b.x);
+  const runs = [];
+  let run = null;
+  for (const it of joinable) {
+    const gap = run ? it.x - (run.x + run.w) : 0;
+    const touches = run && run.k === it.k && Math.abs(it.baseline - run.baseline) < run.size * 0.3 &&
+      Math.abs(it.size - run.size) < run.size * 0.1 && gap > -run.size * 0.3 && gap < run.size * (it.k === 'num' ? 0.15 : 0.5);
+    if (touches) {
+      // עברית: הפריט השמאלי בא אחרי הקודם בטקסט. רווח רק כשיש רווח גם בדף
+      const sp = it.k === 'heb' && gap > run.size * 0.15 ? ' ' : '';
+      run.str = it.k === 'heb' ? it.str + sp + run.str : run.str + it.str;
+      run.w = it.x + it.w - run.x; run.i = Math.min(run.i, it.i);
+      continue;
+    }
+    run = { ...it };
+    runs.push(run);
+  }
+  // כל רצף נכנס במקום הפריט הראשון שלו, כדי שסדר האזורים יישאר כמו בקובץ
+  const at = new Map(runs.map(r => [r.i, r]));
+  return list.flatMap(({ i, k, ...it }) => !k ? [it] : at.has(i) ? [(({ i: _, k: __, ...r }) => r)(at.get(i))] : []);
 }
 
 /**
@@ -373,8 +403,15 @@ export function suggestSlots(tokens, cfg, day) {
       if (h) label = h.str;
     }
     let when = whenOf(rowLabel) || whenOf(label);
-    for (const h of heads) { if (when) break; when = whenOf(h.str); }
-    if (!when) when = 'כל יום';
+    // שורה משותפת, למשל "הדלקת נרות 18:24 || שקיעה 19:04": השקיעה היא של ערב שבת
+    for (const x of texts) {
+      if (when) break;
+      if (x !== lab && sameLine(x, t)) when = whenOf(x.str) || (ZMAN_WORDS.find(z => z[2] && z[0].test(x.str)) || [])[2] || null;
+    }
+    // כותרת מעל: בטבלה כל כותרת, ברשימה (לשעה יש תווית בשורה) רק כותרת קצרה של יום ("ערב שבת"), לא משפט
+    for (const h of heads) { if (when) break; if (!lab || isOnlyDayWord(h.str)) when = whenOf(h.str); }
+    // ערבית ביום השבת/החג היא של מוצאי שבת/חג
+    if (!when) when = /ערבית|מעריב/.test(label) ? 'יציאה' : 'כל יום';
 
     const zm = !PRAYER_WORDS.test(label) && ZMAN_WORDS.find(z => z[0].test(label));
     const name = label.replace(/[:\-–|]+$/g, '').trim();
