@@ -176,7 +176,13 @@ async function inviteByEmail(form, synagogueId){
   try {
     await client.mutation('invitations:create', { synagogueId, email, role });
     await loadManagerData(synagogueId);
-    toast('ההזמנה נשלחה. היא תופיע אצל ' + email + ' בכניסה הבאה לאפליקציה'); render();
+    toast('ההזמנה נוצרה. היא תופיע אצל ' + email + ' בכניסה הבאה לאפליקציה, ומצב שליחת המייל יוצג ברשימה למטה'); render();
+    setTimeout(async () => {
+      if (S.detail && S.detail._id === synagogueId){
+        await loadManagerData(synagogueId);
+        render();
+      }
+    }, 2000);
   } catch(e){ toast(errMsg(e)); btn.disabled = false; }
 }
 async function cancelInvitation(synagogueId, invitationId){
@@ -397,11 +403,17 @@ function renderDetailSheet(){
   }
 }
 
+function emailStatusBadge(p){
+  if (p.emailStatus === 'sent') return '<span style="color:#16a34a">מייל נשלח</span>';
+  if (p.emailStatus === 'failed') return `<span style="color:#dc2626" title="${esc(p.emailError || '')}">מייל לא נשלח${p.emailError ? ' (' + esc(p.emailError) + ')' : ''}</span>`;
+  return '<span style="color:#999">שולח מייל…</span>';
+}
+
 function renderPending(pending){
   if (!pending.length) return '';
   return `<p class="muted small" style="margin-top:12px">ממתינות לאישור:</p>` + pending.map(p => `
     <div class="member-row">
-      <div class="info"><div class="n" dir="ltr">${esc(p.email)}</div><div class="e">${ROLE[p.role]}</div></div>
+      <div class="info"><div class="n" dir="ltr">${esc(p.email)}</div><div class="e">${ROLE[p.role]} · ${emailStatusBadge(p)}</div></div>
       <button class="btn ghost" data-cancel-invite="${p._id}" aria-label="ביטול הזמנה" title="ביטול הזמנה">✕</button>
     </div>`).join('');
 }

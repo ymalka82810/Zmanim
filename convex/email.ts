@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalAction } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { roleValidator } from "./roles";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -10,15 +11,21 @@ const ROLE_LABELS: Record<string, string> = {
 
 export const sendInvitationEmail = internalAction({
   args: {
+    invitationId: v.id("invitations"),
     email: v.string(),
     role: roleValidator,
     synagogueName: v.string(),
     invitedByName: v.string(),
   },
-  handler: async (_ctx, args) => {
+  handler: async (ctx, args) => {
     const apiKey = process.env.RESEND_API_KEY;
     if (!apiKey) {
       console.error("RESEND_API_KEY לא מוגדר - לא ניתן לשלוח מייל הזמנה");
+      await ctx.runMutation(internal.invitations.setEmailStatus, {
+        invitationId: args.invitationId,
+        status: "failed",
+        error: "מפתח שליחת מייל לא מוגדר",
+      });
       return;
     }
     const from = process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev";
@@ -41,23 +48,43 @@ export const sendInvitationEmail = internalAction({
       </div>
     `;
 
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from,
-        to: args.email,
-        subject: `הזמנה להצטרף לקהילת ${args.synagogueName}`,
-        html,
-      }),
-    });
+    try {
+      const response = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from,
+          to: args.email,
+          subject: `הזמנה להצטרף לקהילת ${args.synagogueName}`,
+          html,
+        }),
+      });
 
-    if (!response.ok) {
-      const body = await response.text();
-      console.error(`שליחת מייל הזמנה נכשלה (${response.status}): ${body}`);
+      if (!response.ok) {
+        const body = await response.text();
+        console.error(`שליחת מייל הזמנה נכשלה (${response.status}): ${body}`);
+        await ctx.runMutation(internal.invitations.setEmailStatus, {
+          invitationId: args.invitationId,
+          status: "failed",
+          error: `שגיאת שרת (${response.status})`,
+        });
+        return;
+      }
+
+      await ctx.runMutation(internal.invitations.setEmailStatus, {
+        invitationId: args.invitationId,
+        status: "sent",
+      });
+    } catch (err) {
+      console.error("שליחת מייל הזמנה נכשלה (שגיאת רשת)", err);
+      await ctx.runMutation(internal.invitations.setEmailStatus, {
+        invitationId: args.invitationId,
+        status: "failed",
+        error: "שגיאת רשת בשליחת המייל",
+      });
     }
   },
 });

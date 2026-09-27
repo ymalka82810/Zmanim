@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
@@ -40,7 +40,13 @@ export const create = mutation({
       .unique();
     let invitationId: Id<"invitations">;
     if (existing !== null) {
-      await ctx.db.patch(existing._id, { role: args.role, invitedBy: userId, createdAt: Date.now() });
+      await ctx.db.patch(existing._id, {
+        role: args.role,
+        invitedBy: userId,
+        createdAt: Date.now(),
+        emailStatus: "pending",
+        emailError: undefined,
+      });
       invitationId = existing._id;
     } else {
       invitationId = await ctx.db.insert("invitations", {
@@ -49,12 +55,14 @@ export const create = mutation({
         role: args.role,
         invitedBy: userId,
         createdAt: Date.now(),
+        emailStatus: "pending",
       });
     }
 
     const synagogue = await ctx.db.get(args.synagogueId);
     const inviter = await ctx.db.get(userId);
     await ctx.scheduler.runAfter(0, internal.email.sendInvitationEmail, {
+      invitationId,
       email,
       role: args.role,
       synagogueName: synagogue?.name ?? "",
@@ -73,7 +81,29 @@ export const listForSynagogue = query({
       .query("invitations")
       .withIndex("by_synagogue", (q) => q.eq("synagogueId", args.synagogueId))
       .collect();
-    return invitations.map((i) => ({ _id: i._id, email: i.email, role: i.role, createdAt: i.createdAt }));
+    return invitations.map((i) => ({
+      _id: i._id,
+      email: i.email,
+      role: i.role,
+      createdAt: i.createdAt,
+      emailStatus: i.emailStatus,
+      emailError: i.emailError,
+    }));
+  },
+});
+
+export const setEmailStatus = internalMutation({
+  args: {
+    invitationId: v.id("invitations"),
+    status: v.union(v.literal("sent"), v.literal("failed")),
+    error: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const invitation = await ctx.db.get(args.invitationId);
+    if (invitation === null) {
+      return;
+    }
+    await ctx.db.patch(invitation._id, { emailStatus: args.status, emailError: args.error });
   },
 });
 

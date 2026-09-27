@@ -41,6 +41,8 @@ export default defineSchema({
     role: roleValidator,
     invitedBy: v.id("users"),
     createdAt: v.number(),
+    emailStatus: v.optional(v.union(v.literal("pending"), v.literal("sent"), v.literal("failed"))),
+    emailError: v.optional(v.string()),
   })
     .index("by_email", ["email"])
     .index("by_synagogue", ["synagogueId"])
