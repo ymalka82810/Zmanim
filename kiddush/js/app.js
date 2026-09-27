@@ -178,9 +178,10 @@ function headerHTML(){
 
 /* Calendar */
 function statusHTML(sl, b, past){
-  if (!b) return past ? '<span class="chip block">לא נקבע</span>' : '<span class="chip free">פנוי</span>';
+  if (!b) return past ? '<span class="chip block">עבר</span>' : '<span class="chip free">פנוי</span>';
   const mine = b.uid === S.uid && !b.manual;
   if (b.status === 'blocked') return `<span class="chip block">${esc(b.blockLabel||'לא זמין')}</span>`;
+  if (past) return `<span class="chip done">נעשה</span><span class="by">${esc(b.sponsorName)}</span>${mine?'<span class="mine-tag">הרישום שלי</span>':''}`;
   const chip = b.status === 'approved' ? '<span class="chip appr">קידוש ע״י</span>' : '<span class="chip pend">ממתין לאישור</span>';
   return `${chip}<span class="by">${esc(b.sponsorName)}</span>${mine?'<span class="mine-tag">הרישום שלי</span>':''}`;
 }
@@ -316,7 +317,7 @@ function slotSheet(k){
       ${b.occasion?`<dt>לרגל</dt><dd>${esc(b.occasion)}</dd>`:''}
       ${isManager()?`<dt>נרשם</dt><dd>${b.manual?'רישום ידני ע״י '+esc(nameOf(b.uid)):esc(nameOf(b.uid))}</dd>${b.phone?`<dt>טלפון</dt><dd dir="ltr" style="text-align:right">${esc(b.phone)}</dd>`:''}${b.note?`<dt>הערה</dt><dd>${esc(b.note)}</dd>`:''}`:''}</dl>`;
   } else if (b) html += `<p><span class="chip block">${esc(b.blockLabel||'לא זמין')}</span></p>`;
-  else html += `<p><span class="chip ${past?'block':'free'}">${past?'לא נקבע קידוש':'פנוי לקידוש'}</span></p>`;
+  else html += `<p><span class="chip ${past?'block':'free'}">${past?'עבר ללא קידוש':'פנוי לקידוש'}</span></p>`;
   const acts = [];
   if (!b && !past && S.canWrite) acts.push(`<button class="btn" data-act="register" data-k="${k}">הרשמה לקידוש</button>`);
   if (mine && !past) acts.push(`<button class="btn danger" data-act="cancelMine" data-k="${k}">ביטול הרישום שלי</button>`);

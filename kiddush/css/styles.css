@@ -56,6 +56,7 @@ header.top{display:flex;align-items:center;gap:12px;padding:18px 0 8px}
 .chip.pend{background:var(--pend-soft);color:var(--pend)}
 .chip.appr{background:var(--wine-soft);color:var(--wine)}
 .chip.block{background:var(--block-soft);color:var(--block)}
+.chip.done{background:var(--free-soft);color:var(--free)}
 .stcol{display:flex;flex-direction:column;align-items:flex-start;gap:4px;max-width:200px}
 .stcol .by{font-size:.85rem;color:var(--ink);max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mine-tag{font-size:.75rem;color:var(--wine);font-weight:700}
