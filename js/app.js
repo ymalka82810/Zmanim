@@ -1,6 +1,6 @@
 /** ממשק האתר: לוח, הגדרות, שיתוף וגיבוי. הכל נשמר מקומית בדפדפן. */
 
-import { CITIES, BASES, WHEN, APPLIES, ROUND, FONTS, DEFAULT_CONFIG, DAY_APPLIES, BUILTIN, isBuiltin, newTemplate, designOf, activeDesign,
+import { CITIES, BASES, WHEN, APPLIES, ROUND, FONTS, SIZE_PARTS, SIZES, DEFAULT_CONFIG, DAY_APPLIES, BUILTIN, isBuiltin, newTemplate, designOf, activeDesign,
   prayerBases, fontFamilies, fontsHref, normalize, loadConfig, saveConfig, clearConfig } from './config.js';
 import { findPeriod, stepPeriod, templateFor, nextPeriodFor, buildLuach, buildDaysLuach } from './luach.js';
 import { MOADIM } from './moadim.js';
@@ -66,24 +66,23 @@ function build(p) {
   l.tpl = t;
   return l;
 }
-const drawLuach = l => l.design ? templateCanvas(l.design, l.values) : luachCanvas(l, cfg.font);
+const drawLuach = l => l.design ? templateCanvas(l.design, l.values) : luachCanvas(l, l.tpl.font, l.tpl.sizes);
 
-/** טעינת הגופן שנבחר מ-Google Fonts והחלתו על הלוח ועל הדוגמה בהגדרות */
-function applyFont() {
-  const href = fontsHref(cfg.font);
-  let link = document.getElementById('fontLink');
-  if (!link) {
-    link = document.createElement('link');
-    link.id = 'fontLink'; link.rel = 'stylesheet';
+/**
+ * החלת הגופן והגדלים של התבנית t על el (הלוח, או הדוגמה בהגדרות).
+ * הגופן נטען מ-Google Fonts, קישור לכל גופן כך שכמה תבניות יכולות להשתמש בגופנים שונים.
+ */
+function applyFont(el, t) {
+  const id = 'fontLink-' + t.font;
+  if (!document.getElementById(id)) {
+    const link = document.createElement('link');
+    link.id = id; link.rel = 'stylesheet'; link.href = fontsHref(t.font);
     document.head.appendChild(link);
   }
-  if (link.getAttribute('href') !== href) link.href = href;
-  const f = fontFamilies(cfg.font);
-  for (const el of [$('luach'), $('fontSample')]) {
-    el.style.setProperty('--f-title', f.title);
-    el.style.setProperty('--f-body', f.body);
-  }
-  $('fontSample').style.fontFamily = f.title;
+  const f = fontFamilies(t.font);
+  el.style.setProperty('--f-title', f.title);
+  el.style.setProperty('--f-body', f.body);
+  for (const [k] of SIZE_PARTS) el.style.setProperty('--s-' + k, String((t.sizes[k] || 100) / 100));
 }
 
 function renderLuach() {
@@ -100,6 +99,7 @@ function renderLuach() {
   }
   cursor = p.first; period = p;
   current = build(p);
+  applyFont($('luach'), current.tpl);
   $('luachTpl').textContent = 'תבנית: ' + current.tpl.name;
   if (current.design) {
     const l = current;
@@ -224,8 +224,6 @@ function fill() {
   $('il').value = cfg.il ? '1' : '0';
   $('havdalah').value = String(cfg.havdalah);
   $('notes').value = cfg.notes || '';
-  $('font').value = cfg.font;
-  applyFont();
   $('custom').hidden = cfg.city !== 'custom';
   renderTemplates();
 }
@@ -261,9 +259,110 @@ function renderTemplates() {
   $('rulesTplName').textContent = t.name;
   $('designTplName').textContent = t.name;
   $('rulesHint').textContent = RULES_HINT[t.kind];
+  $('fontTplName').textContent = t.name;
+  document.querySelectorAll('.imp').forEach(closeImport);
   renderRules();
   renderTemplateStatus();
+  renderFont();
 }
+
+/* ---------- גופן וגדלים של התבנית ---------- */
+
+function renderFont() {
+  const t = selTpl();
+  $('font').value = t.font;
+  $('sizes').innerHTML = SIZE_PARTS.map(([k, label]) => '<div><label for="size-' + k + '">גודל ' + esc(label) + '</label>' +
+    '<select id="size-' + k + '" data-size="' + k + '">' +
+    SIZES.map(v => '<option value="' + v + '"' + (v === t.sizes[k] ? ' selected' : '') + '>' + v + '%</option>').join('') + '</select></div>').join('');
+  renderFontSample();
+}
+function renderFontSample() {
+  const t = selTpl(), el = $('fontSample');
+  applyFont(el, t);
+  el.innerHTML = '<span style="font-family: var(--f-title); font-weight: 900; font-size: calc(1.3rem * var(--s-title))">שבת פרשת בראשית</span> · ' +
+    '<span style="font-family: var(--f-body); font-size: calc(1rem * var(--s-name))">מנחה</span> ' +
+    '<b style="font-family: var(--f-body); font-size: calc(1rem * var(--s-time))">17:25</b> · ' +
+    '<span style="font-family: var(--f-body); font-size: calc(.8rem * var(--s-zman))">שקיעה 18:05</span>';
+}
+$('sizes').addEventListener('input', e => {
+  const k = e.target.dataset.size;
+  if (!k) return;
+  selTpl().sizes[k] = Number(e.target.value);
+  renderFontSample(); changed();
+});
+
+/* ---------- ייבוא מתבנית אחרת: זמנים, עיצוב, גופן וגדלים ---------- */
+
+/** התבניות שאפשר לייבא מהן. עיצוב מלוח ישן – רק מתבנית מאותו סוג, כי האזורים שלו בנויים לפי סוג הלוח */
+function importSources(part) {
+  const t = selTpl();
+  return cfg.templates.filter(x => x !== t && (part !== 'design' || (x.kind === t.kind && designOf(cfg, x))));
+}
+function closeImport(box) {
+  box.querySelector('.imp-form').hidden = true;
+  box.querySelector('.imp-open').hidden = false;
+  box.querySelector('.imp-hint').hidden = true;
+}
+function openImport(box) {
+  const part = box.dataset.part, t = selTpl(), list = importSources(part), hint = box.querySelector('.imp-hint');
+  if (!list.length) {
+    hint.textContent = part === 'design' ? 'אין תבנית אחרת מאותו סוג (' + (t.kind === 'days' ? 'ימי חול' : 'שבת או חג') + ') שיש לה עיצוב מלוח ישן.' : 'אין תבניות אחרות.';
+    hint.hidden = false;
+    return;
+  }
+  box.querySelector('.imp-from').innerHTML = list.map(x => '<option value="' + esc(x.id) + '">מ' + esc(x.name) + '</option>').join('');
+  box.querySelector('.imp-open').hidden = true;
+  box.querySelector('.imp-form').hidden = false;
+  if (part === 'rules') {
+    hint.textContent = 'בייבוא בין לוח של שבת/חג ללוח של ימי חול, "מתי" ו"חל על" מתאימים את עצמם לסוג הלוח. כדאי לעבור על הזמנים אחרי הייבוא.';
+    hint.hidden = false;
+  }
+}
+
+/** זמני התפילות של תבנית אחרת, מותאמים לסוג הלוח של התבנית kind */
+function convertRules(list, kind) {
+  const out = [];
+  for (const r of list) {
+    const x = { ...r }, isDay = DAY_APPLIES.indexOf(x.applies) >= 0;
+    if (kind === 'days' && !isDay) Object.assign(x, { when: 'כל יום', applies: 'כל הימים' });
+    if (kind === 'holy' && isDay) Object.assign(x, { when: 'כל יום', applies: 'שבת וחג' });
+    if (!out.some(y => y.name === x.name && y.when === x.when && y.applies === x.applies)) out.push(x);
+  }
+  return out;
+}
+
+function doImport(box) {
+  const part = box.dataset.part, t = selTpl();
+  const src = cfg.templates.find(x => x.id === box.querySelector('.imp-from').value);
+  if (!src) return;
+  if (part === 'rules') {
+    const list = convertRules(src.rules, t.kind);
+    t.rules = box.querySelector('.imp-how').value === 'add' ? mergeRules(t.rules, list, false, t.kind) : list;
+    toast('הזמנים יובאו מ' + src.name);
+  } else if (part === 'design') {
+    const d = designOf(cfg, src);
+    if (designOf(cfg, t) && !confirm('להחליף את העיצוב של "' + t.name + '" בעיצוב של "' + src.name + '"?')) return;
+    // תבניות שמשתמשות בעיצוב הקודם של התבנית הזו שומרות עליו
+    if (t.design && !t.design.ref) {
+      for (const x of cfg.templates) if (x.design && x.design.ref === t.id) x.design = { ...t.design, enabled: x.design.enabled !== false };
+    }
+    t.design = { ...JSON.parse(JSON.stringify(d)), enabled: true };   // עותק נפרד
+    if (!saveConfig(cfg)) { t.design = null; toast('אין מספיק מקום במכשיר לעותק של העיצוב', true); return; }
+    toast('העיצוב יובא מ' + src.name + '. זמני התפילות בו לפי התבנית "' + t.name + '"');
+  } else {
+    t.font = src.font; t.sizes = { ...src.sizes };
+    toast('הגופן והגדלים יובאו מ' + src.name);
+  }
+  closeImport(box);
+  renderRules(); renderTemplateStatus(); renderFont();
+  changed();
+}
+
+document.querySelectorAll('.imp').forEach(box => {
+  box.querySelector('.imp-open').onclick = () => openImport(box);
+  box.querySelector('.imp-cancel').onclick = () => closeImport(box);
+  box.querySelector('.imp-ok').onclick = () => doImport(box);
+});
 
 function renderMoadimHint() {
   const t = selTpl();
@@ -413,7 +512,7 @@ bind('tz', v => { cfg.tz = v; cursor = null; });
 bind('il', v => { cfg.il = v === '1'; cursor = null; });
 bind('havdalah', v => { cfg.havdalah = v; });
 bind('notes', v => { cfg.notes = v; });
-bind('font', v => { cfg.font = v; applyFont(); });
+bind('font', v => { selTpl().font = v; renderFontSample(); });
 
 /* ---------- עיצוב מלוח קיים ---------- */
 

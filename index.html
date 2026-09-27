@@ -100,6 +100,16 @@
       <div id="rules"></div>
       <button type="button" id="addRule">הוספת תפילה או שיעור</button>
       <p class="hint" id="rulesHint"></p>
+      <div class="imp" data-part="rules">
+        <button type="button" class="link imp-open">ייבוא מתבנית אחרת</button>
+        <div class="imp-form" hidden>
+          <select class="imp-from" aria-label="התבנית שמייבאים ממנה"></select>
+          <select class="imp-how" aria-label="מה לעשות עם הזמנים הקיימים"><option value="replace">להחליף את כל הזמנים</option><option value="add">להוסיף רק תפילות שחסרות</option></select>
+          <button type="button" class="primary imp-ok">ייבוא</button>
+          <button type="button" class="imp-cancel">ביטול</button>
+        </div>
+        <p class="hint imp-hint" hidden></p>
+      </div>
     </div>
 
     <div class="panel">
@@ -112,15 +122,34 @@
         <button type="button" id="tplUpload">העלאת לוח ישן (PDF או תמונה)</button>
         <input type="file" id="tplFile" accept="application/pdf,.pdf,image/*" hidden>
         <button type="button" id="tplEdit" hidden>עריכת התבנית</button>
-        <button type="button" class="danger" id="tplRemove" hidden>הסרת התבנית</button>
+        <button type="button" class="danger" id="tplRemove" hidden>הסרת העיצוב</button>
+      </div>
+      <div class="imp" data-part="design">
+        <button type="button" class="link imp-open">ייבוא מתבנית אחרת</button>
+        <div class="imp-form" hidden>
+          <select class="imp-from" aria-label="התבנית שמייבאים ממנה"></select>
+          <button type="button" class="primary imp-ok">ייבוא</button>
+          <button type="button" class="imp-cancel">ביטול</button>
+        </div>
+        <p class="hint imp-hint" hidden></p>
       </div>
     </div>
 
     <div class="panel">
-      <h2>גופן</h2>
+      <h2>גופן וגדלים – <span id="fontTplName"></span></h2>
       <div class="field"><label for="font">גופן הלוח</label><select id="font"></select></div>
+      <div class="sizes" id="sizes"></div>
       <p class="hint" id="fontSample">שבת פרשת בראשית · מנחה 17:25</p>
-      <p class="hint">חל על הלוח שהאתר מעצב. בעיצוב מלוח קיים נכתב הגופן מהקובץ עצמו.</p>
+      <p class="hint">חל על הלוח שהאתר מעצב. בעיצוב מלוח קיים נכתבים הגופן והגודל מהקובץ עצמו.</p>
+      <div class="imp" data-part="font">
+        <button type="button" class="link imp-open">ייבוא מתבנית אחרת</button>
+        <div class="imp-form" hidden>
+          <select class="imp-from" aria-label="התבנית שמייבאים ממנה"></select>
+          <button type="button" class="primary imp-ok">ייבוא</button>
+          <button type="button" class="imp-cancel">ביטול</button>
+        </div>
+        <p class="hint imp-hint" hidden></p>
+      </div>
     </div>
 
     <div class="panel">

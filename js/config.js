@@ -113,19 +113,29 @@ const DEFAULT_RULES = {
     dayRule('ערבית', 'חוץ מערב שבת וחג', 'צאת הכוכבים', '0')]
 };
 
+/**
+ * גדלי הטקסט בלוח שהאתר מעצב, באחוזים מהגודל הרגיל: [מפתח, שם].
+ * לא משפיעים על עיצוב מלוח קיים, שבו הגודל נלקח מהקובץ.
+ */
+export const SIZE_PARTS = [['title', 'כותרת'], ['name', 'שמות התפילות'], ['time', 'שעות התפילות'], ['zman', 'זמני היום']];
+export const SIZES = [70, 80, 90, 100, 110, 120, 130, 140, 150, 160];
+export const DEFAULT_SIZES = { title: 100, name: 100, time: 100, zman: 100 };
+
 const clone = o => JSON.parse(JSON.stringify(o));
+// הגופן והגדלים נקבעים ב-normalize: הגופן הכללי מגרסה קודמת, או classic
 const builtinTemplate = b => ({ id: b.id, name: b.name, kind: b.kind, rules: clone(DEFAULT_RULES[b.id]), design: null });
 
 export const DEFAULT_CONFIG = {
-  version: 2,
+  version: 3,
   shul: '', city: 'jerusalem', lat: 31.769, lng: 35.2163, tz: 'Asia/Jerusalem', il: true,
-  candle: 40, havdalah: '8.5', notes: '', font: 'classic',
+  candle: 40, havdalah: '8.5', notes: '',
   templates: BUILTIN.map(builtinTemplate)
 };
 
 /** תבנית חדשה של המשתמש. rules – זמני התפילות להתחלה */
 export function newTemplate(name, kind, rules) {
-  return { id: 'u' + Date.now().toString(36), name, kind, moadim: [], rules: clone(rules || []), design: null };
+  return { id: 'u' + Date.now().toString(36), name, kind, moadim: [], rules: clone(rules || []), design: null,
+    font: 'classic', sizes: { ...DEFAULT_SIZES } };
 }
 
 /** העיצוב של התבנית. { ref } – העיצוב של תבנית אחרת (למשל חגים שמשתמשים בעיצוב של שבתות) */
@@ -154,13 +164,18 @@ export function normalize(c) {
     t.name = String(t.name || '').trim() || 'תבנית';
     if (!isBuiltin(t) && !Array.isArray(t.moadim)) t.moadim = [];
     if (t.design === undefined) t.design = null;
+    // עד גרסה 2 הגופן היה אחד לכל הלוחות (cfg.font), ועכשיו הוא עובר לכל תבנית
+    if (!FONTS.some(f => f[0] === t.font)) t.font = FONTS.some(f => f[0] === cfg.font) ? cfg.font : 'classic';
+    const sizes = t.sizes && typeof t.sizes === 'object' ? t.sizes : {};
+    t.sizes = {};
+    for (const [k] of SIZE_PARTS) t.sizes[k] = SIZES.indexOf(Number(sizes[k])) >= 0 ? Number(sizes[k]) : 100;
   }
+  delete cfg.font;
   cfg.version = DEFAULT_CONFIG.version;
   cfg.lat = Number(cfg.lat); cfg.lng = Number(cfg.lng);
   cfg.candle = Number(cfg.candle) || 0;
   cfg.havdalah = String(cfg.havdalah || '8.5');
   cfg.il = cfg.il !== false;
-  if (!FONTS.some(f => f[0] === cfg.font)) cfg.font = 'classic';
   return cfg;
 }
 

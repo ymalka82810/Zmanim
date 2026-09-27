@@ -51,6 +51,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .mode button[aria-pressed="true"] { border-color: var(--blue); }
 .luach-tpl { text-align: center; }
 
+/* ייבוא מתבנית אחרת */
+.imp { margin-top: 10px; }
+.imp-form[hidden] { display: none; }
+.imp-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
+.imp-form select { width: auto; flex: 1 1 180px; }
+.sizes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+@media (min-width: 600px) { .sizes { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
 /* תבניות בהגדרות */
 .tpl-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
 .chip { border-radius: 16px; padding: 5px 14px; border-color: var(--line); }
@@ -71,25 +79,26 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .luach .stripe { height: 5px; background: var(--blue); margin-bottom: 4px; }
 .luach .stripe.s { height: 2px; }
 .l-shul { text-align: center; font-size: 1rem; font-weight: 700; color: var(--blue); margin-top: 14px; }
-.l-title { text-align: center; font-family: var(--f-title, "Frank Ruhl Libre", Georgia, serif); font-weight: 900; font-size: 2rem; margin: 4px 0; line-height: 1.2; }
+.l-title { text-align: center; font-family: var(--f-title, "Frank Ruhl Libre", Georgia, serif); font-weight: 900; font-size: calc(2rem * var(--s-title, 1)); margin: 4px 0; line-height: 1.2; }
 .l-dates { text-align: center; font-size: .9rem; color: var(--muted); margin-bottom: 6px; }
 .l-sec { width: 100%; border-collapse: collapse; margin-top: 16px; }
 .l-sec th, .l-sec td { padding: 6px 2px; border-bottom: 1px solid var(--soft); text-align: right; }
 .l-sec th { font-size: 1.1rem; border-bottom: 2px solid var(--blue); }
+.l-sec td { font-size: calc(1em * var(--s-name, 1)); }
 .l-sec th.d { text-align: left; white-space: nowrap; font-weight: 400; font-size: .85rem; color: var(--muted); }
-.l-sec td.t { text-align: left; font-weight: 700; width: 80px; font-variant-numeric: tabular-nums; }
-.l-sec td.z { font-size: .8rem; color: var(--muted); border: none; }
+.l-sec td.t { text-align: left; font-weight: 700; width: calc(80px * var(--s-time, 1)); font-size: calc(1em * var(--s-time, 1)); font-variant-numeric: tabular-nums; }
+.l-sec td.z { font-size: calc(.8rem * var(--s-zman, 1)); color: var(--muted); border: none; }
 .l-sec td.z span { display: inline-block; margin-left: 14px; }
 /* לוח ימי חול: עמודה לכל יום */
 .l-grid-wrap { overflow-x: auto; margin-top: 16px; }
 .l-grid { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .l-grid th, .l-grid td { padding: 6px 3px; border-bottom: 1px solid var(--soft); text-align: center; }
-.l-grid tbody th { text-align: right; font-weight: 400; }
+.l-grid tbody th { text-align: right; font-weight: 400; font-size: calc(1em * var(--s-name, 1)); }
 .l-grid thead th { border-bottom: 2px solid var(--blue); font-size: 1rem; vertical-align: top; }
 .l-grid thead small { display: block; font-weight: 400; font-size: .78rem; color: var(--muted); }
 .l-grid thead small.sp { color: var(--blue); font-weight: 700; }
-.l-grid td { font-weight: 700; }
-.l-grid tr.z th, .l-grid tr.z td { font-size: .8rem; color: var(--muted); border: none; padding: 2px 3px; }
+.l-grid td { font-weight: 700; font-size: calc(1em * var(--s-time, 1)); }
+.l-grid tr.z th, .l-grid tr.z td { font-size: calc(.8rem * var(--s-zman, 1)); color: var(--muted); border: none; padding: 2px 3px; }
 .l-grid tr.z.first th, .l-grid tr.z.first td { padding-top: 10px; }
 .l-notes { margin-top: 18px; padding: 10px; background: var(--note); font-size: .95rem; }
 .luach-empty { text-align: center; color: var(--muted); }
@@ -105,7 +114,7 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
   .stripes, header, .mode, .nav-occ, .luach-tpl, .actions, #welcome, footer, .toast, #view-settings { display: none !important; }
   main.wrap { max-width: none; padding: 0; }
   .luach { border: none; box-shadow: none; padding: 0; font-size: 18px; }
-  .l-title { font-size: 2.4rem; }
+  .l-title { font-size: calc(2.4rem * var(--s-title, 1)); }
   .l-sec { break-inside: avoid; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }

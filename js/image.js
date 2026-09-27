@@ -6,7 +6,9 @@
 const C = { ink: '#1d2b45', blue: '#2c4a7c', muted: '#5d6b82', soft: '#e3e9f2', note: '#eef3fa', bg: '#ffffff' };
 import { fontFamilies } from './config.js';
 
-let SERIF, SANS;   // גופן הכותרת וגופן הטקסט, לפי הבחירה בהגדרות
+let SERIF, SANS;   // גופן הכותרת וגופן הטקסט, לפי התבנית
+let SZ = { title: 1, name: 1, time: 1, zman: 1 };   // גדלי הטקסט של התבנית (1 = רגיל)
+const px = (n, k) => Math.round(n * SZ[k] * 10) / 10;
 const W = 800, M = 56, SCALE = 2;   // רוחב לוגי, שוליים, רזולוציה (1600 פיקסלים)
 
 /** פירוק טקסט לשורות לפי רוחב */
@@ -39,8 +41,9 @@ function layout(ctx, l, draw) {
 
   if (l.shul) { y += 40; text(l.shul, W / 2, y, '700 22px ' + SANS, C.blue, 'center'); }
 
-  ctx.font = '900 50px ' + SERIF;
-  for (const line of wrap(ctx, l.title, inner)) { y += 60; text(line, W / 2, y, '900 50px ' + SERIF, C.ink, 'center'); }
+  const tf = '900 ' + px(50, 'title') + 'px ' + SERIF;
+  ctx.font = tf;
+  for (const line of wrap(ctx, l.title, inner)) { y += px(60, 'title'); text(line, W / 2, y, tf, C.ink, 'center'); }
   y += 32; text(l.dates, W / 2, y, '400 18px ' + SANS, C.muted, 'center');
 
   if (l.type === 'days') y = daysGrid(ctx, l, y, text, rect);
@@ -51,32 +54,34 @@ function layout(ctx, l, draw) {
     y += 12; rect(M, y, inner, 3, C.blue); y += 3;
 
     for (const r of s.rows) {
-      ctx.font = '400 21px ' + SANS;
-      const lines = wrap(ctx, r.name, inner - 110);
-      const top = y;
-      lines.forEach((line, i) => text(line, R, top + 32 + i * 28, '400 21px ' + SANS, C.ink, 'right'));
-      text(r.text, M, top + 32, '700 22px ' + SANS, C.ink, 'left');
-      y = top + 46 + (lines.length - 1) * 28;
+      const nf = '400 ' + px(21, 'name') + 'px ' + SANS, lh = px(28, 'name');
+      ctx.font = nf;
+      const lines = wrap(ctx, r.name, inner - px(110, 'time'));
+      const top = y, base = top + 10 + Math.max(px(22, 'name'), px(22, 'time'));
+      lines.forEach((line, i) => text(line, R, base + i * lh, nf, C.ink, 'right'));
+      text(r.text, M, base, '700 ' + px(22, 'time') + 'px ' + SANS, C.ink, 'left');
+      y = base + 14 + (lines.length - 1) * lh;
       rect(M, y - 1, inner, 1, C.soft);
     }
 
     if (s.zmanim.length) {
       // זמני היום: פריטים מימין לשמאל, עם מעבר שורה כשצריך
-      ctx.font = '400 15px ' + SANS;
+      const zs = px(15, 'zman'), zl = '400 ' + zs + 'px ' + SANS, zb = '700 ' + zs + 'px ' + SANS;
+      ctx.font = zl;
       const gap = 22, items = s.zmanim.map(z => ({ label: z[0] + ' ', time: z[1] }));
       const widthOf = it => {
-        ctx.font = '400 15px ' + SANS; const a = ctx.measureText(it.label).width;
-        ctx.font = '700 15px ' + SANS; return a + ctx.measureText(it.time).width;
+        ctx.font = zl; const a = ctx.measureText(it.label).width;
+        ctx.font = zb; return a + ctx.measureText(it.time).width;
       };
-      y += 26;
+      y += 11 + zs;
       let x = R;
       for (const it of items) {
         const w = widthOf(it);
-        if (x !== R && x - w < M) { x = R; y += 24; }
+        if (x !== R && x - w < M) { x = R; y += Math.round(zs * 1.6); }
         if (draw) {
-          ctx.font = '400 15px ' + SANS; const lw = ctx.measureText(it.label).width;
-          text(it.label, x, y, '400 15px ' + SANS, C.muted, 'right');
-          text(it.time, x - lw, y, '700 15px ' + SANS, C.muted, 'right');
+          ctx.font = zl; const lw = ctx.measureText(it.label).width;
+          text(it.label, x, y, zl, C.muted, 'right');
+          text(it.time, x - lw, y, zb, C.muted, 'right');
         }
         x -= w + gap;
       }
@@ -114,23 +119,24 @@ function daysGrid(ctx, l, y, text, rect) {
   y += specials ? 70 : 32;
   rect(M, y, inner, 3, C.blue); y += 3;
 
-  const row = (r, size, weight, color) => {
-    ctx.font = weight + ' ' + size + 'px ' + SANS;
-    const lines = wrap(ctx, r.name, labelW - 10), top = y;
-    lines.forEach((line, k) => text(line, R, top + size + 12 + k * (size + 7), weight + ' ' + size + 'px ' + SANS, color, 'right'));
-    r.cells.forEach((c, i) => { if (c != null) text(c, cx(i), top + size + 12, '700 ' + size + 'px ' + SANS, color, 'center'); });
-    y = top + size + 24 + (lines.length - 1) * (size + 7);
+  // ns – גודל השם, ts – גודל השעות
+  const row = (r, ns, ts, color) => {
+    ctx.font = '400 ' + ns + 'px ' + SANS;
+    const lines = wrap(ctx, r.name, labelW - 10), top = y, size = Math.max(ns, ts);
+    lines.forEach((line, k) => text(line, R, top + size + 12 + k * (ns + 7), '400 ' + ns + 'px ' + SANS, color, 'right'));
+    r.cells.forEach((c, i) => { if (c != null) text(c, cx(i), top + size + 12, '700 ' + ts + 'px ' + SANS, color, 'center'); });
+    y = top + size + 24 + (lines.length - 1) * (ns + 7);
   };
-  for (const r of l.rows) { row(r, 20, 400, C.ink); rect(M, y - 1, inner, 1, C.soft); }
+  for (const r of l.rows) { row(r, px(20, 'name'), px(20, 'time'), C.ink); rect(M, y - 1, inner, 1, C.soft); }
   y += 6;
-  for (const r of l.zmanim) row(r, 15, 400, C.muted);
+  for (const r of l.zmanim) row(r, px(15, 'zman'), px(15, 'zman'), C.muted);
   return y;
 }
 
-async function loadFonts() {
+async function loadFonts(font) {
   if (!document.fonts) return;
   // הגדרות הגופן מ-Google Fonts עוד בטעינה (למשל מיד אחרי שהגופן הוחלף)
-  const link = document.getElementById('fontLink');
+  const link = document.getElementById('fontLink-' + font);
   if (link && !link.sheet) {
     await new Promise(ok => {
       link.addEventListener('load', ok, { once: true });
@@ -144,10 +150,12 @@ async function loadFonts() {
   } catch (e) { /* בלי חיבור ובלי מטמון – גופן חלופי */ }
 }
 
-/** מצייר את הלוח ומחזיר canvas. font – מזהה הגופן מההגדרות */
-export async function luachCanvas(l, font) {
+/** מצייר את הלוח ומחזיר canvas. font – מזהה הגופן של התבנית, sizes – הגדלים שלה באחוזים */
+export async function luachCanvas(l, font, sizes = {}) {
   ({ title: SERIF, body: SANS } = fontFamilies(font));
-  await loadFonts();
+  SZ = {};
+  for (const k of ['title', 'name', 'time', 'zman']) SZ[k] = (Number(sizes[k]) || 100) / 100;
+  await loadFonts(font);
   const canvas = document.createElement('canvas');
   let ctx = canvas.getContext('2d');
   ctx.direction = 'rtl';
