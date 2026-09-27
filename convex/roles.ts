@@ -23,6 +23,15 @@ export async function getMembership(ctx: QueryCtx, synagogueId: Id<"synagogues">
     .unique();
 }
 
+export async function requireMember(ctx: QueryCtx, synagogueId: Id<"synagogues">) {
+  const userId = await requireUser(ctx);
+  const membership = await getMembership(ctx, synagogueId, userId);
+  if (membership === null) {
+    throw new Error("אינך חבר בקהילה הזו");
+  }
+  return { userId, membership };
+}
+
 /** גבאי או רב של הקהילה. */
 export async function requireManager(ctx: QueryCtx, synagogueId: Id<"synagogues">) {
   const userId = await requireUser(ctx);

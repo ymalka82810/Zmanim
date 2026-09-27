@@ -13,6 +13,7 @@ import type * as http from "../http.js";
 import type * as invitations from "../invitations.js";
 import type * as inviteCode from "../inviteCode.js";
 import type * as invites from "../invites.js";
+import type * as kiddush from "../kiddush.js";
 import type * as members from "../members.js";
 import type * as roles from "../roles.js";
 import type * as synagogues from "../synagogues.js";
@@ -30,6 +31,7 @@ declare const fullApi: ApiFromModules<{
   invitations: typeof invitations;
   inviteCode: typeof inviteCode;
   invites: typeof invites;
+  kiddush: typeof kiddush;
   members: typeof members;
   roles: typeof roles;
   synagogues: typeof synagogues;

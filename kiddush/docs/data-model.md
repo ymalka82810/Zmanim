@@ -1,53 +1,37 @@
 # מבנה הנתונים
 
-מאגר מסמכים (JSON) בסגנון Firestore. `{sid}` = מזהה בית כנסת, `{uid}` = מזהה משתמש, `{dateKey}` = `YYYY-MM-DD`.
+טבלאות ב-Convex (`convex/schema.ts`). כל רשומה שייכת לקהילה (`synagogueId`). `dateKey` הוא תאריך השבת או החג בפורמט `YYYY-MM-DD`.
 
-## `synagogues/{sid}`
-```json
-{ "name": "אהל משה", "city": "ירושלים", "il": true, "createdAt": 0, "createdBy": "uid" }
-```
-`il` קובע את סדר הפרשות והחגים (ארץ ישראל / חוץ לארץ).
+## `kiddushBookings`
+רשומה אחת לכל תאריך תפוס. השרת בודק בתוך אותה טרנזקציה שהתאריך פנוי, ולכן אין רישום כפול.
 
-## `synagogues/{sid}/members/{uid}`
-```json
-{ "role": "member | gabbai | admin", "joinedAt": 0, "phone": "050..." }
-```
+| שדה | משמעות |
+|---|---|
+| `status` | `pending` (ממתין לאישור), `approved`, `blocked` |
+| `userId` | הנרשם. ברישום ידני או בחסימה: הגבאי שרשם |
+| `manual` | `true` ברישום ידני ובחסימה |
+| `sponsorName`, `occasion` | מה שמוצג בלוח |
+| `phone`, `note` | גלויים רק לנרשם, לגבאי ולרב |
+| `blockLabel` | הטקסט שמוצג בתאריך חסום, למשל "קידוש קהילתי" |
+| `termsVersion`, `termsAckAt` | גרסת ההנחיות שהנרשם אישר |
+| `decidedBy`, `decidedAt` | מי אישר ומתי |
 
-## `synagogues/{sid}/bookings/{dateKey}`
-מסמך אחד לכל תאריך (שבת/חג). קיום מסמך עם `status` = תאריך תפוס.
-```json
-{
-  "status": "pending | approved | blocked",
-  "uid": "uid של הנרשם (או של האחראי ברישום ידני/חסימה)",
-  "sponsorName": "משפחת לוי",
-  "occasion": "בר מצווה",
-  "phone": "", "note": "",
-  "termsVersion": 2, "termsAckAt": 0,
-  "manual": false,
-  "blockLabel": "קידוש קהילתי",
-  "createdAt": 0, "decidedBy": "uid", "decidedAt": 0
-}
-```
-- דחייה או ביטול = מחיקת המסמך + התראה.
-- תפיסת תאריך נעשית עם נעילה קצרה (`acquire`) כדי למנוע רישום כפול.
+דחייה או ביטול מוחקים את הרשומה ושולחים התראה.
 
-## `synagogues/{sid}/terms/v{n}`
-כל שמירה יוצרת מסמך חדש; הגרסה הנוכחית = `version` הגבוה ביותר.
-```json
-{ "version": 3, "intro": "טקסט פתיחה", "items": ["סעיף", "..."], "note": "מה השתנה", "editedBy": "uid", "editedAt": 0 }
-```
+## `kiddushTerms`
+כל שמירה יוצרת גרסה חדשה. הגרסה הנוכחית היא זו עם `version` הגבוה ביותר. כשגבאי או רב פותחים לוח של קהילה בלי הנחיות, נוצרת גרסה 1 מברירת המחדל שב-`convex/kiddush.ts`.
 
-## `synagogues/{sid}/notifications/{id}`
-```json
-{ "to": "uid | managers", "type": "new | cancel | approved | rejected", "dateKey": "2026-10-03",
-  "text": "טקסט מוכן להצגה/למייל", "at": 0, "by": "uid", "readBy": ["uid"] }
-```
-התראות בנות יותר מ-120 יום נמחקות אוטומטית כשמנהל פותח את חלון ההתראות.
+שדות: `version`, `intro`, `items` (רשימת סעיפים), `note` (מה השתנה), `editedBy`, `editedAt`.
 
-## `data/users/{uid}/profile` (פרטי למשתמש)
-```json
-{ "synagogues": ["sid1", "sid2"], "current": "sid1" }
-```
+## `kiddushNotifications`
+| שדה | משמעות |
+|---|---|
+| `to` | מזהה משתמש, או `"managers"` לכל הגבאים והרבנים |
+| `text` | טקסט מוכן להצגה |
+| `by`, `at` | מי יצר ומתי |
+| `readBy` | מי כבר קרא |
 
-## שמות משתמשים
-לא נשמרים במאגר. מוצגים דרך `user.profiles(ids)`. בפרויקט אחר יש להחליף בטבלת משתמשים.
+התראות בנות יותר מ-120 יום נמחקות כשגבאי או רב פותחים את חלון ההתראות.
+
+## טלפון
+הטלפון האחרון שהמשתמש הזין נשמר ב-`memberships.phone`, וממלא מראש את טופס ההרשמה הבא.

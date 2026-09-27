@@ -4,7 +4,7 @@
  * הבקשה לרשת עוקפת את המטמון של הדפדפן, כי GitHub Pages מורה לשמור קבצים 10 דקות.
  * גופנים: מהמטמון, ואם אין – מהרשת.
  */
-const CACHE = 'luach-v16';
+const CACHE = 'luach-v17';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/app.js', 'js/menu.js', 'js/theme.js', 'js/astro.js', 'js/config.js', 'js/dates.js', 'js/hebrew.js', 'js/image.js', 'js/luach.js', 'js/moadim.js', 'js/template-read.js', 'js/template-render.js', 'js/template-ui.js', 'js/render.js', 'js/zmanim.js',
@@ -12,7 +12,7 @@ const SHELL = [
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
   'vendor/hebcal/hebcal-core-6.9.3.min.js',
   'vendor/convex/convex-browser-1.46.0.js',
-  'kiddush/', 'kiddush/index.html', 'kiddush/css/styles.css', 'kiddush/js/local-store.js', 'kiddush/js/default-terms.js', 'kiddush/js/calendar.js', 'kiddush/js/app.js',
+  'kiddush/', 'kiddush/index.html', 'kiddush/css/styles.css', 'kiddush/js/calendar.js', 'kiddush/js/app.js',
   'gabbai/', 'gabbai/index.html', 'gabbai/css/styles.css', 'gabbai/js/app.js',
   'account/', 'account/index.html', 'account/css/styles.css', 'account/js/app.js'
 ];
