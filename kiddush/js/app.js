@@ -30,7 +30,8 @@ const store = {
   get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
   set(k, v){ try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch(e){} }
 };
-const siteUrl = id => location.origin + location.pathname + '?sheet=' + id;
+const IN_APP = location.hostname === 'localhost' && !!window.Capacitor;
+const siteUrl = id => (IN_APP ? window.KIDDUSH_CONFIG.publicUrl : location.origin + location.pathname) + '?sheet=' + id;
 
 /* ---------- Boot ---------- */
 function boot(){

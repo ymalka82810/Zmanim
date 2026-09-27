@@ -6,9 +6,16 @@
   "type": "module",
   "scripts": {
     "start": "node tools/serve.js",
-    "test": "node test/verify.js"
+    "test": "node test/verify.js",
+    "app:sync": "node tools/build-app.js && cap sync android",
+    "app:open": "cap open android"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
     "@hebcal/core": "^5.0.0"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/core": "^8.5.2"
   }
 }

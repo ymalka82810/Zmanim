@@ -1,0 +1,8 @@
+{
+  "appId": "com.zmanim.luach",
+  "appName": "לוח זמנים",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#f6f8fb"
+  }
+}
