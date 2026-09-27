@@ -3,6 +3,7 @@ import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import {
+  assertRabbiAvailable,
   countManagers,
   getMembership,
   isManager,
@@ -55,6 +56,9 @@ export const setRole = mutation({
     }
     if (isManager(membership.role) && !isManager(args.role)) {
       await assertNotLastManager(ctx, args.synagogueId, "צריך להישאר לפחות גבאי או רב אחד");
+    }
+    if (args.role === "rabbi") {
+      await assertRabbiAvailable(ctx, args.synagogueId, args.userId);
     }
     await ctx.db.patch(membership._id, { role: args.role });
   },

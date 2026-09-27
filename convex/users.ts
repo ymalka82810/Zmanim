@@ -17,6 +17,7 @@ export const me = query({
       .map((email) => email.trim())
       .filter((email) => email.length > 0);
     return {
+      userId,
       name: user.name ?? null,
       email: user.email ?? null,
       image: user.image ?? null,

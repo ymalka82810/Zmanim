@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import { getMembership, normalizeEmail, requireManager, requireUser, roleValidator } from "./roles";
+import { assertRabbiAvailable, getMembership, normalizeEmail, requireManager, requireUser, roleValidator } from "./roles";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -29,6 +29,9 @@ export const create = mutation({
       .first();
     if (existingUser !== null && (await getMembership(ctx, args.synagogueId, existingUser._id)) !== null) {
       throw new Error("המשתמש כבר חבר בקהילה");
+    }
+    if (args.role === "rabbi") {
+      await assertRabbiAvailable(ctx, args.synagogueId);
     }
     const existing = await ctx.db
       .query("invitations")
@@ -119,6 +122,9 @@ export const accept = mutation({
     const { userId, invitation } = await requireOwnInvitation(ctx, args.invitationId);
     const membership = await getMembership(ctx, invitation.synagogueId, userId);
     if (membership === null) {
+      if (invitation.role === "rabbi") {
+        await assertRabbiAvailable(ctx, invitation.synagogueId, userId);
+      }
       await ctx.db.insert("memberships", {
         userId,
         synagogueId: invitation.synagogueId,

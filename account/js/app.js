@@ -8,7 +8,9 @@ const client = A.client();
 
 const ROLE = { gabbai: 'גבאי', rabbi: 'רב', member: 'חבר קהילה' };
 const isManager = role => role === 'gabbai' || role === 'rabbi';
-const roleOptions = selected => Object.entries(ROLE).map(([v, t]) => `<option value="${v}" ${v === selected ? 'selected' : ''}>${t}</option>`).join('');
+const roleOptions = (selected, disableRabbi) => Object.entries(ROLE)
+  .filter(([v]) => v !== 'rabbi' || !disableRabbi || v === selected)
+  .map(([v, t]) => `<option value="${v}" ${v === selected ? 'selected' : ''}>${t}</option>`).join('');
 
 const S = { ready:false, isAuthenticated:false, me:null, synagogues:[], invitations:[], joinCode:null, joinInfo:undefined, detail:null, members:null, pending:null };
 
@@ -207,6 +209,17 @@ async function shareInvite(code, name){
 }
 
 async function setRole(synagogueId, userId, role){
+  const current = (S.members || []).find(m => m.userId === userId);
+  const previousRole = current ? current.role : null;
+  if (previousRole === role) return;
+  const isSelf = S.me && S.me.userId === userId;
+  if (isSelf && isManager(previousRole) && !isManager(role)){
+    const warn = 'שים לב: לאחר שתרד לחבר קהילה לא תוכל להחזיר לעצמך את התפקיד. רק גבאי או רב אחר בקהילה יוכלו להחזיר לך אותו. בטוח שרוצה להמשיך?';
+    if (!confirm(warn)){ render(); return; }
+  } else if (isManager(role)){
+    const name = current ? (current.name || current.email || 'החבר') : 'החבר';
+    if (!confirm(`לתת ל${name} תפקיד ${ROLE[role]}?`)){ render(); return; }
+  }
   try {
     await client.mutation('members:setRole', { synagogueId, userId, role });
     await loadManagerData(synagogueId);
@@ -340,7 +353,7 @@ function renderDetailSheet(){
     <p class="muted small">ההזמנה תופיע אצל בעל המייל כשייכנס לאפליקציה, והוא יבחר אם להצטרף.</p>
     <form id="inviteForm">
       <label class="f">מייל</label><input type="email" name="email" dir="ltr" placeholder="name@gmail.com" required>
-      <label class="f">תפקיד</label><select name="role">${roleOptions('member')}</select>
+      <label class="f">תפקיד</label><select name="role">${roleOptions('member', (S.members || []).some(m => m.role === 'rabbi'))}</select>
       <button class="btn" type="submit" style="margin-top:12px">שליחת הזמנה</button>
     </form>
     <div id="pendingList">${S.pending ? renderPending(S.pending) : ''}</div>
@@ -395,11 +408,12 @@ function renderPending(pending){
 
 function renderMembers(members){
   if (!members.length) return '<p class="muted">אין חברים עדיין.</p>';
+  const hasRabbi = members.some(m => m.role === 'rabbi');
   return members.map(m => `
     <div class="member-row">
       ${m.image ? `<img src="${esc(m.image)}" alt="">` : ''}
       <div class="info"><div class="n">${esc(m.name || m.email || 'משתמש')}</div><div class="e">${esc(m.email || '')}</div></div>
-      <select data-role="${m.userId}" aria-label="תפקיד">${roleOptions(m.role)}</select>
+      <select data-role="${m.userId}" aria-label="תפקיד">${roleOptions(m.role, hasRabbi)}</select>
       <button class="btn ghost" data-remove="${m.userId}" aria-label="הסרה" title="הסרה">✕</button>
     </div>`).join('');
 }

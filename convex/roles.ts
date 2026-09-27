@@ -50,4 +50,20 @@ export async function countManagers(ctx: QueryCtx, synagogueId: Id<"synagogues">
   return memberships.filter((m) => isManager(m.role)).length;
 }
 
+/** יכול להיות רב אחד בלבד בקהילה. */
+export async function assertRabbiAvailable(
+  ctx: QueryCtx,
+  synagogueId: Id<"synagogues">,
+  excludeUserId?: Id<"users">,
+) {
+  const memberships = await ctx.db
+    .query("memberships")
+    .withIndex("by_synagogue", (q) => q.eq("synagogueId", synagogueId))
+    .collect();
+  const hasOtherRabbi = memberships.some((m) => m.role === "rabbi" && m.userId !== excludeUserId);
+  if (hasOtherRabbi) {
+    throw new Error("יכול להיות רב אחד בלבד בקהילה");
+  }
+}
+
 export const normalizeEmail = (email: string) => email.trim().toLowerCase();
