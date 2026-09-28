@@ -33,8 +33,6 @@ const baseOpts = s => {
 let kiddush = null;   // dateKey ← קידוש מאושר, לתצוגה המקדימה (מ-app.js)
 export function setKiddush(map) { kiddush = map; }
 const SAMPLE_KIDDUSH = { sponsorName: 'משפחת ישראלי שיחיו', occasion: 'לרגל בר המצווה של בנם', heading: 'קידוש לאחר התפילה', by: 'ע״י' };
-/** הנוסח שהגבאי קבע בלוח הקידושים: השורה הראשונה, "ע״י", בעל הקידוש והסיבה */
-const GABBAI_KIDDUSH_FMT = '{כותרת} {ע״י} {שם}{לרגל}';
 const oldMinutes = s => { const m = /^(\d{1,2}):(\d{2})$/.exec(s.old || ''); return m ? +m[1] * 60 + +m[2] : null; };
 /** ערך מוחלט (בדקות) של הפרש האזור, להצגה בשדה המספר */
 const offsetAbs = s => { const n = parseInt(s.offset, 10); return isNaN(n) ? '' : String(Math.abs(n)); };
@@ -141,6 +139,8 @@ function open() {
   st.drawing = false;
   $('tplDraw').setAttribute('aria-pressed', 'false');
   renderOcc(); renderBoxes(); renderSlots();
+  // העמוד שבעורך מוצג כמו שיודפס, עם אירוע לדוגמה (קידוש וכו')
+  schedulePreviewRefresh();
   window.scrollTo(0, 0);
 }
 
@@ -360,15 +360,6 @@ function stretchPrefix(s) {
   s.prefix = all.length ? all.join(' ') + ' ' : '';
 }
 
-const isTimeOffset = v => /^[-+]?\d+(?::\d+)?$/.test(String(v ?? '').trim());
-
-/** "הקידוש נתרם ע"י", "קידוש:" –הטקסט הקבוע שלפני שם התורם, או null אם לא נמצא */
-function kiddushPrefix(text) {
-  const m = /^(.*?(?:נתרמ[הו]?|ע["״]י|על[\s-]ידי|בחסות|באדיבות)(?:\s+(?:ע["״]י|על[\s-]ידי))?)\s+\S/.exec(text) ||
-    /^([^:]*קידוש[^:]*:)\s*\S/.exec(text);
-  return m ? m[1].trim() + ' ' : null;
-}
-
 /** שתי תיבות טקסט של אותו קטע: באותה שורה זו ליד זו, או בשורות סמוכות זו מתחת לזו */
 function sameBlock(a, b) {
   const size = Math.max(a.size || a.h * 0.72, b.size || b.h * 0.72);
@@ -383,7 +374,7 @@ const lineBase = b => b.baseline ?? (b.y + b.h * 0.78);
 
 /**
  * קידוש כמו בקובץ הישן: האזור מתרחב לשורות הסמוכות של אותו קטע (grow), מספר השורות, קו הבסיס
- * והריווח ביניהן נלקחים מהקובץ, והטקסט שלפני שם התורם ("הקידוש נתרם ע"י") נשמר כטקסט לפני הקידוש.
+ * והריווח ביניהן נלקחים מהקובץ. כל הטקסט שבאזור מוחלף בהודעה בנוסח שהגבאי קבע בלוח הקידושים.
  * במסמך סרוק השורות נספרות לפי הפיקסלים שבאזור
  */
 function fitKiddush(s, grow) {
@@ -411,8 +402,6 @@ function fitKiddush(s, grow) {
     // עברית: בכל שורה מימין לשמאל
     const text = lines.map(l => l.parts.sort((a, b) => b.box.x - a.box.x).map(c => c.old).join(' ')).join(' ');
     s.old = text;
-    const pre = kiddushPrefix(text);
-    if (pre) s.prefix = pre;
   } else {
     lines = inkLines(st.canvas, s.box).map(b => ({ size: (b.bottom - b.top + 1) * 0.95, baseline: b.top + (b.bottom - b.top + 1) * 0.8 }));
     if (!lines.length) return;
@@ -548,14 +537,10 @@ function slotFields(s) {
       '<div class="wide"><label>שם</label><input data-k="name" value="' + esc(s.name) + '" placeholder="למשל: קידוש"></div>' +
       (isDays() ? dayChecks(s)
         : '<div><label>מתי</label><select data-k="when">' + opts(WHEN_LABELS, s.when) + '</select></div>') +
-      '<div class="wide"><label>טקסט לפני הקידוש</label><input data-k="prefix" value="' + esc(s.prefix || '') +
-      '" placeholder="למשל: הקידוש נתרם ע&quot;י"></div>' +
-      '<div class="wide"><label>נוסח</label><input data-k="offset" dir="rtl" value="' + esc(s.offset) + '" placeholder="{שם}{לרגל}"></div>' +
-      '<div class="wide"><button type="button" data-kiddush-wording>לפי הנוסח שהגבאי קבע בלוח הקידושים</button></div></div>' +
-      '<p class="hint">הטקסט יתמלא לפי מי שאושר לקידוש בתאריך הזה (מלוח הקידושים של הקהילה). ' +
-      'אפשר להשתמש ב-{שם} (שם התורם, עם שיחי׳/שתחי׳/שיחיו), ב-{סיבה} ("לרגל…", "לזכות…", "לעילוי נשמת…") וב-{לרגל} (כמו {סיבה} עם רווח לפניה, רק אם יש סיבה), ' +
-      'וגם בנוסח שהגבאי קבע בלוח הקידושים: {כותרת} (השורה הראשונה, למשל "קידוש והתוועדות לאחר התפילה") ו-{ע״י}. ' +
-      'בלי תאריך מאושר, האזור לא יתמלא. כשאין קידוש מאושר, התצוגה המקדימה כאן מציגה תורם לדוגמה ("משפחת ישראלי שיחיו לרגל בר המצווה של בנם").</p>';
+      '</div>' +
+      '<p class="hint">האזור יתמלא בהודעה בנוסח שהגבאי קבע בלוח הקידושים של הקהילה – השורה הראשונה, "ע״י", ' +
+      'בעל הקידוש והסיבה – לפי מי שאושר לקידוש בתאריך הזה. בלי קידוש מאושר, האזור לא יתמלא. ' +
+      'כאן בעורך, כשאין קידוש מאושר, מוצג קידוש לדוגמה.</p>';
   }
   if (s.kind === 'parasha' || s.kind === 'parashaName') {
     return '<div class="rgrid"><div class="wide"><label>טקסט לפני הפרשה</label><input data-k="prefix" value="' + esc(s.prefix || '') +
@@ -698,9 +683,7 @@ $('tplSlots').addEventListener('input', e => {
     s.kind = v;
     const when0 = isDays() ? 'd0' : 'כל יום';
     if (v === 'rule' && !s.base) { Object.assign(s, { when: s.when || when0, name: s.label || '', base: 'שקיעה', offset: '0', round: 'ללא' }); reinfer(s); }
-    if (v === 'kiddush' && !s.name) Object.assign(s, { when: s.when || when0, name: s.label || 'קידוש', offset: s.offset || '{שם}{לרגל}' });
-    // הפרש או שעה שנשארו מתפילה ("0", "-20", "08:00") אינם נוסח של קידוש
-    if (v === 'kiddush' && isTimeOffset(s.offset)) s.offset = '{שם}{לרגל}';
+    if (v === 'kiddush' && !s.name) Object.assign(s, { when: s.when || when0, name: s.label || 'קידוש' });
     if (v === 'kiddush') { fitKiddush(s, true); schedulePreviewRefresh(); }
     if (v === 'zman' && !s.zman) Object.assign(s, { zman: 'sunset', when: s.when || when0 });
     if (v === 'gregDate' && !s.fmt) s.fmt = { sep: '/', year: 4, pad: false };
@@ -743,15 +726,6 @@ $('tplSlots').addEventListener('input', e => {
   if (s.wrap || s.kind === 'kiddush') schedulePreviewRefresh();
 });
 $('tplSlots').addEventListener('click', async e => {
-  // הכותרת ו"ע״י" באים מלוח הקידושים, ולכן הטקסט שנקרא מהקובץ לפני הקידוש כבר לא נחוץ
-  const wordingBtn = e.target.closest('[data-kiddush-wording]');
-  if (wordingBtn) {
-    const s = st.slots[+wordingBtn.closest('.slot-ed').dataset.i];
-    Object.assign(s, { prefix: '', offset: GABBAI_KIDDUSH_FMT });
-    renderSlots();
-    schedulePreviewRefresh();
-    return;
-  }
   const lookBtn = e.target.closest('[data-look]');
   if (lookBtn) {
     const s = st.slots[+lookBtn.closest('.slot-ed').dataset.i], k = lookBtn.dataset.look;
@@ -802,7 +776,7 @@ function holySlotRules() {
     if (seen.has(key)) continue;
     seen.add(key);
     const kd = s.kind === 'kiddush';
-    out.push({ name: s.name.trim(), when: s.when, applies: 'שבת וחג', base: kd ? KIDDUSH_LABEL : s.base, offset: s.offset, round: kd ? 'ללא' : s.round });
+    out.push({ name: s.name.trim(), when: s.when, applies: 'שבת וחג', base: kd ? KIDDUSH_LABEL : s.base, offset: kd ? '' : s.offset, round: kd ? 'ללא' : s.round });
   }
   return out;
 }
@@ -818,9 +792,9 @@ function daySlotRules() {
     const name = String(s.name || '').trim();
     if ((s.kind !== 'rule' && s.kind !== 'kiddush') || !name) continue;
     const kd = s.kind === 'kiddush';
-    const base = kd ? KIDDUSH_LABEL : s.base, round = kd ? 'ללא' : s.round;
-    const k = [name, base, s.offset, round].join('|');
-    if (!groups.has(k)) groups.set(k, { name, base, offset: s.offset, round, keys: new Set(), byDays: false });
+    const base = kd ? KIDDUSH_LABEL : s.base, round = kd ? 'ללא' : s.round, offset = kd ? '' : s.offset;
+    const k = [name, base, offset, round].join('|');
+    if (!groups.has(k)) groups.set(k, { name, base, offset, round, keys: new Set(), byDays: false });
     for (const d of slotDays(s)) groups.get(k).keys.add(colOf(d).key);
     if (s.days) groups.get(k).byDays = true;
   }
@@ -854,7 +828,7 @@ function builtSlots() {
   return st.slots.map(s => {
     const c = { box: s.box, kind: s.kind, old: s.old || '' };
     if (s.labelBox) Object.assign(c, { labelBox: s.labelBox, labelStyle: analyzeSlot(st.canvas, s.labelBox), ...(s.label ? { label: s.label } : {}) });
-    if ((s.kind === 'parasha' || s.kind === 'parashaName' || s.kind === 'kiddush') && s.prefix && s.prefix.trim()) c.prefix = s.prefix.trim() + ' ';
+    if ((s.kind === 'parasha' || s.kind === 'parashaName') && s.prefix && s.prefix.trim()) c.prefix = s.prefix.trim() + ' ';
     if (s.kind === 'rule' || s.kind === 'kiddush') Object.assign(c, { name: String(s.name).trim(), when: s.when, ...(s.days ? { days: s.days } : {}) });
     if (s.kind === 'zman') Object.assign(c, { zman: s.zman, when: s.when });
     if (s.kind === 'hebDate') Object.assign(c, { ascii: !!s.ascii, noYear: !!s.noYear, ...(s.hei ? { hei: true } : {}) });

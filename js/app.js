@@ -662,17 +662,14 @@ function renderRules() {
       (days ? '' : '<div><label>מתי</label><select data-k="when">' + opts(WHEN_LABELS, r.when) + '</select></div>') +
       '<div><label>חל על</label><select data-k="applies">' + opts(days ? DAY_APPLIES : APPLIES, r.applies) + '</select></div>' +
       '<div><label>לפי</label><select data-k="base">' + baseOpts(r) + '</select></div>' +
-      (kiddush || fixed
-        ? '<div><label>' + (kiddush ? 'נוסח' : 'שעה') + '</label><input data-k="offset" value="' + esc(r.offset) +
-          '" placeholder="' + (kiddush ? '{שם}{לרגל}' : '08:00') + '"' +
-          (kiddush ? ' dir="rtl"' : ' dir="ltr" inputmode="text"') + '></div>'
+      (kiddush ? ''
+        : fixed ? '<div><label>שעה</label><input data-k="offset" value="' + esc(r.offset) +
+          '" placeholder="08:00" dir="ltr" inputmode="text"></div>'
         : '<div><label>הפרש (דקות)</label><div class="offset-pair"><input data-k="offsetAbs" type="number" min="0" inputmode="numeric" dir="ltr" value="' +
           esc(offsetAbs(r)) + '" placeholder="20"><select data-k="offsetDir">' + opts(['אחרי', 'לפני'], offsetDir(r)) + '</select></div></div>') +
       '<div><label>עיגול</label><select data-k="round"' + (fixed || kiddush ? ' disabled' : '') + '>' + opts(ROUND, r.round) + '</select></div>' +
-      '</div>' + (kiddush ? '<p class="hint">הטקסט יתמלא לפי מי שאושר לקידוש בתאריך הזה (מלוח הקידושים של הקהילה). ' +
-        'אפשר להשתמש ב-{שם} (שם התורם, עם שיחי׳/שתחי׳/שיחיו), ב-{סיבה} ("לרגל…", "לזכות…", "לעילוי נשמת…"), ב-{לרגל} (כמו {סיבה} עם רווח לפניה, רק אם יש סיבה), ' +
-        'וב-{כותרת} ו-{ע״י} מהנוסח שהגבאי קבע בלוח הקידושים. ' +
-        'בלי תאריך מאושר, השורה לא תופיע.</p>' : '') +
+      '</div>' + (kiddush ? '<p class="hint">השורה תתמלא בהודעה בנוסח שהגבאי קבע בלוח הקידושים של הקהילה, ' +
+        'לפי מי שאושר לקידוש בתאריך הזה. בלי קידוש מאושר, השורה לא תופיע.</p>' : '') +
       '</details>';
   }).join('');
 }
@@ -758,7 +755,7 @@ $('rules').addEventListener('input', e => {
   if (k === 'base') {
     const kiddush = BASES[r.base] === 'kiddush';
     if (r.base === 'שעה קבועה' && r.offset.indexOf(':') < 0) r.offset = '08:00';
-    if (kiddush && /^-?\d+$/.test(r.offset)) r.offset = '';
+    if (kiddush) r.offset = '';
     if (!kiddush && r.base !== 'שעה קבועה' && r.offset.indexOf(':') >= 0) r.offset = '0';
     renderRules();
   } else {

@@ -206,24 +206,17 @@ function ruleTime(rule, ctx, seen = new Set()) {
 }
 
 /**
- * ערך "קידוש": הטקסט של הכלל הזה לא זמן, אלא הנוסח שהגבאי או הרב קבעו (בשדה "הפרש"),
- * ממולא לפי מי שאושר לקידוש בתאריך של היום הזה. אין אישור קידוש לתאריך – אין ערך.
+ * ערך "קידוש": הטקסט של הכלל הזה לא זמן, אלא ההודעה בנוסח שהגבאי קבע בלוח הקידושים –
+ * השורה הראשונה, "ע״י", בעל הקידוש והסיבה – לפי מי שאושר לקידוש בתאריך של היום הזה.
+ * אין אישור קידוש לתאריך – אין ערך.
  */
 function kiddushRow(rule, ctx) {
   const info = ctx.kiddush && ctx.kiddush.get(toYmd(ctx.day.day));
   if (!info) return null;
   // שורת הסיבה כבר כוללת את הסוג: "לרגל בר המצווה", "לעילוי נשמת … ז״ל"
   const occasion = info.occasion || '';
-  // הפרש או שעה שנשארו מאזור שהיה קודם תפילה ("0", "-20", "08:00") – הנוסח הרגיל
-  const raw = String(rule.offset || '').trim();
-  const fmt = !raw || /^[-+]?\d+(?::\d+)?$/.test(raw) ? '{שם}{לרגל}' : raw;
-  const text = fmt
-    .replace(/\{כותרת\}/g, info.heading || '')
-    .replace(/\{ע["״]י\}/g, info.by || '')
-    .replace(/\{לרגל\}/g, occasion ? ' ' + occasion : '')
-    .replace(/\{סיבה\}/g, occasion)
-    .replace(/\{שם\}/g, info.sponsorName || '')
-    .replace(/\s+/g, ' ').trim();
+  const text = [info.heading, info.by, info.sponsorName, occasion]
+    .filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
   return { text, key: 9998 };
 }
 

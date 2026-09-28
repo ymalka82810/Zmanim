@@ -141,11 +141,8 @@ function gregText(day, fmt) {
 export function slotValue(slot, v) {
   switch (slot.kind) {
     case 'rule': return v.rules[slot.when + '|' + slot.name] ?? null;
-    // הטקסט שלפני הקידוש ("הקידוש נתרם ע"י") נכתב רק כשיש קידוש מאושר
-    case 'kiddush': {
-      const t = v.rules[slot.when + '|' + slot.name];
-      return t == null ? null : (slot.prefix || '') + t;
-    }
+    // ההודעה כולה, בנוסח שהגבאי קבע, באה מלוח הקידושים – גם בתבנית שנשמרה עם טקסט לפני הקידוש
+    case 'kiddush': return v.rules[slot.when + '|' + slot.name] ?? null;
     case 'zman': return (v.zmanim[slot.when] || {})[slot.zman] ?? null;
     case 'title': return v.title;
     case 'parasha': return (slot.prefix || '') + v.parasha;
@@ -473,8 +470,11 @@ export async function templateCanvas(tpl, values) {
     const n = lines.length, pct = s.wrap ? (s.lineHeightPct || 100) / 100 : 1;
     const layout = sz => {
       const ink = lines.map(ln => writeAt.ink(ln, sz));
-      const need = n > 1 ? Math.max(...ink.slice(1).map((m, i) => ink[i].desc + m.asc)) + sz * 0.08 : 0;
-      return { ink, need, gap: Math.max(sz * 1.15 * pct, need + sz * 0.15), height: g => (n - 1) * g + ink[0].asc + ink[n - 1].desc };
+      const touch = n > 1 ? Math.max(...ink.slice(1).map((m, i) => ink[i].desc + m.asc)) : 0, need = n > 1 ? touch + sz * 0.08 : 0;
+      const gap = Math.max(sz * 1.15 * pct, need + sz * 0.15);
+      // ריווח פסקה: הרווח שמעל הטקסט ומתחתיו גדול מהרווח שבין שורותיו, כדי שייראה כפסקה נפרדת מהשורות השכנות
+      const para = n > 1 ? gap - touch + sz * 0.35 : 0;
+      return { ink, need, gap, para, minPara: n > 1 ? sz * 0.15 : 0, height: g => (n - 1) * g + ink[0].asc + ink[n - 1].desc };
     };
     plans.push({ s, text, st, size, minSize, cx, writeAt, lines, w, n, layout });
   }
@@ -484,12 +484,10 @@ export async function templateCanvas(tpl, values) {
     const b = p.s.box;
     return verticalRoom(src, b, Math.min(b.x, p.cx - p.w / 2), Math.max(b.x + b.w, p.cx + p.w / 2), sideBoxes(tpl, p.s), p.st.bg, sz * (p.n + 1), sz);
   };
-  // רווח בין טקסט של כמה שורות לשורה השכנה, כדי שלא ייראה דבוק אליה
-  const clear = p => p.n > 1 ? p.size * 0.3 : 0;
   for (const p of [...plans].sort((a, b) => a.s.box.y - b.s.box.y)) {
     if (p.n < 2) continue;
     const L = p.layout(p.size), space = spaceOf(p, p.size);
-    const miss = L.height(L.gap) + 2 * clear(p) - (space.bottom - space.top);
+    const miss = L.height(L.gap) + 2 * L.para - (space.bottom - space.top);
     if (miss > 1) openRows(src, p.s.box.y + p.s.box.h, space.bottom + p.size * 0.06, miss, shiftBoxes);
   }
   ctx.drawImage(src, 0, 0);
@@ -501,11 +499,11 @@ export async function templateCanvas(tpl, values) {
     const baseline = b.baseline ?? (b.y + b.h * 0.78);
     let L = p.layout(size), lineGap = L.gap;
     const space = spaceOf(p, size);
-    const avail = space.bottom - space.top;
-    // לא נכנס: קודם מצמצמים את המרווח בין השורות (עד שהן כמעט נוגעות), ואחר כך מקטינים את הטקסט
-    if (L.height(lineGap) > avail && n > 1) lineGap = Math.max(L.need, lineGap - (L.height(lineGap) - avail) / (n - 1));
-    if (L.height(lineGap) > avail && size > minSize) {
-      const k = Math.max(minSize / size, avail / L.height(lineGap));
+    const avail = space.bottom - space.top, para = L.para, room = avail - 2 * L.minPara;
+    // לא נכנס: קודם מצמצמים את ריווח הפסקה, אחר כך את המרווח בין השורות (עד שהן כמעט נוגעות), ואחר כך מקטינים את הטקסט
+    if (L.height(lineGap) > room && n > 1) lineGap = Math.max(L.need, lineGap - (L.height(lineGap) - room) / (n - 1));
+    if (L.height(lineGap) > room && size > minSize) {
+      const k = Math.max(minSize / size, room / L.height(lineGap));
       size *= k;
       L = p.layout(size);
       lineGap = Math.max(L.need, lineGap * k);
@@ -513,8 +511,9 @@ export async function templateCanvas(tpl, values) {
     }
     // השורות ממורכזות סביב קו הבסיס המקורי, ומוזזות מעט למעלה או למטה כדי לא לעלות על השורה השכנה
     const first = baseline - (n - 1) / 2 * lineGap;
-    const top0 = first - L.ink[0].asc, bottom0 = first + (n - 1) * lineGap + L.ink[n - 1].desc, cl = clear(p);
-    const fit = avail - 2 * cl >= bottom0 - top0 ? { top: space.top + cl, bottom: space.bottom - cl } : space;
+    const top0 = first - L.ink[0].asc, bottom0 = first + (n - 1) * lineGap + L.ink[n - 1].desc;
+    const cl = Math.max(0, Math.min(para, (avail - (bottom0 - top0)) / 2));
+    const fit = { top: space.top + cl, bottom: space.bottom - cl };
     const shift = bottom0 - top0 > avail ? (space.top + space.bottom) / 2 - (top0 + bottom0) / 2
       : top0 < fit.top ? fit.top - top0 : bottom0 > fit.bottom ? fit.bottom - bottom0 : 0;
     const baselines = lines.map((ln, i) => first + shift + i * lineGap);
