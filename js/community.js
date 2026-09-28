@@ -9,7 +9,7 @@ const ROLE = { gabbai: 'גבאי', rabbi: 'רב', member: 'חבר קהילה' };
 const MODE = { holy: 'שבתות וחגים', days: 'ימות השבוע' };
 const fmtDate = ymd => { const [y, m, d] = ymd.split('-'); return `${d}/${m}/${y}`; };
 
-let sid = null, role = null, files = [], unsubscribe = null, unsubscribeKiddush = null, getLuachFile = null, toast = () => {}, onKiddush = () => {};
+let sid = null, role = null, files = [], unsubscribe = null, unsubscribeKiddush = null, getLuachFile = null, toast = () => {}, onKiddush = () => {}, onManager = () => {};
 
 function show(view){
   const manager = view === 'app';
@@ -88,9 +88,10 @@ function subscribe(id){
   unsubscribe = Auth.client().onUpdate('schedules:list', { synagogueId: id }, data => {
     role = data.role; files = data.files;
     const manager = role === 'gabbai' || role === 'rabbi';
+    onManager(manager ? id : null);
     show(manager ? 'app' : 'member');
     if (manager) { $('communityRole').textContent = ROLE[role]; renderManager(); } else renderMember();
-  }, e => gate(esc(errText(e, 'לא ניתן לטעון את לוח הזמנים של הקהילה.')), `<a class="btn-link" href="${ACCOUNT_URL}">לחשבון שלי</a>`));
+  }, e => { onManager(null); gate(esc(errText(e, 'לא ניתן לטעון את לוח הזמנים של הקהילה.')), `<a class="btn-link" href="${ACCOUNT_URL}">לחשבון שלי</a>`); });
   unsubscribeKiddush = Auth.client().onUpdate('kiddush:board', { synagogueId: id }, data => {
     const map = new Map();
     for (const b of data.bookings) if (b.status === 'approved') map.set(b.dateKey, { sponsorName: b.sponsorName, occasion: b.occasion });
@@ -100,6 +101,7 @@ function subscribe(id){
 
 async function load(){
   if (!Auth.isAuthenticated()) {
+    onManager(null);
     if (unsubscribe) { unsubscribe(); unsubscribe = null; }
     if (unsubscribeKiddush) { unsubscribeKiddush(); unsubscribeKiddush = null; }
     return gate('כדי לראות את לוח הזמנים של הקהילה יש להתחבר עם חשבון Google.', '<button type="button" class="primary btn-google" id="gateSignIn">כניסה עם Google</button>');
@@ -112,18 +114,22 @@ async function load(){
   } catch (e) { console.warn(e); }
   let id = Auth.activeSynagogueId();
   if (!synagogues.some(s => s._id === id)) { id = synagogues[0] ? synagogues[0]._id : null; Auth.setActiveSynagogueId(id); }
-  if (!id) return gate('עדיין לא הצטרפת לקהילה. אפשר להצטרף דרך הזמנה מהגבאי או לפתוח קהילה חדשה.', `<a class="btn-link" href="${ACCOUNT_URL}">לחשבון שלי</a>`);
+  if (!id) { onManager(null); return gate('עדיין לא הצטרפת לקהילה. אפשר להצטרף דרך הזמנה מהגבאי או לפתוח קהילה חדשה.', `<a class="btn-link" href="${ACCOUNT_URL}">לחשבון שלי</a>`); }
   const s = synagogues.find(x => x._id === id);
   $('communityName').textContent = s.name;
   $('memberCommunityName').textContent = s.name;
   if (id !== sid || !unsubscribe) subscribe(id);
 }
 
-/** getLuachFile: מחזירה { file, title, firstDate, mode, kind } של הלוח המוצג, או null */
+/**
+ * getLuachFile: מחזירה { file, title, firstDate, mode, kind } של הלוח המוצג, או null.
+ * onManager(sid): הקהילה שהמשתמש גבאי או רב בה, או null – לסנכרון ההגדרות.
+ */
 export async function initCommunity(options){
   getLuachFile = options.getLuachFile;
   toast = options.toast;
   onKiddush = options.onKiddush || (() => {});
+  onManager = options.onManager || (() => {});
   $('submitLuach').onclick = submitCurrent;
   try { await Auth.completeSignInFromRedirect(); } catch (e) { console.warn(e); toast('ההתחברות נכשלה. נסו שוב.', true); }
   Auth.onChange(() => load());

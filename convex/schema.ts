@@ -148,4 +148,21 @@ export default defineSchema({
     openMain: v.number(),
     openPetty: v.number(),
   }).index("by_synagogue", ["synagogueId"]),
+
+  // הגדרות לוח הזמנים של הקהילה (js/config.js), משותפות לגבאים ולרב. עיצוב מקובץ נשמר בנפרד ב-zmanimDesigns
+  zmanimSettings: defineTable({
+    synagogueId: v.id("synagogues"),
+    config: v.string(),
+    rev: v.number(),
+    updatedBy: v.id("users"),
+    updatedAt: v.number(),
+  }).index("by_synagogue", ["synagogueId"]),
+
+  // עיצוב מקובץ (תמונה וגופנים, יכול להגיע לכמה מגה) כקובץ JSON באחסון, לפי גיבוב התוכן שלו
+  zmanimDesigns: defineTable({
+    synagogueId: v.id("synagogues"),
+    hash: v.string(),
+    storageId: v.id("_storage"),
+    createdAt: v.number(),
+  }).index("by_synagogue_hash", ["synagogueId", "hash"]),
 });

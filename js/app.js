@@ -1,4 +1,7 @@
-/** ממשק האתר: לוח, הגדרות, שיתוף וגיבוי. ההגדרות נשמרות מקומית בדפדפן, והלוחות המאושרים נשמרים בקהילה (community.js). */
+/**
+ * ממשק האתר: לוח, הגדרות, שיתוף וגיבוי. ההגדרות נשמרות בקהילה ומסתנכרנות בין הגבאים והרב (settings-sync.js),
+ * ועותק שלהן נשמר בדפדפן. הלוחות המאושרים נשמרים בקהילה (community.js).
+ */
 
 import { CITIES, BASES, WHEN, APPLIES, ROUND, FONTS, THEMES, SIZE_PARTS, SIZES, DEFAULT_CONFIG, DAY_APPLIES, BUILTIN, isBuiltin, newTemplate, designOf, activeDesign,
   prayerBases, fontFamilies, fontsHref, themeColors, normalize, loadConfig, saveConfig, clearConfig } from './config.js';
@@ -10,6 +13,7 @@ import { luachCanvas, pngBlob, pdfBlob, stackCanvases } from './image.js';
 import { templateCanvas } from './template-render.js';
 import { editFromFile, editExisting, mergeRules } from './template-ui.js';
 import { initCommunity } from './community.js';
+import { startSync } from './settings-sync.js';
 
 const $ = id => document.getElementById(id);
 const BASE_LABELS = Object.keys(BASES);
@@ -43,6 +47,7 @@ function toast(text, err) {
 
 function showTab(name) {
   flush();
+  if (remoteLater && name !== 'template') { const [next, by] = remoteLater; applyRemote(next, by); }
   for (const n of ['luach', 'settings']) $('tab-' + n).setAttribute('aria-selected', String(n === name));
   for (const n of ['luach', 'settings', 'template']) $('view-' + n).hidden = n !== name;
   if (name === 'luach') renderLuach();
@@ -424,7 +429,7 @@ async function doImport(box) {
   } else if (part === 'ref') {
     // שיוך בלי עותק: התבנית מצביעה על העיצוב של src, כך שהלוח שלה נראה כמו הלוח הישן בלי להכפיל את הקובץ במכשיר
     t.design = { ref: src.id, enabled: true };
-    if (!saveConfig(cfg)) { t.design = null; toast('לא ניתן לשמור במכשיר הזה', true); return; }
+    if (!store()) { t.design = null; toast('לא ניתן לשמור במכשיר הזה', true); return; }
     toast('העיצוב של "' + src.name + '" ישמש גם ב"' + t.name + '", עם זמני התפילות של "' + t.name + '"');
   } else if (part === 'design') {
     const d = designOf(cfg, src);
@@ -434,7 +439,7 @@ async function doImport(box) {
       for (const x of cfg.templates) if (x.design && x.design.ref === t.id) x.design = { ...t.design, enabled: x.design.enabled !== false };
     }
     t.design = { ...JSON.parse(JSON.stringify(d)), enabled: true };   // עותק נפרד
-    if (!saveConfig(cfg)) { t.design = null; toast('אין מספיק מקום במכשיר לעותק של העיצוב', true); return; }
+    if (!store()) { t.design = null; toast('אין מספיק מקום במכשיר לעותק של העיצוב', true); return; }
     toast('העיצוב יובא מ' + src.name + '. זמני התפילות בו לפי התבנית "' + t.name + '"');
   } else {
     t.font = src.font; t.theme = src.theme; t.sizes = { ...src.sizes };
@@ -549,6 +554,38 @@ function renderRules() {
   }).join('');
 }
 
+/* ---------- שמירה וסנכרון ---------- */
+
+let sync = null, syncSid = null;
+let remoteLater = null;   // [הגדרות, מי שמר] מגבאי אחר, שממתינות לסיום עריכת תבנית מקובץ
+
+/** שמירה במכשיר ובקהילה. false – לא נשמר בשום מקום */
+function store() {
+  const ok = saveConfig(cfg);
+  if (sync) { remoteLater = null; sync.push(cfg); }
+  return ok || !!sync;
+}
+
+/** הגדרות חדשות מהקהילה. שינוי שלנו שעוד לא נשמר גובר עליהן, ובעריכת תבנית מקובץ הן ממתינות לסיום */
+function applyRemote(next, by) {
+  if (saveTimer) return;
+  if (!$('view-template').hidden) { remoteLater = [next, by]; return; }
+  remoteLater = null;
+  cfg = next; saved = true;
+  saveConfig(cfg);
+  fill(); renderLuach();
+  if (by) toast('ההגדרות עודכנו (' + by + ')');
+}
+
+/** sid – הקהילה שהמשתמש גבאי או רב בה, או null */
+function manageSync(sid) {
+  if (sid === syncSid) return;
+  flush();
+  if (sync) { sync.stop(); sync = null; }
+  syncSid = sid; remoteLater = null;
+  if (sid) sync = startSync({ client: window.SiteAuth.client(), sid, getCfg: () => cfg, hasLocal: () => saved, apply: applyRemote, toast });
+}
+
 let saveTimer;
 function changed() {
   clearTimeout(saveTimer);
@@ -559,7 +596,7 @@ function flush() {
   if (!saveTimer) return;
   clearTimeout(saveTimer);
   saveTimer = null;
-  if (saveConfig(cfg)) { saved = true; toast('נשמר'); }
+  if (store()) { saved = true; toast('נשמר'); }
   else toast('לא ניתן לשמור במכשיר הזה (מצב גלישה פרטית?)', true);
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
@@ -651,7 +688,7 @@ function templateDone(result) {
     const t = result.tpl, prev = { design: t.design, rules: t.rules };
     t.design = result.template;
     t.rules = mergeRules(t.rules, result.rules, result.replace, t.kind);
-    if (!saveConfig(cfg)) {
+    if (!store()) {
       Object.assign(t, prev);
       toast('הקובץ גדול מדי לשמירה במכשיר. נסו קובץ קטן יותר', true);
       showTab('settings');
@@ -719,14 +756,15 @@ $('importFile').onchange = async () => {
   try {
     const data = JSON.parse(await f.text());
     if (!data || typeof data !== 'object' || !(Array.isArray(data.rules) || Array.isArray(data.templates))) throw new Error();
-    cfg = normalize(data); cursor = null; fill(); saveConfig(cfg); saved = true;
+    cfg = normalize(data); cursor = null; fill(); store(); saved = true;
     toast('ההגדרות נטענו');
   } catch (e) { toast('הקובץ לא תקין', true); }
 };
 $('reset').onclick = async () => {
-  if (!await SiteDialog.confirm('למחוק את כל ההגדרות במכשיר הזה ולחזור לברירת המחדל?', { ok: 'איפוס', danger: true })) return;
+  if (!await SiteDialog.confirm('למחוק את כל ההגדרות ולחזור לברירת המחדל? ההגדרות יימחקו גם אצל שאר הגבאים והרב.', { ok: 'איפוס', danger: true })) return;
   clearConfig();
   cfg = normalize(DEFAULT_CONFIG); saved = false; cursor = null; sel = 'shabbat'; board = 'shabbat'; fill();
+  if (sync) sync.push(cfg);
   toast('ההגדרות אופסו');
 };
 
@@ -743,6 +781,7 @@ initCommunity({
     return { file: png, title: current.title, firstDate: toYmd(period.first),
       mode: period.mode === 'days' ? 'days' : 'holy', kind: current.tpl.id };
   },
+  onManager: manageSync,
   onKiddush(map) {
     kiddush = map;
     renderLuach();
