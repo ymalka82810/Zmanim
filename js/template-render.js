@@ -98,12 +98,14 @@ export function slotValue(slot, v) {
       return slot.ascii ? s.replace(/״/g, '"').replace(/׳/g, "'") : s;
     }
     case 'gregDate': return gregText(v.firstDay, slot.fmt || { sep: '/', year: 4, pad: false });
+    case 'text': return slot.text ?? '';
     default: return null;
   }
 }
 
 /** מפתח קבוע לאזור, לטקסט שהגבאי שינה בו. אזורים עם אותו תוכן (למשל הכותרת פעמיים) משתנים יחד */
-export const slotKey = s => [s.kind, s.when, s.name, s.zman].filter(x => x != null && x !== '').join('|');
+export const slotKey = s => s.kind === 'text' ? 'text|' + Math.round(s.box.x) + ',' + Math.round(s.box.y)
+  : [s.kind, s.when, s.name, s.zman].filter(x => x != null && x !== '').join('|');
 
 /** הטקסט שנכתב באזור: מה שהגבאי כתב (v.edits), או הערך המחושב */
 export function slotText(slot, v) {

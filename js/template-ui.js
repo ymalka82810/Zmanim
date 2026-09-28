@@ -11,7 +11,7 @@ import { toDayNum, toYmd, todayIn, dow } from './dates.js';
 import { esc } from './render.js';
 
 const $ = id => document.getElementById(id);
-const KINDS = [['rule', 'תפילה או שיעור'], ['zman', 'זמן היום'], ['title', 'כותרת (שבת פרשת…)'], ['parasha', 'פרשת…'],
+const KINDS = [['text', 'טקסט שכותבים כאן'], ['rule', 'תפילה או שיעור'], ['zman', 'זמן היום'], ['title', 'כותרת (שבת פרשת…)'], ['parasha', 'פרשת…'],
   ['parashaName', 'שם הפרשה בלבד'], ['hebDate', 'תאריך עברי'], ['gregDate', 'תאריך לועזי']];
 const BASE_LABELS = Object.keys(BASES);
 const ZMANIM = BASE_LABELS.filter(l => BASES[l] !== 'fixed' && BASES[l] !== 'kiddush');
@@ -176,7 +176,7 @@ $('tplBoxes').addEventListener('click', e => {
   if (!b) return;
   if (b.dataset.s != null) { focusSlot(+b.dataset.s); return; }
   const c = st.candidates[+b.dataset.c];
-  st.slots.push({ box: c.box, kind: 'title', old: c.old });
+  st.slots.push({ box: c.box, kind: 'text', text: c.old, old: c.old });
   renderBoxes(); renderSlots(); focusSlot(st.slots.length - 1);
 });
 
@@ -186,7 +186,7 @@ function focusSlot(i) {
   document.querySelectorAll('.slot-ed.sel').forEach(x => x.classList.remove('sel'));
   ed.classList.add('sel');
   ed.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  ed.querySelector('select').focus({ preventScroll: true });
+  (ed.querySelector('[data-k="text"]') || ed.querySelector('select')).focus({ preventScroll: true });
 }
 
 /* סימון אזור חדש בגרירה (למסמך סרוק, או לטקסט שלא זוהה) */
@@ -229,6 +229,10 @@ $('tplPage').addEventListener('pointerup', () => {
 /* ---------- רשימת האזורים ---------- */
 
 function slotFields(s) {
+  if (s.kind === 'text') {
+    return '<div class="rgrid"><div class="wide"><label>הטקסט באזור</label><input data-k="text" dir="auto" value="' + esc(s.text) +
+      '" placeholder="ריק – האזור יימחק מהלוח"></div></div>';
+  }
   if (s.kind === 'rule') {
     const fixed = s.base === 'שעה קבועה', kd = isKiddush(s);
     return '<div class="rgrid">' +
@@ -274,6 +278,7 @@ $('tplSlots').addEventListener('input', e => {
     if (v === 'rule' && !s.base) { Object.assign(s, { when: s.when || when0, name: s.label || '', base: 'שקיעה', offset: '0', round: 'ללא' }); reinfer(s); }
     if (v === 'zman' && !s.zman) Object.assign(s, { zman: 'sunset', when: s.when || when0 });
     if (v === 'gregDate' && !s.fmt) s.fmt = { sep: '/', year: 4, pad: false };
+    if (v === 'text' && s.text == null) s.text = s.old || '';
     renderSlots(); focusSlot(+ed.dataset.i); return;
   }
   if (k === 'zman') s.zman = zmanKey(v);
@@ -361,6 +366,7 @@ function buildTemplate() {
     if (s.kind === 'zman') Object.assign(c, { zman: s.zman, when: s.when });
     if (s.kind === 'hebDate') Object.assign(c, { ascii: !!s.ascii, noYear: !!s.noYear });
     if (s.kind === 'gregDate') c.fmt = s.fmt;
+    if (s.kind === 'text') c.text = String(s.text ?? '').trim();
     c.style = analyzeSlot(st.canvas, s.box);
     return c;
   }).filter(s => s.kind !== 'rule' || s.name);
