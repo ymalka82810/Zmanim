@@ -182,6 +182,8 @@ const isGregDate = s => { const m = GREG_RE.exec(s); return !!m && +m[1] >= 1 &&
 const isHebDate = s => { const m = HEB_DATE_RE.exec(s); if (!m) return false; const d = gemValue(m[1]); return d >= 1 && d <= 30; };
 // "רח' הרצל 3", "רחוב…", "שד' ירושלים", "כתובת: …"
 const ADDRESS_RE = /(?:^|[^א-ת])ב?(?:רח['׳"]?|רחוב|שד['׳]|שדרות|סמ['׳]|סמטת|כיכר|ככר|כתובת)(?![א-ת])\s*:?\s*[א-ת]/;
+// "בית הכנסת אור החיים", "קהילת …", "ק"ק …" – שם בית הכנסת שאחרי אחד הכינויים הרגילים
+const SHUL_RE = /(?:^|[^א-ת])(?:ק"ק|קהיל(?:ת|ה קדושה)|ביהכנ"ס|בית\s+(?:ה)?כנסת)(?![א-ת])\s*[-:]?\s*"?([א-ת][^,."\n]{1,40}?)"?(?=\s*[,.\n]|\s*$)/;
 
 let measureCtx;
 function textWidth(s, size) {
@@ -351,6 +353,21 @@ export function detectDate(tokens) {
     }
   }
   return null;
+}
+
+/** מנסה למצוא בקובץ הישן את שם בית הכנסת ואת הכתובת, למילוי ראשוני של ההגדרות */
+export function detectShulAddress(tokens) {
+  let shul = null, address = null;
+  for (const t of tokens) {
+    if (t.kind === 'time') continue;
+    if (!address && t.kind === 'address') address = t.str.trim();
+    if (!shul) {
+      const m = SHUL_RE.exec(t.str);
+      if (m && m[1].trim()) shul = m[1].trim();
+    }
+    if (shul && address) break;
+  }
+  return { shul, address };
 }
 
 /** תבנית התאריך הלועזי כמו בקובץ הישן (מפריד, ספרות שנה, אפסים מובילים) */

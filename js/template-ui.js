@@ -4,19 +4,20 @@
  */
 
 import { BASES, WHEN, WHEN_LABELS, ROUND, SIZES, DAY_APPLIES, appliesOnDay, prayerBases, designOf } from './config.js';
-import { readFile, tokenize, detectDate, suggestSlots, textCandidates, inferRule } from './template-read.js';
+import { readFile, tokenize, detectDate, detectShulAddress, suggestSlots, textCandidates, inferRule } from './template-read.js';
 import { analyzeSlot, refineBox, templateCanvas } from './template-render.js';
 import { findOccasion, findPeriod, periodFor, buildLuach, buildDaysLuach, timesFor } from './luach.js';
 import { toDayNum, toYmd, todayIn, dow } from './dates.js';
 import { esc } from './render.js';
 
 const $ = id => document.getElementById(id);
-const KINDS = [['text', 'טקסט שכותבים כאן'], ['rule', 'תפילה או שיעור'], ['zman', 'זמן היום'], ['title', 'כותרת (שבת פרשת…)'], ['parasha', 'פרשת…'],
+const KINDS = [['text', 'טקסט שכותבים כאן'], ['rule', 'תפילה או שיעור'], ['kiddush', 'קידוש (מלוח הקידושים)'], ['zman', 'זמן היום'], ['title', 'כותרת (שבת פרשת…)'], ['parasha', 'פרשת…'],
   ['parashaName', 'שם הפרשה בלבד'], ['hebDate', 'תאריך עברי'], ['gregDate', 'תאריך לועזי'], ['address', 'כתובת בית הכנסת']];
 const KIND_LABEL = Object.fromEntries(KINDS);
 const BASE_LABELS = Object.keys(BASES);
 const ZMANIM = BASE_LABELS.filter(l => BASES[l] !== 'fixed' && BASES[l] !== 'kiddush');
-const isKiddush = s => BASES[s.base] === 'kiddush';
+const RULE_BASE_LABELS = BASE_LABELS.filter(l => BASES[l] !== 'kiddush');
+const KIDDUSH_LABEL = BASE_LABELS.find(l => BASES[l] === 'kiddush');
 const zmanKey = label => BASES[label];
 const zmanLabel = key => ZMANIM.find(l => BASES[l] === key) || ZMANIM[0];
 const opts = (list, v) => list.map(x => Array.isArray(x)
@@ -26,7 +27,7 @@ const opts = (list, v) => list.map(x => Array.isArray(x)
 const baseOpts = s => {
   const names = prayerBases(st.slots.filter(x => x.kind === 'rule').concat(st.cfg.rules || []), s);
   if (s.base && !(s.base in BASES) && names.indexOf(s.base) < 0) names.push(s.base);
-  return opts(BASE_LABELS, s.base) + (names.length ? '<optgroup label="לפי תפילה">' + opts(names, s.base) + '</optgroup>' : '');
+  return opts(RULE_BASE_LABELS, s.base) + (names.length ? '<optgroup label="לפי תפילה">' + opts(names, s.base) + '</optgroup>' : '');
 };
 let kiddush = null;   // dateKey ← קידוש מאושר, לתצוגה המקדימה (מ-app.js)
 export function setKiddush(map) { kiddush = map; }
@@ -75,7 +76,7 @@ export async function editFromFile(file, cfgAll, tpl, onDone) {
   const cfg = { ...cfgAll, rules: tpl.rules };
   const fit = x => ({ ...x, box: refineBox(canvas, x.box), ...(x.labelBox ? { labelBox: refineBox(canvas, x.labelBox) } : {}) });
   st = { canvas, W: canvas.width, H: canvas.height, cfg, cfgAll, tpl, name: file.name, onDone, fonts,
-    candidates: textCandidates(tokens).map(fit), scanned: !items.length };
+    candidates: textCandidates(tokens).map(fit), scanned: !items.length, detected: detectShulAddress(tokens) };
   setDay(detectDate(tokens));
   st.slots = suggestSlots(tokens, cfg, st.day, st.period).map(fit);
   open();
@@ -98,6 +99,8 @@ export async function editExisting(tplObj, cfgAll, onDone) {
     const r = isDays() ? cfg.rules.find(x => x.name === s.name && appliesOnDay(x.applies, colOf(s.when)))
       : cfg.rules.find(x => x.name === s.name && x.when === s.when);
     if (r) Object.assign(s, { base: r.base, offset: r.offset, round: r.round });
+    // אזור שנשמר לפני שקידוש היה סוג אזור נפרד: מעבר לסוג "קידוש"
+    if (s.base && BASES[s.base] === 'kiddush') s.kind = 'kiddush';
   }
   open();
 }
@@ -143,7 +146,7 @@ $('tplDate').addEventListener('change', () => {
 /** חישוב מחדש של הכלל לפי השעה בקובץ, היום והמתי */
 function reinfer(s) {
   const m = oldMinutes(s);
-  if (s.kind !== 'rule' || m == null || st.day == null || isKiddush(s)) return;
+  if (s.kind !== 'rule' || m == null || st.day == null) return;
   if (isDays()) {
     const c = colOf(s.when);
     if (c.day != null) Object.assign(s, inferRule(m, 'כל יום', timesFor(st.cfg, c.day), st.cfg.tz, s.name));
@@ -326,18 +329,27 @@ function slotFields(s) {
       '" placeholder="ריק – האזור יימחק מהלוח"></div></div>';
   }
   if (s.kind === 'rule') {
-    const fixed = s.base === 'שעה קבועה', kd = isKiddush(s);
+    const fixed = s.base === 'שעה קבועה';
     return '<div class="rgrid">' +
       '<div class="wide"><label>שם</label><input data-k="name" value="' + esc(s.name) + '" placeholder="למשל: מנחה"></div>' +
       (isDays() ? '<div><label>יום</label><select data-k="when">' + opts(dayOpts(), s.when) + '</select></div>'
         : '<div><label>מתי</label><select data-k="when">' + opts(WHEN_LABELS, s.when) + '</select></div>') +
       '<div><label>לפי</label><select data-k="base">' + baseOpts(s) + '</select></div>' +
-      (kd || fixed
-        ? '<div><label>' + (kd ? 'נוסח' : 'שעה') + '</label><input data-k="offset" dir="' + (kd ? 'rtl' : 'ltr') +
-          '" value="' + esc(s.offset) + '"' + (kd ? ' placeholder="{שם}{לרגל}"' : '') + '></div>'
+      (fixed
+        ? '<div><label>שעה</label><input data-k="offset" dir="ltr" value="' + esc(s.offset) + '"></div>'
         : '<div><label>הפרש (דקות)</label><div class="offset-pair"><input data-k="offsetAbs" type="number" min="0" inputmode="numeric" dir="ltr" value="' +
           esc(offsetAbs(s)) + '" placeholder="20"><select data-k="offsetDir">' + opts(['אחרי', 'לפני'], offsetDir(s)) + '</select></div></div>') +
-      '<div><label>עיגול</label><select data-k="round"' + (fixed || kd ? ' disabled' : '') + '>' + opts(ROUND, s.round) + '</select></div></div>';
+      '<div><label>עיגול</label><select data-k="round"' + (fixed ? ' disabled' : '') + '>' + opts(ROUND, s.round) + '</select></div></div>';
+  }
+  if (s.kind === 'kiddush') {
+    return '<div class="rgrid">' +
+      '<div class="wide"><label>שם</label><input data-k="name" value="' + esc(s.name) + '" placeholder="למשל: קידוש"></div>' +
+      (isDays() ? '<div><label>יום</label><select data-k="when">' + opts(dayOpts(), s.when) + '</select></div>'
+        : '<div><label>מתי</label><select data-k="when">' + opts(WHEN_LABELS, s.when) + '</select></div>') +
+      '<div class="wide"><label>נוסח</label><input data-k="offset" dir="rtl" value="' + esc(s.offset) + '" placeholder="{שם}{לרגל}"></div></div>' +
+      '<p class="hint">הטקסט יתמלא לפי מי שאושר לקידוש בתאריך הזה (מלוח הקידושים של הקהילה). ' +
+      'אפשר להשתמש ב-{שם} (שם התורם), ב-{סיבה} (לרגל מה נתרם) וב-{לרגל} (מוסיף "לרגל ..." רק אם יש סיבה). ' +
+      'בלי תאריך מאושר, האזור לא יתמלא.</p>';
   }
   if (s.kind === 'parasha' || s.kind === 'parashaName') {
     return '<div class="rgrid"><div class="wide"><label>טקסט לפני הפרשה</label><input data-k="prefix" value="' + esc(s.prefix || '') +
@@ -368,17 +380,19 @@ function whenLabel(w) {
 }
 
 /** הכותרת לשורה הסגורה: שם התפילה, או סוג האזור לשאר הסוגים */
-const slotLabel = s => s.kind === 'rule' ? (s.name || 'תפילה חדשה') : (KIND_LABEL[s.kind] || s.kind);
+const slotLabel = s => (s.kind === 'rule' || s.kind === 'kiddush') ? (s.name || 'תפילה חדשה') : (KIND_LABEL[s.kind] || s.kind);
 
 /** תקציר לשורה הסגורה: מתי ולפי מה, ומה היה בקובץ הישן */
 function slotSum(s) {
   const parts = [];
   if (s.kind === 'rule') {
-    const fixed = s.base === 'שעה קבועה', kd = isKiddush(s);
+    const fixed = s.base === 'שעה קבועה';
     const n = parseInt(s.offset, 10) || 0;
-    const at = fixed ? 'בשעה ' + (s.offset || '') : kd ? s.base
+    const at = fixed ? 'בשעה ' + (s.offset || '')
       : n ? Math.abs(n) + ' דק׳ ' + (n < 0 ? 'לפני ' : 'אחרי ') + s.base : s.base;
     parts.push(whenLabel(s.when), at);
+  } else if (s.kind === 'kiddush') {
+    parts.push(whenLabel(s.when));
   } else if (s.kind === 'zman') {
     parts.push(zmanLabel(s.zman), whenLabel(s.when));
   } else if (s.kind === 'text' && s.text) {
@@ -417,6 +431,7 @@ $('tplSlots').addEventListener('input', e => {
     s.kind = v;
     const when0 = isDays() ? 'd0' : 'כל יום';
     if (v === 'rule' && !s.base) { Object.assign(s, { when: s.when || when0, name: s.label || '', base: 'שקיעה', offset: '0', round: 'ללא' }); reinfer(s); }
+    if (v === 'kiddush' && !s.name) Object.assign(s, { when: s.when || when0, name: s.label || 'קידוש', offset: s.offset || '{שם}{לרגל}' });
     if (v === 'zman' && !s.zman) Object.assign(s, { zman: 'sunset', when: s.when || when0 });
     if (v === 'gregDate' && !s.fmt) s.fmt = { sep: '/', year: 4, pad: false };
     if (v === 'text' && s.text == null) s.text = s.old || '';
@@ -432,10 +447,8 @@ $('tplSlots').addEventListener('input', e => {
   } else s[k] = v;
   if (k === 'when' && s.kind === 'rule') { reinfer(s); renderSlots(); return; }
   if (k === 'base') {
-    const kd = isKiddush(s);
     if (v === 'שעה קבועה' && s.offset.indexOf(':') < 0) s.offset = s.old && s.old.includes(':') ? s.old : '08:00';
-    if (kd && /^-?\d+$/.test(s.offset)) s.offset = '';
-    if (!kd && v !== 'שעה קבועה' && s.offset.indexOf(':') >= 0) s.offset = '0';
+    if (v !== 'שעה קבועה' && s.offset.indexOf(':') >= 0) s.offset = '0';
     renderSlots(); return;
   }
   ed.querySelector('.rule-name').textContent = slotLabel(s);
@@ -460,11 +473,12 @@ function slotRules() {
 function holySlotRules() {
   const seen = new Set(), out = [];
   for (const s of st.slots) {
-    if (s.kind !== 'rule' || !String(s.name).trim()) continue;
+    if ((s.kind !== 'rule' && s.kind !== 'kiddush') || !String(s.name).trim()) continue;
     const key = s.when + '|' + s.name.trim();
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ name: s.name.trim(), when: s.when, applies: 'שבת וחג', base: s.base, offset: s.offset, round: s.round });
+    const kd = s.kind === 'kiddush';
+    out.push({ name: s.name.trim(), when: s.when, applies: 'שבת וחג', base: kd ? KIDDUSH_LABEL : s.base, offset: s.offset, round: kd ? 'ללא' : s.round });
   }
   return out;
 }
@@ -478,9 +492,11 @@ function daySlotRules() {
   const groups = new Map();
   for (const s of st.slots) {
     const name = String(s.name || '').trim();
-    if (s.kind !== 'rule' || !name) continue;
-    const k = [name, s.base, s.offset, s.round].join('|');
-    if (!groups.has(k)) groups.set(k, { name, base: s.base, offset: s.offset, round: s.round, keys: new Set() });
+    if ((s.kind !== 'rule' && s.kind !== 'kiddush') || !name) continue;
+    const kd = s.kind === 'kiddush';
+    const base = kd ? KIDDUSH_LABEL : s.base, round = kd ? 'ללא' : s.round;
+    const k = [name, base, s.offset, round].join('|');
+    if (!groups.has(k)) groups.set(k, { name, base, offset: s.offset, round, keys: new Set() });
     groups.get(k).keys.add(colOf(s.when).key);
   }
   const out = [];
@@ -511,7 +527,7 @@ function buildTemplate() {
     const c = { box: s.box, kind: s.kind, old: s.old || '' };
     if (s.labelBox) c.labelBox = s.labelBox;
     if ((s.kind === 'parasha' || s.kind === 'parashaName') && s.prefix && s.prefix.trim()) c.prefix = s.prefix.trim() + ' ';
-    if (s.kind === 'rule') Object.assign(c, { name: String(s.name).trim(), when: s.when });
+    if (s.kind === 'rule' || s.kind === 'kiddush') Object.assign(c, { name: String(s.name).trim(), when: s.when });
     if (s.kind === 'zman') Object.assign(c, { zman: s.zman, when: s.when });
     if (s.kind === 'hebDate') Object.assign(c, { ascii: !!s.ascii, noYear: !!s.noYear });
     if (s.kind === 'gregDate') c.fmt = s.fmt;
@@ -521,10 +537,10 @@ function buildTemplate() {
     if (c.wrap) c.lineHeightPct = s.lineHeightPct || 100;
     c.style = analyzeSlot(st.canvas, s.box);
     return c;
-  }).filter(s => s.kind !== 'rule' || s.name);
+  }).filter(s => (s.kind !== 'rule' && s.kind !== 'kiddush') || s.name);
   // רק הגופנים שבשימוש נשמרים. אזור שסומן ידנית נכתב בגופן הנפוץ בשעות
   const count = {};
-  for (const s of slots) if (s.box.font && st.fonts[s.box.font]) count[s.box.font] = (count[s.box.font] || 0) + (s.kind === 'rule' || s.kind === 'zman' ? 2 : 1);
+  for (const s of slots) if (s.box.font && st.fonts[s.box.font]) count[s.box.font] = (count[s.box.font] || 0) + (s.kind === 'rule' || s.kind === 'kiddush' || s.kind === 'zman' ? 2 : 1);
   const mainFont = Object.keys(count).sort((a, b) => count[b] - count[a])[0] || null;
   const fonts = Object.fromEntries(Object.keys(count).map(k => [k, st.fonts[k]]));
   return { enabled: true, name: st.name, day: st.day, image: st.canvas.toDataURL('image/jpeg', 0.88),
@@ -545,9 +561,9 @@ $('tplPreview').onclick = async () => {
 };
 
 $('tplSave').onclick = () => {
-  const bad = st.slots.find(s => s.kind === 'rule' && !String(s.name).trim());
+  const bad = st.slots.find(s => (s.kind === 'rule' || s.kind === 'kiddush') && !String(s.name).trim());
   if (bad) { focusSlot(st.slots.indexOf(bad)); SiteDialog.alert('יש אזור של תפילה בלי שם. כתבו שם או הסירו את האזור.'); return; }
-  close({ tpl: st.tpl, template: buildTemplate(), rules: slotRules(), replace: $('tplRules').checked });
+  close({ tpl: st.tpl, template: buildTemplate(), rules: slotRules(), replace: $('tplRules').checked, detected: st.detected });
 };
 $('tplCancel').onclick = async () => {
   if (!await SiteDialog.confirm('לבטל את עיצוב התבנית? השינויים לא יישמרו.', { ok: 'ביטול העיצוב', cancel: 'המשך עריכה', danger: true })) return;

@@ -749,6 +749,9 @@ function templateDone(result) {
     const t = result.tpl, prev = { design: t.design, rules: t.rules };
     t.design = result.template;
     t.rules = mergeRules(t.rules, result.rules, result.replace, t.kind);
+    const d = result.detected;
+    if (d && d.shul && !cfg.shul) cfg.shul = d.shul;
+    if (d && d.address && !cfg.address) cfg.address = d.address;
     if (!store()) {
       Object.assign(t, prev);
       toast('הקובץ גדול מדי לשמירה במכשיר. נסו קובץ קטן יותר', true);

@@ -94,7 +94,7 @@ function gregText(day, fmt) {
 /** הטקסט החדש לאזור, או null אם אין ערך */
 export function slotValue(slot, v) {
   switch (slot.kind) {
-    case 'rule': return v.rules[slot.when + '|' + slot.name] ?? null;
+    case 'rule': case 'kiddush': return v.rules[slot.when + '|' + slot.name] ?? null;
     case 'zman': return (v.zmanim[slot.when] || {})[slot.zman] ?? null;
     case 'title': return v.title;
     case 'parasha': return (slot.prefix || '') + v.parasha;
