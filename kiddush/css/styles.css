@@ -6,7 +6,7 @@
   --serif:"Frank Ruhl Libre","David Libre","Times New Roman",serif;
   --sans:"Assistant","Segoe UI","Arial Hebrew",Arial,sans-serif;
   --r:14px; --sh-sm:0 1px 2px rgba(20,20,30,.08); --sh-md:0 8px 22px rgba(30,20,30,.12);
-  box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  box-sizing:border-box; padding-bottom:env(safe-area-inset-bottom,0px);
 }
 @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
   --bg:#0c1120; --surface:#161d30; --surface2:#1b2338; --ink:#e9ecf5; --muted:#98a2c0; --line:#2a3252;

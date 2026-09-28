@@ -6,7 +6,7 @@
   --sans:"Assistant","Segoe UI","Arial Hebrew",Arial,sans-serif;
   --sh-sm:0 1px 2px rgba(20,24,40,.08); --sh-md:0 8px 22px rgba(20,30,60,.14);
   box-sizing:border-box;
-  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
 }
 @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
   --bg:#0c1120; --paper:#161d30; --ink:#e9ecf5; --muted:#98a2c0; --line:#2a3252;

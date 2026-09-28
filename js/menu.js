@@ -15,8 +15,8 @@ const here = location.pathname.replace(/index\.html$/, '');
 const current = PAGES.slice().reverse().find(p => here === new URL(p.path, ROOT).pathname) || PAGES[0];
 
 const css = `
-.sm-bar{display:flex;align-items:center;gap:10px;height:48px;padding:0 10px;padding-top:env(safe-area-inset-top,0px);background:#2c4a7c;color:#fff;font-family:"Assistant",Arial,sans-serif;direction:rtl}
-.sm-btn{display:flex;align-items:center;justify-content:center;flex:none;width:40px;height:40px;padding:0;border:0;border-radius:10px;background:none;color:inherit;cursor:pointer}
+.sm-bar{display:flex;align-items:center;gap:10px;box-sizing:border-box;height:calc(48px + env(safe-area-inset-top,0px));padding:0 10px;padding-top:env(safe-area-inset-top,0px);background:#2c4a7c;color:#fff;font-family:"Assistant",Arial,sans-serif;direction:rtl}
+.sm-btn{display:flex;align-items:center;justify-content:center;flex:none;width:40px;height:40px;padding:0;border:0;border-radius:10px;background:none;color:inherit;cursor:pointer;box-shadow:none;transform:none}
 .sm-btn:hover,.sm-btn:focus-visible{background:rgba(255,255,255,.15)}
 .sm-btn svg{width:24px;height:24px}
 .sm-title{font-weight:700;font-size:1.05rem}

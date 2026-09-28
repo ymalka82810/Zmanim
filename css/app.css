@@ -17,7 +17,7 @@
   }
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Assistant", Arial, sans-serif; font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+body { margin: 0; padding-bottom: env(safe-area-inset-bottom, 0px); background: var(--bg); color: var(--ink); font-family: "Assistant", Arial, sans-serif; font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
 .wrap { max-width: 760px; margin: 0 auto; padding: 0 18px; }
 main.wrap { padding-bottom: 48px; }
 .stripes { height: 6px; background: linear-gradient(90deg, var(--blue) 0%, var(--gold) 50%, var(--blue) 100%); }
