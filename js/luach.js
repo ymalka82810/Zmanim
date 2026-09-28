@@ -40,8 +40,6 @@ function holyTitle(days) {
   days.forEach(x => { if (x.chag && names.indexOf(x.chag) < 0) names.push(x.chag); });
   if (names.length) return names.join(' ו') + (days.some(x => x.shabbat) ? ' ושבת' : '');
   if (days[0].chol) return 'שבת חול המועד ' + days[0].chol;
-  // שבת שחלה בחג ומוצגת בלוח נפרד – אין לה פרשה, והיא נקראת על שם החג ("שבת סוכות")
-  if (!days[0].parasha && days[0].holiday) return 'שבת ' + days[0].holiday;
   return days[0].parasha ? 'שבת פרשת ' + days[0].parasha : 'שבת';
 }
 
@@ -87,8 +85,11 @@ export function findPeriod(mode, from, il, dir = 1) {
 
 /* ---------- חג שצמוד לשבת: לוח משולב או לוחות נפרדים ---------- */
 
-/** אירוע שיש בו גם חג וגם שבת (באותו יום או בימים צמודים), ולכן אפשר להציג אותו בלוח אחד או בשניים */
-export const isMixed = occ => occ.mode === 'holy' && occ.days.some(d => d.chag) && occ.days.some(d => d.shabbat);
+/**
+ * אירוע שיש בו גם חג וגם שבת עם פרשה (בימים צמודים), ולכן אפשר להציג אותו בלוח אחד או בשניים.
+ * שבת בלי פרשה (שחלה בחג או בחול המועד) היא חלק מהחג, ומוצגת תמיד בלוח אחד איתו.
+ */
+export const isMixed = occ => occ.mode === 'holy' && occ.days.some(d => d.chag) && occ.days.some(d => d.shabbat && d.parasha);
 
 /** חלק מאירוע: ימי החג בלבד או ימי השבת בלבד. הערב שלו הוא היום שלפניו, גם כשהוא שייך לחלק השני */
 function partOf(days, occ, title) {
@@ -98,15 +99,14 @@ function partOf(days, occ, title) {
 }
 
 /**
- * הלוחות של האירוע. חג שחל בשבת, או שצמוד אליה, מוצג בברירת מחדל בשני לוחות נפרדים –
- * אחד לחג ואחד לשבת – אלא אם הגבאי בחר לשלב אותם ללוח אחד (merged[id] של האירוע).
- * כשהחג עצמו הוא שבת, אותו יום מופיע בשני הלוחות: בלוח החג לפי זמני החג, ובלוח השבת כשבת רגילה.
+ * הלוחות של האירוע. חג שצמוד לשבת עם פרשה מוצג בברירת מחדל בשני לוחות נפרדים –
+ * אחד לחג ואחד לשבת – אלא אם הגבאי בחר לשלב אותם ללוח אחד (merged[id] של האירוע, לשבת הזאת בלבד).
  */
 export function occasionParts(occ, merged) {
   const mixed = isMixed(occ);
   if (!mixed || (merged && merged[occ.id])) return [{ ...occ, mixed, occId: occ.id }];
   const chag = occ.days.filter(d => d.chag);
-  const shabbat = occ.days.filter(d => d.shabbat).map(d => ({ ...d, chag: null, holiday: d.chag }));
+  const shabbat = occ.days.filter(d => d.shabbat);
   // לשבת יש לוח משלה, ולכן הכותרת של לוח החג היא שם החג בלבד ("סוכות", ולא "סוכות ושבת")
   return [[chag, holyTitle(chag.map(d => ({ ...d, shabbat: false })))], [shabbat, holyTitle(shabbat)]]
     .sort((a, b) => a[0][0].day - b[0][0].day).map(([days, title]) => partOf(days, occ, title));
@@ -293,7 +293,7 @@ export function buildLuach(cfg, occ, kiddush) {
   addRows('יציאה', sections[sections.length - 1].rows);
 
   // שבת בלי פרשה (חג או חול המועד): שם המועד במקום שם הפרשה, כדי ש"לשבת …" לא ייצא "לשבת שבת"
-  const noParasha = first.chag || first.holiday || (first.chol ? 'חול המועד ' + first.chol : occ.title);
+  const noParasha = first.chag || (first.chol ? 'חול המועד ' + first.chol : occ.title);
   return {
     shul: String(cfg.shul || '').trim(),
     title: occ.title,

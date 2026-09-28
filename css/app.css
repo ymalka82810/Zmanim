@@ -164,6 +164,10 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .wrap-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 44px; padding: 6px 8px; margin-bottom: 6px;
   border: 1px solid var(--line); border-radius: 8px; }
 .wrap-line .chip { padding: 5px 12px; font-weight: 400; }
+.wrap-edit { margin-inline-start: auto; min-width: 36px; min-height: 36px; padding: 4px 8px; font-size: 1.05rem; line-height: 1;
+  background: transparent; color: inherit; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; opacity: .8; }
+.wrap-edit:hover, .wrap-edit:focus-visible { opacity: 1; }
+.linkish { background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }
 .look-btns { display: flex; gap: 6px; }
 .look-btns .chip { min-width: 42px; padding: 5px 10px; font-family: Georgia, "Times New Roman", serif; }
 .look-btns .look-bold { font-weight: 800; }
@@ -231,3 +235,7 @@ button[aria-pressed="true"] { background: linear-gradient(135deg, var(--blue), v
 .community-file h2, .community-file h3 { margin: 0; }
 .community-file .luach-img { display: block; max-width: 100%; margin-top: 8px; border: 1px solid var(--line); border-radius: 8px; }
 .community-panel details { margin-top: 12px; }
+/* לשונית משולבת של שבת וחג בלוח אחד, עם סימן להפרדה */
+.chip-join { display: inline-flex; align-items: stretch; }
+.chip-join .chip { border-start-end-radius: 0; border-end-end-radius: 0; padding-inline-end: 10px; }
+.chip-split { border-start-start-radius: 0; border-end-start-radius: 0; border-start-end-radius: 18px; border-end-end-radius: 18px; padding: 0 11px; margin-inline-start: 1px; background: var(--blue-2); color: var(--on-accent); border-color: transparent; font-weight: 400; }

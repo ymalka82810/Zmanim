@@ -65,18 +65,34 @@ function setBoard(id, day = null) {
   renderLuach();
 }
 
-/** רשימת התבניות לבחירה, עם כפתור להוספת תבנית. host – 'luach' או 'settings' */
-function tplChips(el, id, host) {
-  el.innerHTML = cfg.templates.map(x => '<button type="button" class="chip" data-t="' + esc(x.id) + '" aria-pressed="' +
-    (x.id === id) + '">' + esc(x.name) + '</button>').join('') +
+/**
+ * רשימת התבניות לבחירה, עם כפתור להוספת תבנית. host – 'luach' או 'settings'.
+ * join – התבניות של שבת וחג שמוצגים בלוח משולב: הן מוצגות כלשונית אחת ("שבתות וחגים"), עם סימן להפרדה.
+ */
+function tplChips(el, id, host, join = null) {
+  const joined = join ? cfg.templates.filter(x => join.includes(x.id)) : [];
+  el.innerHTML = cfg.templates.map(x => {
+    if (joined.length > 1 && joined.includes(x)) {
+      if (x !== joined[0]) return '';
+      return '<span class="chip-join"><button type="button" class="chip" data-t="' + esc(id) + '" aria-pressed="true">' +
+        esc(joined.map(j => j.name).join(' ו')) + '</button><button type="button" class="chip-split" data-split="1" ' +
+        'title="הפרדה לשני לוחות – לשבת ולחג" aria-label="הפרדה לשני לוחות – לשבת ולחג">⇆</button></span>';
+    }
+    return '<button type="button" class="chip" data-t="' + esc(x.id) + '" aria-pressed="' +
+      (x.id === id) + '">' + esc(x.name) + '</button>';
+  }).join('') +
     '<button type="button" class="chip add" data-add="' + host + '">+ תבנית חדשה</button>';
 }
 
-$('luachTpls').addEventListener('click', e => {
+$('luachTpls').addEventListener('click', async e => {
   const b = e.target.closest('button');
   if (!b) return;
   if (b.dataset.add) openNewTemplate('luach');
-  else setBoard(b.dataset.t);
+  else if (b.dataset.split) {
+    if (!period || !cfg.merged[period.occId]) return;
+    if (!await SiteDialog.confirm('להפריד את "' + period.title + '" לשני לוחות נפרדים – אחד לשבת ואחד לחג?', { ok: 'הפרדה' })) return;
+    toggleMerged(period.occId);
+  } else setBoard(b.dataset.t);
 });
 
 /* ---------- הלוח ---------- */
@@ -138,38 +154,45 @@ function applyDesign(el, t) {
   el.style.setProperty('--paper', c.paper);
 }
 
+/** לוח משולב של שבת וחג (שהגבאי בחר לשלב) */
+const isMerged = p => !!p && !!p.mixed && !!cfg.merged[p.occId];
+
 /**
- * ההצעה לשלב חג ושבת שצמודים ללוח אחד, או לחזור להצגה בשני לוחות נפרדים.
- * הבחירה נשמרת לאירוע הזה בלבד, לפי היום הראשון שלו.
+ * ההצעה לשלב חג ושבת עם פרשה שצמודים ללוח אחד. הבחירה נשמרת לשבת הזאת בלבד, לפי היום הראשון של האירוע.
+ * לוח משולב מופרד בחזרה מהסימן שעל הלשונית המשולבת.
  */
 function renderMixOffer(p) {
   const el = $('mixOffer');
-  el.hidden = !p || !p.mixed;
+  el.hidden = !p || !p.mixed || isMerged(p);
   if (el.hidden) return;
-  const on = !!cfg.merged[p.occId];
-  el.innerHTML = (on ? 'החג והשבת מוצגים יחד בלוח אחד.' : 'החג והשבת צמודים, וכרגע יש לכל אחד לוח נפרד.') +
-    '<button type="button" class="link" id="mixToggle">' + (on ? 'להצגה בשני לוחות נפרדים' : 'לשילוב הזמנים בלוח אחד') + '</button>';
+  el.innerHTML = 'השבת צמודה לחג, וכרגע יש לכל אחד לוח נפרד.' +
+    '<button type="button" class="link" id="mixToggle">לשילוב השבת והחג בלוח אחד (לשבת הזאת בלבד)</button>';
 }
 
 $('mixOffer').addEventListener('click', e => {
-  if (e.target.id !== 'mixToggle' || !period) return;
-  const id = period.occId;
+  if (e.target.id === 'mixToggle' && period) toggleMerged(period.occId);
+});
+
+/** שילוב האירוע id ללוח אחד, או הפרדה שלו בחזרה לשני לוחות */
+function toggleMerged(id) {
   if (cfg.merged[id]) delete cfg.merged[id];
   else cfg.merged[id] = true;
   changed();
-  // הלוח המשולב הוא לוח של חג, ולכן אחרי השילוב עוברים לתבנית שלו
+  // הלוח המשולב הוא לוח של חג, ולכן אחרי השילוב עוברים לתבנית שלו; אחרי ההפרדה נשארים בתבנית הנוכחית
   const parts = occasionParts(findOccasion(id, cfg.il), cfg.merged);
   const p = parts.find(x => templateFor(cfg, x) === boardTpl()) || parts[0];
   setBoard(templateFor(cfg, p).id, p.first);
-});
+}
 
 function renderLuach() {
   $('welcome').hidden = saved;
   const t = boardTpl();
   board = t.id;
-  tplChips($('luachTpls'), board, 'luach');
   if (cursor == null) cursor = todayIn(cfg.tz);
   const p = isFinite(cfg.lat) && isFinite(cfg.lng) ? periodFor(cfg, t, cursor) : null;
+  // בלוח משולב, הלשוניות של השבת ושל החג מאוחדות ללשונית אחת
+  const join = isMerged(p) ? [board, ...occasionParts(findOccasion(p.occId, cfg.il), {}).map(x => templateFor(cfg, x).id)] : null;
+  tplChips($('luachTpls'), board, 'luach', join);
   if (!p) {
     current = period = null;
     renderMixOffer(null);
