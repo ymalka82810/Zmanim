@@ -278,18 +278,7 @@ export async function templateCanvas(tpl, values) {
     const b = s.box, st = s.style || { bg: '#fff', fg: '#000', bold: false };
     let size = (b.size || b.h * 0.72) * ((s.sizePct || 100) / 100);
     const cx = b.x + b.w / 2, baseline = b.baseline ?? (b.y + b.h * 0.78);
-    const f = fonts[b.font] || fonts[tpl.mainFont];
-    let writeAt;
-    if (f && f.family) writeAt = (str, sz, y, draw) => embeddedText(ctx, str, f, sz, cx, y, draw);
-    else {
-      // גופן שלא מוטמע בקובץ: לפי השם שלו, אם הוא מותקן במכשיר
-      const css = f ? f.css : FALLBACK, bold = f ? f.bold || st.bold : st.bold;
-      writeAt = (str, sz, y, draw) => {
-        ctx.font = (bold ? '700 ' : '400 ') + sz + 'px ' + css;
-        if (draw) ctx.fillText(str, cx, y);
-        return ctx.measureText(str).width;
-      };
-    }
+    const writeAt = textWriter(ctx, fonts[b.font] || fonts[tpl.mainFont], st.bold, cx);
     // טקסט ארוך מהמקום: מקטינים עד 70%, ואם עדיין לא נכנס ומותר לגלוש – מחלקים לשתי שורות
     let w = writeAt(text, size, baseline, false);
     const room = Math.max(b.w * 1.15, b.w + size);
@@ -317,6 +306,43 @@ export async function templateCanvas(tpl, values) {
     ctx.fillRect(left, top, right - left, bottom - top);
     ctx.fillStyle = st.fg;
     lines.forEach((ln, i) => writeAt(ln, size, baselines[i], true));
+    if ((s.sizePct || 100) !== 100) redrawLabel(ctx, tpl, s, fonts, st);
   }
   return canvas;
+}
+
+/** כותב טקסט ממורכז ב-cx בגופן f מהקובץ, או לפי שם הגופן אם הוא לא מוטמע. draw=false – רק מודד */
+function textWriter(ctx, f, bold, cx) {
+  if (f && f.family) return (str, sz, y, draw) => embeddedText(ctx, str, f, sz, cx, y, draw);
+  const css = f ? f.css : FALLBACK, b = f ? f.bold || bold : bold;
+  return (str, sz, y, draw) => {
+    ctx.font = (b ? '700 ' : '400 ') + sz + 'px ' + css;
+    if (draw) ctx.fillText(str, cx, y);
+    return ctx.measureText(str).width;
+  };
+}
+
+/**
+ * השם שליד השעה ("מנחה") הוא חלק מהתמונה, ולכן כשמשנים את גודל האזור כותבים אותו מחדש באותו גודל.
+ * הצד הקרוב לשעה נשאר במקומו, כך שהשם גדל לכיוון הרחוק ממנה ולא עולה עליה.
+ */
+function redrawLabel(ctx, tpl, s, fonts, timeStyle) {
+  const lb = s.labelBox;
+  if (!lb || !['rule', 'zman', 'kiddush'].includes(s.kind)) return;
+  const cand = (tpl.candidates || []).find(c => c.box.x === lb.x && c.box.y === lb.y);
+  const text = cand ? cand.old : s.label;
+  if (!text) return;
+  const st = s.labelStyle || timeStyle;
+  const size = (lb.size || lb.h * 0.72) * (s.sizePct / 100);
+  const baseline = lb.baseline ?? (lb.y + lb.h * 0.78);
+  const f = fonts[lb.font] || fonts[tpl.mainFont];
+  const w = textWriter(ctx, f, st.bold, 0)(text, size, baseline, false);
+  const onRight = lb.x + lb.w / 2 > s.box.x + s.box.w / 2;
+  const cx = onRight ? lb.x + w / 2 : lb.x + lb.w - w / 2;
+  const left = Math.min(lb.x, cx - w / 2) - 2, right = Math.max(lb.x + lb.w, cx + w / 2) + 2;
+  const top = Math.min(lb.y, baseline - size) - 1, bottom = Math.max(lb.y + lb.h, baseline + size * 0.3) + 1;
+  ctx.fillStyle = st.bg;
+  ctx.fillRect(left, top, right - left, bottom - top);
+  ctx.fillStyle = st.fg;
+  textWriter(ctx, f, st.bold, cx)(text, size, baseline, true);
 }

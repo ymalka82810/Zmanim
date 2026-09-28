@@ -710,7 +710,7 @@ export function mergeRules(rules, fromTpl, replace, kind) {
 function buildTemplate() {
   const slots = st.slots.map(s => {
     const c = { box: s.box, kind: s.kind, old: s.old || '' };
-    if (s.labelBox) c.labelBox = s.labelBox;
+    if (s.labelBox) Object.assign(c, { labelBox: s.labelBox, labelStyle: analyzeSlot(st.canvas, s.labelBox), ...(s.label ? { label: s.label } : {}) });
     if ((s.kind === 'parasha' || s.kind === 'parashaName') && s.prefix && s.prefix.trim()) c.prefix = s.prefix.trim() + ' ';
     if (s.kind === 'rule' || s.kind === 'kiddush') Object.assign(c, { name: String(s.name).trim(), when: s.when, ...(s.days ? { days: s.days } : {}) });
     if (s.kind === 'zman') Object.assign(c, { zman: s.zman, when: s.when });
