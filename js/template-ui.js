@@ -3,7 +3,7 @@
  * מה ייכתב בכל אזור (תפילה, זמן היום, כותרת, תאריך). במסמך סרוק מסמנים אזורים ידנית.
  */
 
-import { BASES, WHEN, WHEN_LABELS, ROUND, DAY_APPLIES, appliesOnDay, prayerBases, designOf } from './config.js';
+import { BASES, WHEN, WHEN_LABELS, ROUND, SIZES, DAY_APPLIES, appliesOnDay, prayerBases, designOf } from './config.js';
 import { readFile, tokenize, detectDate, suggestSlots, textCandidates, inferRule } from './template-read.js';
 import { analyzeSlot, refineBox, templateCanvas } from './template-render.js';
 import { findOccasion, findPeriod, periodFor, buildLuach, buildDaysLuach, timesFor } from './luach.js';
@@ -351,6 +351,15 @@ function slotFields(s) {
   return '';
 }
 
+/** גודל הטקסט וריווח השורות באזור, בנפרד מהאזורים האחרים */
+function sizeFields(s) {
+  const sizeOpts = v => SIZES.map(n => '<option value="' + n + '"' + (n === (v || 100) ? ' selected' : '') + '>' + n + '%</option>').join('');
+  return '<div class="rgrid"><div><label>גודל הטקסט באזור</label><select data-k="sizePct">' + sizeOpts(s.sizePct) + '</select></div>' +
+    (s.wrap ? '<div><label>ריווח בין השורות</label><select data-k="lineHeightPct">' + sizeOpts(s.lineHeightPct) + '</select></div>' : '') +
+    '<div class="wide"><label class="check"><input type="checkbox" data-k="wrap"' + (s.wrap ? ' checked' : '') +
+    '> לאפשר גלישה לשתי שורות אם הטקסט ארוך מדי</label></div></div>';
+}
+
 /** תרגום "מתי" למילה בעברית: בלוח ימי חול s.when הוא מפתח (d0…d5) */
 function whenLabel(w) {
   if (!isDays()) return w;
@@ -392,7 +401,7 @@ function renderSlots() {
     '<summary><span class="num">' + ranks[i] + '</span><b class="rule-name">' + esc(slotLabel(s)) + '</b>' +
     '<span class="rule-sum">' + esc(slotSum(s)) + '</span></summary>' +
     '<div class="slot-top"><select data-k="kind" aria-label="מה יופיע באזור ' + ranks[i] + '">' + opts(KINDS, s.kind) + '</select>' +
-    '<button type="button" class="del" data-del="' + i + '">הסרה</button></div>' + slotFields(s) + '</details>'
+    '<button type="button" class="del" data-del="' + i + '">הסרה</button></div>' + slotFields(s) + sizeFields(s) + '</details>'
   ).join('');
 }
 $('tplSlots').addEventListener('toggle', e => {
@@ -413,6 +422,8 @@ $('tplSlots').addEventListener('input', e => {
     if (v === 'text' && s.text == null) s.text = s.old || '';
     focusSlot(+ed.dataset.i); return;
   }
+  if (k === 'sizePct' || k === 'lineHeightPct') { s[k] = Number(v); return; }
+  if (k === 'wrap') { s.wrap = e.target.checked; renderSlots(); return; }
   if (k === 'zman') s.zman = zmanKey(v);
   else if (k === 'offsetAbs' || k === 'offsetDir') {
     const abs = k === 'offsetAbs' ? v.replace(/[^0-9]/g, '') : offsetAbs(s);
@@ -505,6 +516,9 @@ function buildTemplate() {
     if (s.kind === 'hebDate') Object.assign(c, { ascii: !!s.ascii, noYear: !!s.noYear });
     if (s.kind === 'gregDate') c.fmt = s.fmt;
     if (s.kind === 'text') c.text = String(s.text ?? '').trim();
+    c.sizePct = s.sizePct || 100;
+    c.wrap = !!s.wrap;
+    if (c.wrap) c.lineHeightPct = s.lineHeightPct || 100;
     c.style = analyzeSlot(st.canvas, s.box);
     return c;
   }).filter(s => s.kind !== 'rule' || s.name);

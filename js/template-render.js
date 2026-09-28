@@ -210,6 +210,19 @@ function embeddedText(ctx, text, f, size, cx, baseline, draw) {
   return w;
 }
 
+/** מחלקים טקסט לשתי שורות בנקודת הרווח שמאזנת הכי טוב בין רוחב שתי השורות */
+function splitTwoLines(text, measure) {
+  const words = text.trim().split(/\s+/);
+  if (words.length < 2) return null;
+  let best = null, bestMax = Infinity;
+  for (let i = 1; i < words.length; i++) {
+    const a = words.slice(0, i).join(' '), b = words.slice(i).join(' ');
+    const max = Math.max(measure(a), measure(b));
+    if (max < bestMax) { bestMax = max; best = [a, b]; }
+  }
+  return best;
+}
+
 export async function templateCanvas(tpl, values) {
   const img = await loadImage(tpl.image);
   const canvas = document.createElement('canvas');
@@ -224,29 +237,40 @@ export async function templateCanvas(tpl, values) {
     const text = slotText(s, values);
     if (text == null) continue;
     const b = s.box, st = s.style || { bg: '#fff', fg: '#000', bold: false };
-    let size = b.size || b.h * 0.72;
+    let size = (b.size || b.h * 0.72) * ((s.sizePct || 100) / 100);
     const cx = b.x + b.w / 2, baseline = b.baseline ?? (b.y + b.h * 0.78);
     const f = fonts[b.font] || fonts[tpl.mainFont];
-    let write;
-    if (f && f.family) write = (sz, draw) => embeddedText(ctx, text, f, sz, cx, baseline, draw);
+    let writeAt;
+    if (f && f.family) writeAt = (str, sz, y, draw) => embeddedText(ctx, str, f, sz, cx, y, draw);
     else {
       // גופן שלא מוטמע בקובץ: לפי השם שלו, אם הוא מותקן במכשיר
       const css = f ? f.css : FALLBACK, bold = f ? f.bold || st.bold : st.bold;
-      write = (sz, draw) => {
+      writeAt = (str, sz, y, draw) => {
         ctx.font = (bold ? '700 ' : '400 ') + sz + 'px ' + css;
-        if (draw) ctx.fillText(text, cx, baseline);
-        return ctx.measureText(text).width;
+        if (draw) ctx.fillText(str, cx, y);
+        return ctx.measureText(str).width;
       };
     }
-    // טקסט ארוך מהמקום: מקטינים עד 70%, ומעבר לזה מרחיבים את הכיסוי
-    let w = write(size, false);
+    // טקסט ארוך מהמקום: מקטינים עד 70%, ואם עדיין לא נכנס ומותר לגלוש – מחלקים לשתי שורות
+    let w = writeAt(text, size, baseline, false);
     const room = Math.max(b.w * 1.15, b.w + size);
-    if (w > room) { size = Math.max(size * 0.7, size * room / w); w = write(size, false); }
+    let lines = [text];
+    if (w > room) {
+      size = Math.max(size * 0.7, size * room / w);
+      w = writeAt(text, size, baseline, false);
+      if (s.wrap) {
+        const split = splitTwoLines(text, str => writeAt(str, size, baseline, false));
+        if (split) { lines = split; w = Math.max(writeAt(split[0], size, baseline, false), writeAt(split[1], size, baseline, false)); }
+      }
+    }
+    const lineGap = lines.length > 1 ? size * 1.15 * ((s.lineHeightPct || 100) / 100) : 0;
+    const baselines = lines.length > 1 ? [baseline - lineGap / 2, baseline + lineGap / 2] : [baseline];
     const left = Math.min(b.x, cx - w / 2) - 2, right = Math.max(b.x + b.w, cx + w / 2) + 2;
+    const top = Math.min(b.y, baselines[0] - size) - 1, bottom = Math.max(b.y + b.h, baselines[baselines.length - 1] + size * 0.3) + 1;
     ctx.fillStyle = st.bg;
-    ctx.fillRect(left, b.y - 1, right - left, b.h + 2);
+    ctx.fillRect(left, top, right - left, bottom - top);
     ctx.fillStyle = st.fg;
-    write(size, true);
+    lines.forEach((ln, i) => writeAt(ln, size, baselines[i], true));
   }
   return canvas;
 }
