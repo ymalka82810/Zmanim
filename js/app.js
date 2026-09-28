@@ -7,10 +7,10 @@ import { CITIES, BASES, WHEN, APPLIES, ROUND, FONTS, THEMES, SIZE_PARTS, SIZES, 
   prayerBases, fontFamilies, fontsHref, themeColors, normalize, loadConfig, saveConfig, clearConfig } from './config.js';
 import { findOccasion, templateFor, periodFor, occasionParts, buildLuach, buildDaysLuach, dayPages } from './luach.js';
 import { MOADIM } from './moadim.js';
-import { luachHtml, luachText, esc } from './render.js';
+import { luachHtml, luachText, withEdits, baseText, esc } from './render.js';
 import { todayIn, toYmd } from './dates.js';
 import { luachCanvas, pngBlob, pdfBlob, stackCanvases } from './image.js';
-import { templateCanvas } from './template-render.js';
+import { templateCanvas, slotKey, slotText, slotValue } from './template-render.js';
 import { editFromFile, editExisting, mergeRules, setKiddush } from './template-ui.js';
 import { initCommunity } from './community.js';
 import { startSync } from './settings-sync.js';
@@ -24,6 +24,8 @@ let period = null;       // השבת/החג או ימי החול של הלוח �
 let current = null;      // הלוח המוצג כרגע
 let sel = 'shabbat';     // התבנית שנבחרה בהגדרות
 let kiddush = null;      // dateKey ← קידוש מאושר, מהקהילה (community.js)
+let editing = false;     // מצב עריכת טקסט על הלוח
+let scope = 'once';      // שינוי בטקסט חל על הלוח הזה בלבד (once), או קבוע בכל הלוחות של התבנית (fixed)
 
 /* התבנית שהלוח מוצג לפיה (שבתות, חגים, חול המועד, ימות השבוע או תבנית של המשתמש). נשמרת במכשיר */
 const MODE_KEY = 'zmanim.mode';
@@ -81,15 +83,36 @@ $('luachTpls').addEventListener('click', e => {
 
 /* ---------- הלוח ---------- */
 
+/** הטקסטים שהגבאי שינה בלוח נשמרים לפי התבנית והיום הראשון של הלוח */
+const editKey = (t, p) => t.id + ':' + p.first;
+
+/** הטקסטים שהשתנו בעמוד i של עיצוב מקובץ (המפתחות שם הם "p0|..." לפי העמוד) */
+function pageEdits(e, i) {
+  const pre = 'p' + i + '|', o = {};
+  for (const k in e) if (k.startsWith(pre)) o[k.slice(pre.length)] = e[k];
+  return o;
+}
+
 /**
- * הלוח לפי התבנית שחלה עליו. l.design – העיצוב מהקובץ הישן, ו-l.pages – הערכים לכל עמוד שלו:
+ * הלוח לפי התבנית שחלה עליו, עם הטקסטים שהגבאי שינה: שינויים קבועים של התבנית (t.edits), ומעליהם
+ * שינויים בלוח הזה בלבד (cfg.edits). l.base – הלוח המחושב, ו-l.fixedBase – הלוח עם השינויים הקבועים בלבד.
+ * l.design – העיצוב מהקובץ הישן, ו-l.pages – הערכים לכל עמוד שלו:
  * הקובץ הוא לוח של יום אחד, ולכן בשבת/חג רב-יומי יש עמוד לכל יום.
  */
 function build(p) {
   const t = templateFor(cfg, p), c = { ...cfg, rules: t.rules };
-  const l = p.mode === 'days' ? buildDaysLuach(c, p, kiddush) : buildLuach(c, p, kiddush);
+  const base = p.mode === 'days' ? buildDaysLuach(c, p, kiddush) : buildLuach(c, p, kiddush);
+  const fixed = t.edits || {}, e = cfg.edits[editKey(t, p)] || {};
+  const l = withEdits(base, e, fixed);
+  l.base = base;
+  l.fixedBase = withEdits(base, {}, fixed);
+  l.edits = e;
+  l.fixedEdits = fixed;
   l.design = activeDesign(cfg, t);
-  l.pages = l.design ? (l.values.multiDay ? dayPages(c, p, kiddush) : [l.values]) : null;
+  l.pages = l.design ? (base.values.multiDay ? dayPages(c, p, kiddush) : [base.values]).map((v, i) => {
+    const once = pageEdits(e, i), fx = pageEdits(fixed, i);
+    return { ...v, edits: { ...fx, ...once }, once, fixed: fx };
+  }) : null;
   l.tpl = t;
   return l;
 }
@@ -164,15 +187,20 @@ function renderLuach() {
   renderMixOffer(p);
   if (current.design) {
     const l = current;
-    $('luach').innerHTML = l.pages.map(v => '<img class="luach-img" alt="' + esc(v.title) + '">').join('');
+    $('luach').innerHTML = l.pages.map((v, i) => '<div class="lp" data-p="' + i + '"><img class="luach-img" alt="' + esc(v.title) + '"></div>').join('');
     drawLuach(l).then(pages => {
       if (current !== l) return;
-      const imgs = $('luach').querySelectorAll('img');
-      pages.forEach((c, i) => { imgs[i].src = c.toDataURL('image/png'); });
-    }).catch(() => { if (current === l) $('luach').innerHTML = luachHtml(l); });
+      $('luach').querySelectorAll('.lp').forEach((el, i) => {
+        el.querySelector('img').src = pages[i].toDataURL('image/png');
+        el.insertAdjacentHTML('beforeend', slotBoxes(l, i, pages[i]));
+      });
+    }).catch(() => { if (current === l) { $('luach').innerHTML = luachHtml(l, editing); makeEditable(); } });
   } else {
-    $('luach').innerHTML = luachHtml(current);
+    $('luach').innerHTML = luachHtml(current, editing);
+    makeEditable();
   }
+  $('luach').classList.toggle('editing', editing);
+  renderEditBar();
   const now = periodFor(cfg, t, todayIn(cfg.tz));
   $('todayOcc').disabled = !!now && now.first === p.first;
 }
@@ -189,6 +217,158 @@ $('luach').addEventListener('click', e => {
   renderTemplates();
   showTab('settings');
 });
+
+/* ---------- עריכת טקסט על הלוח ---------- */
+
+const pct = (a, b) => (a / b * 100).toFixed(3) + '%';
+
+/** אזורי העיצוב מקובץ בעמוד i, ככפתורים מעל התמונה. לוחצים עליהם במצב עריכה */
+function slotBoxes(l, i, canvas) {
+  const v = l.pages[i];
+  return l.design.slots.map(s => {
+    const text = slotText(s, v), k = slotKey(s), b = s.box;
+    if (text == null) return '';
+    return '<button type="button" class="slot' + (k in v.once ? ' ed' : k in v.fixed ? ' fx' : '') + '" data-k="' + esc(k) + '" tabindex="' + (editing ? 0 : -1) +
+      '" style="left:' + pct(b.x - 2, canvas.width) + ';top:' + pct(b.y - 1, canvas.height) +
+      ';width:' + pct(b.w + 4, canvas.width) + ';height:' + pct(b.h + 2, canvas.height) + '" aria-label="עריכה: ' + esc(text) + '"></button>';
+  }).join('');
+}
+
+/** במצב עריכה כל טקסט בלוח של האתר נפתח להקלדה */
+function makeEditable() {
+  if (!editing) return;
+  $('luach').querySelectorAll('[data-e]').forEach(el => {
+    try { el.contentEditable = 'plaintext-only'; } catch (e) { el.contentEditable = 'true'; }
+    el.spellcheck = false;
+  });
+}
+
+const count = (n, one, many) => n === 1 ? one : n + ' ' + many;
+
+function renderEditBar() {
+  const n = current ? Object.keys(current.edits).length : 0, f = current ? Object.keys(current.fixedEdits).length : 0;
+  const name = current ? '"' + current.tpl.name + '"' : '';
+  $('editText').setAttribute('aria-pressed', String(editing));
+  $('editText').textContent = editing ? 'סיום העריכה' : 'עריכת טקסט';
+  $('editText').disabled = !current;
+  $('editBar').hidden = !current || (!editing && !n && !f);
+  $('editScope').hidden = !editing;
+  $('editScope').querySelectorAll('[data-scope]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.scope === scope)));
+  $('scopeFixed').textContent = 'קבוע בכל הלוחות של ' + name;
+  if (editing) {
+    $('editHint').textContent = (current && current.design ? 'לוחצים על אזור מסומן בלוח כדי לשנות את הטקסט שלו. ' : 'לוחצים על טקסט בלוח ומקלידים. ') +
+      (scope === 'fixed' ? 'השינוי יישמר בתבנית ' + name + ' ויופיע בכל הלוחות שלה, גם בשבועות הבאים. '
+        : 'השינוי יחול רק על הלוח הזה. ') +
+      'בזהב – שינוי בלוח הזה בלבד, בירוק – שינוי קבוע.';
+  } else {
+    const parts = [];
+    if (n) parts.push('בלוח הזה ' + (n === 1 ? 'שונה טקסט אחד' : 'שונו ' + n + ' טקסטים') + ' ידנית');
+    if (f) parts.push('בתבנית ' + name + ' ' + count(f, 'יש שינוי קבוע אחד', 'שינויים קבועים'));
+    $('editHint').textContent = parts.join('. ') + '.';
+  }
+  $('editReset').hidden = !n;
+  $('editResetFixed').hidden = !f;
+}
+
+/** לוחות שעברו לפני יותר מחודשיים לא צריכים את השינויים שלהם */
+function pruneEdits() {
+  const old = todayIn(cfg.tz) - 60;
+  for (const k in cfg.edits) if (+k.slice(k.lastIndexOf(':') + 1) < old) delete cfg.edits[k];
+}
+
+/**
+ * שמירת טקסט ששונה בלוח המוצג, לפי מה שהגבאי בחר: בלוח הזה בלבד, או קבוע בתבנית.
+ * computed – הטקסט המחושב, withFixed – הטקסט אחרי השינויים הקבועים. טקסט שחזר אליהם כבר לא נחשב שינוי.
+ */
+function setEdit(key, text, computed, withFixed) {
+  const t = current.tpl, id = editKey(t, period), e = { ...(cfg.edits[id] || {}) };
+  if (scope === 'fixed') {
+    const f = { ...(t.edits || {}) };
+    if (text === computed) delete f[key];
+    else f[key] = text;
+    t.edits = f;
+    delete e[key];   // כדי שהשינוי הקבוע ייראה גם בלוח הזה
+  } else if (text === withFixed) delete e[key];
+  else e[key] = text;
+  if (Object.keys(e).length) cfg.edits[id] = e;
+  else delete cfg.edits[id];
+  pruneEdits();
+  changed();
+  // הלוח נבנה מחדש בלי לצייר אותו שוב, כדי לא לאבד את המקום שבו מקלידים
+  current = build(period);
+  renderEditBar();
+}
+
+$('editText').onclick = () => {
+  editing = !editing;
+  scope = 'once';
+  if (!editing && $('luach').contains(document.activeElement)) document.activeElement.blur();
+  renderLuach();
+};
+$('editScope').addEventListener('click', e => {
+  const b = e.target.closest('[data-scope]');
+  if (!b) return;
+  scope = b.dataset.scope;
+  renderEditBar();
+});
+$('editResetFixed').onclick = async () => {
+  const t = current && current.tpl;
+  if (!t || !await SiteDialog.confirm('לבטל את כל השינויים הקבועים בתבנית "' + t.name + '"? הטקסט יחזור לטקסט המחושב בכל הלוחות שלה.', { ok: 'ביטול השינויים הקבועים', danger: true })) return;
+  t.edits = {};
+  changed();
+  renderLuach();
+  toast('השינויים הקבועים בוטלו');
+};
+$('editReset').onclick = async () => {
+  if (!current || !await SiteDialog.confirm('לבטל את כל השינויים בטקסט של הלוח הזה ולחזור לטקסט המחושב?', { ok: 'ביטול השינויים', danger: true })) return;
+  delete cfg.edits[editKey(current.tpl, period)];
+  changed();
+  renderLuach();
+  toast('הלוח חזר לטקסט המחושב');
+};
+
+const editable = t => editing && t instanceof Element && t.closest('[data-e]');
+$('luach').addEventListener('focusin', e => {
+  const el = editable(e.target);
+  if (el) el.dataset.was = el.textContent;
+});
+$('luach').addEventListener('keydown', e => {
+  const el = editable(e.target);
+  if (!el) return;
+  // Enter מסיים את העריכה, חוץ מבהודעה שבתחתית שיכולה להיות בכמה שורות. Escape מבטל
+  if (e.key === 'Enter' && (el.dataset.e !== 'notes' || e.ctrlKey || e.metaKey)) { e.preventDefault(); el.blur(); }
+  if (e.key === 'Escape') { el.textContent = el.dataset.was ?? el.textContent; el.blur(); }
+});
+$('luach').addEventListener('paste', e => {
+  if (!editable(e.target)) return;
+  e.preventDefault();
+  document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
+});
+$('luach').addEventListener('focusout', e => {
+  const el = editable(e.target);
+  if (!el || !current || el.textContent === el.dataset.was) return;
+  const key = el.dataset.e;
+  const text = (key === 'notes' ? el.innerText : el.textContent).replace(/\u00a0/g, ' ').replace(/[ \t]+\n/g, '\n').trim();
+  setEdit(key, text, baseText(current.base, key) ?? '', baseText(current.fixedBase, key) ?? '');
+  el.classList.toggle('ed', key in current.edits);
+  el.classList.toggle('fx', !(key in current.edits) && key in current.fixedEdits);
+  el.dataset.was = el.textContent;
+});
+$('luach').addEventListener('click', async e => {
+  const b = e.target.closest('.slot');
+  if (!b || !editing || !current || !current.design) return;
+  const i = +b.closest('.lp').dataset.p, k = b.dataset.k, v = current.pages[i];
+  const slot = current.design.slots.find(s => slotKey(s) === k);
+  if (!slot || !v) return;
+  const now = slotText(slot, v), base = slotValue(slot, v) ?? '', withFixed = k in v.fixed ? v.fixed[k] : base;
+  const text = await SiteDialog.prompt('הטקסט באזור הזה' + (current.pages.length > 1 ? ' (עמוד ' + (i + 1) + ')' : '') +
+    (now !== base ? '\nהטקסט המחושב: ' + (base || '(ריק)') : '') + '\nטקסט ריק מוחק את האזור מהלוח.' +
+    '\nהשינוי ' + (scope === 'fixed' ? 'קבוע בכל הלוחות של "' + current.tpl.name + '"' : 'יחול רק על הלוח הזה') + '.', { value: now, ok: 'שמירה' });
+  if (text === null || text.trim() === now) return;
+  setEdit('p' + i + '|' + k, text.trim(), base, withFixed);
+  renderLuach();
+});
+
 $('prevOcc').onclick = () => stepLuach(-1);
 $('nextOcc').onclick = () => stepLuach(1);
 $('todayOcc').onclick = () => { cursor = null; renderLuach(); };
@@ -533,6 +713,11 @@ $('tplNewOk').onclick = () => {
 
 const openRules = new WeakSet();   // תפילות שהשורה שלהן פתוחה לעריכה
 
+/** ערך מוחלט (בדקות) של הפרש הכלל, להצגה בשדה המספר */
+const offsetAbs = r => { const n = parseInt(r.offset, 10); return isNaN(n) ? '' : String(Math.abs(n)); };
+/** כיוון הפרש הכלל – "לפני" או "אחרי", להצגה בתיבת הבחירה */
+const offsetDir = r => (parseInt(r.offset, 10) < 0 ? 'לפני' : 'אחרי');
+
 /** תקציר לשורה הסגורה: מתי, על מה חל, ולפי מה */
 function ruleSum(r, days) {
   const n = parseInt(r.offset, 10) || 0;
@@ -556,9 +741,12 @@ function renderRules() {
       (days ? '' : '<div><label>מתי</label><select data-k="when">' + opts(WHEN, r.when) + '</select></div>') +
       '<div><label>חל על</label><select data-k="applies">' + opts(days ? DAY_APPLIES : APPLIES, r.applies) + '</select></div>' +
       '<div><label>לפי</label><select data-k="base">' + baseOpts(r) + '</select></div>' +
-      '<div><label>' + (kiddush ? 'נוסח' : fixed ? 'שעה' : 'הפרש (דקות)') + '</label><input data-k="offset" value="' + esc(r.offset) +
-      '" placeholder="' + (kiddush ? '{שם}{לרגל}' : fixed ? '08:00' : '-20') + '"' +
-      (kiddush ? ' dir="rtl"' : ' dir="ltr" inputmode="' + (fixed ? 'text' : 'numeric') + '"') + '></div>' +
+      (kiddush || fixed
+        ? '<div><label>' + (kiddush ? 'נוסח' : 'שעה') + '</label><input data-k="offset" value="' + esc(r.offset) +
+          '" placeholder="' + (kiddush ? '{שם}{לרגל}' : '08:00') + '"' +
+          (kiddush ? ' dir="rtl"' : ' dir="ltr" inputmode="text"') + '></div>'
+        : '<div><label>הפרש (דקות)</label><div class="offset-pair"><input data-k="offsetAbs" type="number" min="0" inputmode="numeric" dir="ltr" value="' +
+          esc(offsetAbs(r)) + '" placeholder="20"><select data-k="offsetDir">' + opts(['אחרי', 'לפני'], offsetDir(r)) + '</select></div></div>') +
       '<div><label>עיגול</label><select data-k="round"' + (fixed || kiddush ? ' disabled' : '') + '>' + opts(ROUND, r.round) + '</select></div>' +
       '</div>' + (kiddush ? '<p class="hint">הטקסט יתמלא לפי מי שאושר לקידוש בתאריך הזה (מלוח הקידושים של הקהילה). ' +
         'אפשר להשתמש ב-{שם} (שם התורם), ב-{סיבה} (לרגל מה נתרם) וב-{לרגל} (מוסיף "לרגל ..." רק אם יש סיבה). ' +
@@ -586,7 +774,9 @@ function store() {
 /** הגדרות חדשות מהקהילה. שינוי שלנו שעוד לא נשמר גובר עליהן, ובעריכת תבנית מקובץ הן ממתינות לסיום */
 function applyRemote(next, by) {
   if (saveTimer) return;
-  if (!$('view-template').hidden) { remoteLater = [next, by]; return; }
+  // בעריכת תבנית מקובץ, או כשמקלידים על הלוח, ההגדרות מהקהילה ממתינות
+  const typing = editing && $('luach').contains(document.activeElement) && document.activeElement.isContentEditable;
+  if (!$('view-template').hidden || typing) { remoteLater = [next, by]; return; }
   remoteLater = null;
   cfg = next; saved = true;
   saveConfig(cfg);
@@ -625,7 +815,11 @@ $('rules').addEventListener('input', e => {
   if (!box || !k) return;
   const list = rules(), r = list[+box.getAttribute('data-i')];
   const oldName = String(r.name || '').trim();
-  r[k] = e.target.value;
+  if (k === 'offsetAbs' || k === 'offsetDir') {
+    const abs = k === 'offsetAbs' ? e.target.value.replace(/[^0-9]/g, '') : offsetAbs(r);
+    const dir = k === 'offsetDir' ? e.target.value : offsetDir(r);
+    r.offset = abs === '' ? '' : String(dir === 'לפני' ? -Math.abs(+abs) : +abs);
+  } else r[k] = e.target.value;
   if (k === 'name') {
     // תפילות שתלויות בשם הקודם עוברות לשם החדש (גם אחרי מחיקה זמנית של כל השם),
     // ורשימות "לפי" מתעדכנות בלי לאבד את הפוקוס

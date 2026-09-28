@@ -1,6 +1,7 @@
 /* חלון הודעה ואישור משותף לכל דפי האתר, במקום alert ו-confirm של הדפדפן.
  * SiteDialog.confirm(text, {ok, cancel, danger}) מחזיר Promise<boolean>.
  * SiteDialog.alert(text, {ok}) מחזיר Promise שמתממש כשסוגרים את החלון.
+ * SiteDialog.prompt(text, {value, multiline, ok, cancel}) מחזיר Promise עם הטקסט שנכתב, או null בביטול.
  * החלון הוא <dialog> מודאלי, כך שהוא מופיע גם מעל חלונות אחרים שפתוחים בדף.
  * עם {within: אלמנט} ההודעה מוצגת בתוך האלמנט במקום התוכן שלו (למשל בתוך מגירה שכבר פתוחה),
  * ולא כחלון נוסף מעליו. כשעונים, התוכן חוזר כמו שהיה.
@@ -13,6 +14,7 @@ const css = `
 .sd[open]{animation:sd-in .16s ease-out}
 @keyframes sd-in{from{opacity:0;transform:translateY(8px) scale(.98)}}
 .sd-body{padding:22px 22px 6px;font-size:1.05rem;line-height:1.6;white-space:pre-line;overflow-wrap:anywhere}
+.sd-field{display:block;box-sizing:border-box;width:calc(100% - 44px);margin:10px 22px 0;padding:10px 12px;border:1px solid #e2dcc9;border-radius:10px;background:#fff;color:inherit;font:inherit;font-size:1.05rem;resize:vertical}
 .sd-actions{display:flex;flex-wrap:wrap;justify-content:flex-start;gap:8px;padding:16px 22px 20px}
 .sd-actions button{min-width:88px;padding:10px 18px;border-radius:12px;font:inherit;font-weight:700;font-size:1rem;cursor:pointer}
 .sd-ok{border:1px solid #1e3a63;background:#1e3a63;color:#fff}
@@ -30,6 +32,7 @@ const css = `
 :root[data-theme="dark"] .sd-ok{background:#8fb0ec;border-color:#8fb0ec;color:#0c1120}
 :root[data-theme="dark"] .sd-ok:hover{background:#b6cdf5;border-color:#b6cdf5}
 :root[data-theme="dark"] .sd-ok.sd-danger{background:#f08c80;border-color:#f08c80;color:#0c1120}
+:root[data-theme="dark"] .sd-field{background:#0f1526;border-color:#2a3252}
 :root[data-theme="dark"] .sd-cancel{border-color:#2a3252;color:#c3cadf}
 :root[data-theme="dark"] .sd-cancel:hover{background:#202a48}
 :root[data-theme="dark"] .sd button:focus-visible{outline-color:#dfb564}
@@ -50,6 +53,7 @@ function open(text, opts, withCancel){
   if (host) dlg.setAttribute('role', 'alertdialog');
   dlg.innerHTML = '<div class="sd-body"></div><div class="sd-actions"><button type="button" class="sd-ok"></button></div>';
   dlg.querySelector('.sd-body').textContent = text;
+  if (opts.field) dlg.querySelector('.sd-body').after(opts.field);
   const ok = dlg.querySelector('.sd-ok');
   ok.textContent = opts.ok || 'אישור';
   if (opts.danger) ok.classList.add('sd-danger');
@@ -72,8 +76,23 @@ function open(text, opts, withCancel){
     dlg.addEventListener('close', () => { dlg.remove(); resolve(result); });
     dlg.showModal();
     // בפעולה שמוחקת משהו הפוקוס על "ביטול", כדי ש-Enter לא ימחק בטעות
-    (opts.danger && cancel ? cancel : ok).focus();
+    if (opts.field) { opts.field.focus(); opts.field.select(); }
+    else (opts.danger && cancel ? cancel : ok).focus();
   });
+}
+
+function prompt(text, opts){
+  opts = opts || {};
+  const field = document.createElement(opts.multiline ? 'textarea' : 'input');
+  field.className = 'sd-field';
+  field.value = opts.value || '';
+  field.dir = 'auto';
+  if (opts.multiline) field.rows = 3;
+  // Enter באותו שדה של שורה אחת מאשר
+  else field.addEventListener('keydown', e => {
+    if (e.key === 'Enter'){ e.preventDefault(); field.closest('.sd').querySelector('.sd-ok').click(); }
+  });
+  return open(text, { ...opts, within: null, field }, true).then(ok => ok ? field.value : null);
 }
 
 function inPlace(host, panel, ok, cancel, opts){
@@ -104,6 +123,7 @@ function inPlace(host, panel, ok, cancel, opts){
 
 window.SiteDialog = {
   confirm: (text, opts) => open(text, opts || {}, true),
-  alert: (text, opts) => open(text, opts || {}, false).then(() => {})
+  alert: (text, opts) => open(text, opts || {}, false).then(() => {}),
+  prompt
 };
 })();

@@ -30,6 +30,10 @@ const baseOpts = s => {
 let kiddush = null;   // dateKey ← קידוש מאושר, לתצוגה המקדימה (מ-app.js)
 export function setKiddush(map) { kiddush = map; }
 const oldMinutes = s => { const m = /^(\d{1,2}):(\d{2})$/.exec(s.old || ''); return m ? +m[1] * 60 + +m[2] : null; };
+/** ערך מוחלט (בדקות) של הפרש האזור, להצגה בשדה המספר */
+const offsetAbs = s => { const n = parseInt(s.offset, 10); return isNaN(n) ? '' : String(Math.abs(n)); };
+/** כיוון הפרש האזור – "לפני" או "אחרי", להצגה בתיבת הבחירה */
+const offsetDir = s => (parseInt(s.offset, 10) < 0 ? 'לפני' : 'אחרי');
 
 const DOW_LABELS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי'];
 const isDays = () => st.tpl.kind === 'days';
@@ -232,8 +236,11 @@ function slotFields(s) {
       (isDays() ? '<div><label>יום</label><select data-k="when">' + opts(dayOpts(), s.when) + '</select></div>'
         : '<div><label>מתי</label><select data-k="when">' + opts(WHEN, s.when) + '</select></div>') +
       '<div><label>לפי</label><select data-k="base">' + baseOpts(s) + '</select></div>' +
-      '<div><label>' + (kd ? 'נוסח' : fixed ? 'שעה' : 'הפרש (דקות)') + '</label><input data-k="offset" dir="' + (kd ? 'rtl' : 'ltr') +
-      '" value="' + esc(s.offset) + '"' + (kd ? ' placeholder="{שם}{לרגל}"' : '') + '></div>' +
+      (kd || fixed
+        ? '<div><label>' + (kd ? 'נוסח' : 'שעה') + '</label><input data-k="offset" dir="' + (kd ? 'rtl' : 'ltr') +
+          '" value="' + esc(s.offset) + '"' + (kd ? ' placeholder="{שם}{לרגל}"' : '') + '></div>'
+        : '<div><label>הפרש (דקות)</label><div class="offset-pair"><input data-k="offsetAbs" type="number" min="0" inputmode="numeric" dir="ltr" value="' +
+          esc(offsetAbs(s)) + '" placeholder="20"><select data-k="offsetDir">' + opts(['אחרי', 'לפני'], offsetDir(s)) + '</select></div></div>') +
       '<div><label>עיגול</label><select data-k="round"' + (fixed || kd ? ' disabled' : '') + '>' + opts(ROUND, s.round) + '</select></div></div>';
   }
   if (s.kind === 'zman') {
@@ -270,7 +277,11 @@ $('tplSlots').addEventListener('input', e => {
     renderSlots(); focusSlot(+ed.dataset.i); return;
   }
   if (k === 'zman') s.zman = zmanKey(v);
-  else s[k] = v;
+  else if (k === 'offsetAbs' || k === 'offsetDir') {
+    const abs = k === 'offsetAbs' ? v.replace(/[^0-9]/g, '') : offsetAbs(s);
+    const dir = k === 'offsetDir' ? v : offsetDir(s);
+    s.offset = abs === '' ? '' : String(dir === 'לפני' ? -Math.abs(+abs) : +abs);
+  } else s[k] = v;
   if (k === 'when' && s.kind === 'rule') { reinfer(s); renderSlots(); }
   if (k === 'base') {
     const kd = isKiddush(s);

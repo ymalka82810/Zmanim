@@ -150,7 +150,8 @@ export const DEFAULT_CONFIG = {
   shul: '', city: 'jerusalem', lat: 31.769, lng: 35.2163, tz: 'Asia/Jerusalem', il: true,
   candle: 40, havdalah: '8.5', notes: '',
   templates: BUILTIN.map(builtinTemplate),
-  merged: {}
+  merged: {},
+  edits: {}
 };
 
 /** תבנית חדשה של המשתמש. rules – זמני התפילות להתחלה */
@@ -167,6 +168,13 @@ export function designOf(cfg, t) {
 }
 
 const KEY = 'zmanim.config';
+
+/** רק השדות שהם טקסט (טקסטים ששונו על הלוח: מפתח ← טקסט) */
+function strings(o) {
+  const out = {};
+  if (o && typeof o === 'object') for (const k in o) if (typeof o[k] === 'string') out[k] = o[k];
+  return out;
+}
 
 /** משלים שדות חסרים (הגדרות ישנות או קובץ מיובא) */
 export function normalize(c) {
@@ -185,6 +193,8 @@ export function normalize(c) {
     t.name = String(t.name || '').trim() || 'תבנית';
     if (!isBuiltin(t) && !Array.isArray(t.moadim)) t.moadim = [];
     if (t.design === undefined) t.design = null;
+    // טקסט שהגבאי שינה על הלוח כשינוי קבוע, בכל הלוחות של התבנית: מפתח ← טקסט
+    t.edits = strings(t.edits);
     // עד גרסה 2 הגופן היה אחד לכל הלוחות (cfg.font), ועכשיו הוא עובר לכל תבנית
     if (!FONTS.some(f => f[0] === t.font)) t.font = FONTS.some(f => f[0] === cfg.font) ? cfg.font : 'classic';
     if (!THEMES.some(x => x[0] === t.theme)) t.theme = 'classic';
@@ -197,6 +207,13 @@ export function normalize(c) {
   const merged = cfg.merged && typeof cfg.merged === 'object' ? cfg.merged : {};
   cfg.merged = {};
   for (const k in merged) if (merged[k] && /^\d+$/.test(k)) cfg.merged[k] = true;
+  // טקסט שהגבאי שינה על לוח מסוים בלבד: "תבנית:היום הראשון" ← { מפתח ← טקסט }
+  const edits = cfg.edits && typeof cfg.edits === 'object' ? cfg.edits : {};
+  cfg.edits = {};
+  for (const k in edits) {
+    const out = strings(edits[k]);
+    if (/^.+:\d+$/.test(k) && Object.keys(out).length) cfg.edits[k] = out;
+  }
   cfg.version = DEFAULT_CONFIG.version;
   cfg.lat = Number(cfg.lat); cfg.lng = Number(cfg.lng);
   cfg.candle = Number(cfg.candle) || 0;

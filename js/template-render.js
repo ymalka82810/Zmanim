@@ -102,6 +102,15 @@ export function slotValue(slot, v) {
   }
 }
 
+/** מפתח קבוע לאזור, לטקסט שהגבאי שינה בו. אזורים עם אותו תוכן (למשל הכותרת פעמיים) משתנים יחד */
+export const slotKey = s => [s.kind, s.when, s.name, s.zman].filter(x => x != null && x !== '').join('|');
+
+/** הטקסט שנכתב באזור: מה שהגבאי כתב (v.edits), או הערך המחושב */
+export function slotText(slot, v) {
+  const k = slotKey(slot);
+  return v.edits && k in v.edits ? String(v.edits[k]) : slotValue(slot, v);
+}
+
 /* ---------- ציור ---------- */
 
 const imgCache = new Map();
@@ -201,7 +210,7 @@ export async function templateCanvas(tpl, values) {
   const fonts = await templateFonts(tpl);
 
   for (const s of tpl.slots) {
-    const text = slotValue(s, values);
+    const text = slotText(s, values);
     if (text == null) continue;
     const b = s.box, st = s.style || { bg: '#fff', fg: '#000', bold: false };
     let size = b.size || b.h * 0.72;
