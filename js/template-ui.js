@@ -318,7 +318,9 @@ function renderSlots() {
     return;
   }
   const ranks = slotRanks();
-  $('tplSlots').innerHTML = st.slots.map((s, i) =>
+  // מוצגים לפי המספור בעמוד; data-i שומר את האינדקס המקורי ב-st.slots
+  const order = st.slots.map((s, i) => i).sort((a, b) => ranks[a] - ranks[b]);
+  $('tplSlots').innerHTML = order.map(i => [st.slots[i], i]).map(([s, i]) =>
     '<details class="rule slot-ed" data-i="' + i + '"' + (openSlots.has(s) ? ' open' : '') + '>' +
     '<summary><span class="num">' + ranks[i] + '</span><b class="rule-name">' + esc(slotLabel(s)) + '</b>' +
     '<span class="rule-sum">' + esc(slotSum(s)) + '</span></summary>' +
