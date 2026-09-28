@@ -149,7 +149,7 @@ const builtinTemplate = b => ({ id: b.id, name: b.name, kind: b.kind, rules: clo
 
 export const DEFAULT_CONFIG = {
   version: 3,
-  shul: '', city: 'jerusalem', lat: 31.769, lng: 35.2163, tz: 'Asia/Jerusalem', il: true,
+  shul: '', address: '', city: 'jerusalem', lat: 31.769, lng: 35.2163, tz: 'Asia/Jerusalem', il: true,
   candle: 40, havdalah: '8.5', notes: '',
   templates: BUILTIN.map(builtinTemplate),
   merged: {},

@@ -176,7 +176,12 @@ const GREG_RE = /(?<!\d)(\d{1,2})([./-])(\d{1,2})\2(\d{4}|\d{2})(?!\d)/;
 const HEB_MONTHS = [['מרחשון', CHESHVAN], ['חשוון', CHESHVAN], ['חשון', CHESHVAN], ['תשרי', TISHREI], ['כסליו', KISLEV], ['כסלו', KISLEV],
   ['טבת', TEVET], ['שבט', SHVAT], ['אדר ב', ADAR2], ['אדר א', ADAR], ['אדר', ADAR], ['ניסן', NISAN], ['אייר', IYYAR],
   ['סיוון', SIVAN], ['סיון', SIVAN], ['תמוז', TAMUZ], ['אלול', ELUL], ['אב', AV]];
-const HEB_DATE_RE = new RegExp('(?:^|\\s)([א-ת]{1,2}["\'״׳]?[א-ת]?)\\s+(?:ב|ל)?(' + HEB_MONTHS.map(m => m[0]).join('|') + ')[\'׳]?(?:\\s+([א-ת]{0,3}["״][א-ת]))?');
+// אחרי שם החודש לא באה אות, כדי ש"רח' אברהם" לא ייקרא "ח' אב"
+const HEB_DATE_RE = new RegExp('(?:^|\\s)([א-ת]{1,2}["\'״׳]?[א-ת]?)\\s+(?:ב|ל)?(' + HEB_MONTHS.map(m => m[0]).join('|') + ')[\'׳]?(?![א-ת])(?:\\s+([א-ת]{0,3}["״][א-ת]))?');
+const isGregDate = s => { const m = GREG_RE.exec(s); return !!m && +m[1] >= 1 && +m[1] <= 31 && +m[3] >= 1 && +m[3] <= 12; };
+const isHebDate = s => { const m = HEB_DATE_RE.exec(s); if (!m) return false; const d = gemValue(m[1]); return d >= 1 && d <= 30; };
+// "רח' הרצל 3", "רחוב…", "שד' ירושלים", "כתובת: …"
+const ADDRESS_RE = /(?:^|[^א-ת])ב?(?:רח['׳"]?|רחוב|שד['׳]|שדרות|סמ['׳]|סמטת|כיכר|ככר|כתובת)(?![א-ת])\s*:?\s*[א-ת]/;
 
 let measureCtx;
 function textWidth(s, size) {
@@ -211,7 +216,24 @@ export function tokenize(items) {
       if (txt && /[א-תA-Za-z]/.test(txt)) tokens.push({ ...it, ...subBox(it, at + lead, txt), str: txt, kind: classifyText(txt), partOf: true });
     }
   }
-  return joinParashaPairs(tokens);
+  return joinParashaPairs(joinAddress(tokens));
+}
+
+/** כתובת שנשמרה בכמה פריטים ("רח' אברהם כחילה", "3", "גן חב"ד"): מצרפים את ההמשך שמשמאל באותה שורה */
+function joinAddress(tokens) {
+  const drop = new Set();
+  for (const a of tokens) {
+    if (a.kind !== 'address') continue;
+    for (;;) {
+      const next = tokens.find(t => t !== a && !drop.has(t) && t.kind === 'text' && sameLine(t, a) &&
+        Math.abs(t.size - a.size) < a.size * 0.3 && a.x - (t.x + t.w) < a.size * 2.5 && t.x < a.x);
+      if (!next) break;
+      a.str = a.str + ' ' + next.str;
+      a.w = a.x + a.w - next.x; a.x = next.x;
+      drop.add(next);
+    }
+  }
+  return tokens.filter(t => !drop.has(t));
 }
 
 /** המיקום המשוער של קטע טקסט בתוך פריט, לפי רוחב התווים */
@@ -281,8 +303,9 @@ function trimSeparators(it) {
 }
 
 function classifyText(s) {
-  if (GREG_RE.test(s)) return 'gregDate';
-  if (HEB_DATE_RE.test(s)) return 'hebDate';
+  if (isGregDate(s)) return 'gregDate';
+  if (isHebDate(s)) return 'hebDate';
+  if (ADDRESS_RE.test(s)) return 'address';
   if (/^שבת\s+פרשת/.test(s)) return 'title';
   if (/^פרשת\s/.test(s)) return 'parasha';
   return 'text';
@@ -470,9 +493,10 @@ export function suggestSlots(tokens, cfg, day, period) {
 }
 
 const boxOf = t => ({ x: t.x, y: t.y, w: t.w, h: t.h, baseline: t.baseline, size: t.size, font: t.font });
-const isFixedKind = k => k === 'title' || k === 'parasha' || k === 'parashaName' || k === 'hebDate' || k === 'gregDate';
+const isFixedKind = k => ['title', 'parasha', 'parashaName', 'hebDate', 'gregDate', 'address'].includes(k);
 function fixedSlot(t, box) {
   if (t.kind === 'gregDate') return { box, kind: 'gregDate', old: t.str, fmt: gregFormat(t.str) };
+  if (t.kind === 'address') return { box, kind: 'address', old: t.str };
   return { box, kind: t.kind, old: t.str, ascii: /["']/.test(t.str) && !/[״׳]/.test(t.str), noYear: t.kind === 'hebDate' && !HEB_DATE_RE.exec(t.str)[3] };
 }
 

@@ -297,6 +297,7 @@ export function buildLuach(cfg, occ, kiddush) {
     sections,
     notes: String(cfg.notes || '').trim(),
     values: {
+      address: String(cfg.address || '').trim(),
       zmanim: { 'כניסה': texts(te), 'כל יום': texts(t1), 'יציאה': texts(tl) },
       rules,
       title: occ.title,
@@ -361,6 +362,7 @@ export function buildDaysLuach(cfg, p, kiddush) {
   });
   const first = p.days[0], shabbat = p.kind === 'week' ? parasha(first.day - first.dow + 6, cfg.il) : null;
   Object.assign(values, {
+    address: String(cfg.address || '').trim(),
     title: p.title, parasha: shabbat ? 'פרשת ' + shabbat : p.title, parashaName: shabbat || p.title,
     hebDay: first.day, firstDay: first.day, multiDay: false
   });

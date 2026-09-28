@@ -99,6 +99,8 @@ export function slotValue(slot, v) {
     case 'title': return v.title;
     case 'parasha': return v.parasha;
     case 'parashaName': return v.parashaName;
+    // בלי כתובת בהגדרות – הכתובת מהקובץ נשארת כמו שהיא
+    case 'address': return v.address || null;
     case 'hebDate': {
       let s = hebDateString(v.hebDay);
       if (slot.noYear) s = s.split(' ').slice(0, -1).join(' ');

@@ -473,6 +473,7 @@ const baseOpts = r => {
 
 function fill() {
   $('shul').value = cfg.shul || '';
+  $('address').value = cfg.address || '';
   $('city').value = cfg.city || 'custom';
   $('candle').value = cfg.candle;
   $('lat').value = cfg.lat; $('lng').value = cfg.lng;
@@ -870,6 +871,7 @@ $('city').onchange = () => {
 };
 const bind = (id, fn) => $(id).addEventListener('input', () => { fn($(id).value); changed(); });
 bind('shul', v => { cfg.shul = v; });
+bind('address', v => { cfg.address = v; });
 bind('candle', v => { cfg.candle = Number(v) || 0; });
 bind('lat', v => { cfg.lat = Number(v); });
 bind('lng', v => { cfg.lng = Number(v); });
