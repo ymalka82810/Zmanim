@@ -744,14 +744,11 @@ function renderTemplateStatus() {
   }
 }
 
-function templateDone(result) {
+async function templateDone(result) {
   if (result) {
     const t = result.tpl, prev = { design: t.design, rules: t.rules };
     t.design = result.template;
     t.rules = mergeRules(t.rules, result.rules, result.replace, t.kind);
-    const d = result.detected;
-    if (d && d.shul && !cfg.shul) cfg.shul = d.shul;
-    if (d && d.address && !cfg.address) cfg.address = d.address;
     if (!store()) {
       Object.assign(t, prev);
       toast('הקובץ גדול מדי לשמירה במכשיר. נסו קובץ קטן יותר', true);
@@ -766,7 +763,25 @@ function templateDone(result) {
     setBoard(t.id, p ? p.first : null);
     showTab('luach');
     toast('התבנית נשמרה');
+    await offerDetected(result.detected);
   } else showTab('settings');
+}
+
+/** אם זוהו בקובץ הישן שם בית הכנסת ו/או כתובת שעוד לא מוגדרים – מציעים למלא אותם בהגדרות, ולא כותבים בלי אישור */
+async function offerDetected(d) {
+  if (!d) return;
+  const wantShul = d.shul && !cfg.shul, wantAddr = d.address && !cfg.address;
+  if (!wantShul && !wantAddr) return;
+  const lines = [];
+  if (wantShul) lines.push('שם בית הכנסת: "' + d.shul + '"');
+  if (wantAddr) lines.push('כתובת: "' + d.address + '"');
+  const msg = 'זוהו בקובץ הישן הפרטים האלה:\n' + lines.join('\n') + '\nלמלא אותם בהגדרות בית הכנסת?';
+  if (!await SiteDialog.confirm(msg, { ok: 'מילוי' })) return;
+  if (wantShul) cfg.shul = d.shul;
+  if (wantAddr) cfg.address = d.address;
+  store();
+  fill();
+  toast('הפרטים מולאו בהגדרות');
 }
 
 $('tplUpload').onclick = () => $('tplFile').click();

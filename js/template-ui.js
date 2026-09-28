@@ -4,7 +4,7 @@
  */
 
 import { BASES, WHEN, WHEN_LABELS, ROUND, SIZES, DAY_APPLIES, appliesOnDay, prayerBases, designOf } from './config.js';
-import { readFile, tokenize, detectDate, detectShulAddress, suggestSlots, textCandidates, inferRule } from './template-read.js';
+import { readFile, tokenize, detectDate, detectShulAddress, suggestSlots, textCandidates, inferRule, guessOldDay } from './template-read.js';
 import { analyzeSlot, refineBox, templateCanvas } from './template-render.js';
 import { findOccasion, findPeriod, periodFor, buildLuach, buildDaysLuach, timesFor } from './luach.js';
 import { toDayNum, toYmd, todayIn, dow } from './dates.js';
@@ -71,14 +71,25 @@ function setDay(d) {
 
 /** פתיחת העורך מקובץ חדש, לתבנית tpl */
 export async function editFromFile(file, cfgAll, tpl, onDone) {
-  const { canvas, items, fonts } = await readFile(file);
+  const { canvas, items, fonts, docDayNum } = await readFile(file);
   const tokens = tokenize(items);
   const cfg = { ...cfgAll, rules: tpl.rules };
   const fit = x => ({ ...x, box: refineBox(canvas, x.box), ...(x.labelBox ? { labelBox: refineBox(canvas, x.labelBox) } : {}) });
   st = { canvas, W: canvas.width, H: canvas.height, cfg, cfgAll, tpl, name: file.name, onDone, fonts,
     candidates: textCandidates(tokens).map(fit), scanned: !items.length, detected: detectShulAddress(tokens) };
   setDay(detectDate(tokens));
-  st.slots = suggestSlots(tokens, cfg, st.day, st.period).map(fit);
+  let slots = suggestSlots(tokens, cfg, st.day, st.period);
+  // אין תאריך מפורש בקובץ: מנסים לנחש אותו לפי שם הפרשה והזמנים שכבר זוהו
+  if (st.day == null && !isDays()) {
+    const nameSlot = slots.find(s => s.kind === 'parasha' || s.kind === 'parashaName');
+    const guessed = nameSlot ? guessOldDay(nameSlot.old, slots, cfg, docDayNum) : null;
+    if (guessed != null) {
+      setDay(guessed);
+      slots = suggestSlots(tokens, cfg, st.day, st.period);
+      st.autoGuessed = true;
+    }
+  }
+  st.slots = slots.map(fit);
   open();
 }
 
@@ -129,7 +140,8 @@ function close(result) {
 
 function renderOcc() {
   const o = st.period || (st.day != null ? findOccasion(st.day, st.cfg.il) : null);
-  $('tplOcc').textContent = o ? 'הלוח הישן: ' + o.title : 'בחרו את התאריך של הלוח הישן כדי שהאתר יזהה את הכללים.';
+  $('tplOcc').textContent = !o ? 'בחרו את התאריך של הלוח הישן כדי שהאתר יזהה את הכללים.'
+    : 'הלוח הישן: ' + o.title + (st.autoGuessed ? ' (זוהה אוטומטית לפי הפרשה והזמנים – אפשר לתקן)' : '');
 }
 
 $('tplDate').addEventListener('change', () => {
@@ -138,6 +150,7 @@ $('tplDate').addEventListener('change', () => {
   if (!v) return;
   let d = toDayNum(v);
   if (dow(d) === 5 && !isDays()) d++;          // יום שישי ← השבת שאחריו
+  st.autoGuessed = false;
   setDay(d);
   st.slots.forEach(reinfer);
   renderOcc(); renderSlots();

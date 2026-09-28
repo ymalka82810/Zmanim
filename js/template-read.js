@@ -4,9 +4,9 @@
  * ספריית pdf.js נטענת רק כשמעלים קובץ PDF.
  */
 
-import { hm, toDayNum } from './dates.js';
+import { hm, toDayNum, DAY_MS } from './dates.js';
 import { PARSHIYOT, fromHebrew, TISHREI, CHESHVAN, KISLEV, TEVET, SHVAT, ADAR, ADAR2, NISAN, IYYAR, SIVAN, TAMUZ, AV, ELUL } from './hebrew.js';
-import { timesFor, applyOffset } from './luach.js';
+import { timesFor, applyOffset, findOccasion } from './luach.js';
 
 const PDFJS = new URL('../vendor/pdfjs/', import.meta.url).href;   // pdf.js 6.3.289, רישיון Apache 2.0
 const PAGE_W = 1600;   // רוחב התבנית בפיקסלים
@@ -62,8 +62,14 @@ async function readPdf(file) {
   }
   let fonts = {};
   try { fonts = await readFonts(pdfjs, page); } catch (e) { console.warn('לא ניתן לקרוא את הגופנים מהקובץ', e); }
+  let docDayNum = null;
+  try {
+    const meta = await doc.getMetadata();
+    const raw = meta && meta.info && (meta.info.CreationDate || meta.info.ModDate);
+    docDayNum = parsePdfDate(raw);
+  } catch (e) { /* אין מטא-דאטה בקובץ */ }
   task.destroy();
-  return { canvas, items: joinFragments(items), fonts };
+  return { canvas, items: joinFragments(items), fonts, docDayNum };
 }
 
 /**
@@ -150,7 +156,16 @@ async function readImage(file) {
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
-  return { canvas, items: [], fonts: {} };
+  const docDayNum = file.lastModified ? Math.floor(file.lastModified / DAY_MS) : null;
+  return { canvas, items: [], fonts: {}, docDayNum };
+}
+
+/** תאריך יצירה/עדכון מהמטא-דאטה של PDF ("D:20260504153000+03'00'") */
+function parsePdfDate(raw) {
+  const m = /D:(\d{4})(\d{2})(\d{2})/.exec(String(raw || ''));
+  if (!m) return null;
+  const d = toDayNum(m[1] + '-' + m[2] + '-' + m[3]);
+  return isFinite(d) ? d : null;
 }
 
 /**
@@ -355,18 +370,89 @@ export function detectDate(tokens) {
   return null;
 }
 
-/** מנסה למצוא בקובץ הישן את שם בית הכנסת ואת הכתובת, למילוי ראשוני של ההגדרות */
+/** שם הפרשה הקנוני (כמו ב-PARSHIYOT) שמתאים לטקסט שזוהה בקובץ ("לשבת ניצבים-וילך" וכו'), או null */
+function canonicalParasha(text) {
+  const cleaned = String(text || '').replace(/^ל?שבת\s+(?:קודש\s+)?/, '').replace(/^פרשת\s+/, '').trim();
+  if (!cleaned) return null;
+  for (let i = 0; i < PARSHIYOT.length; i++) {
+    const pair = i + 1 < PARSHIYOT.length ? PARSHIYOT[i] + '-' + PARSHIYOT[i + 1] : null;
+    if (pair && new RegExp('^' + spellings(pair) + '$').test(cleaned)) return pair;
+    if (new RegExp('^' + spellings(PARSHIYOT[i]) + '$').test(cleaned)) return PARSHIYOT[i];
+  }
+  return null;
+}
+
+const parseHM = s => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || '').trim()); return m ? +m[1] * 60 + +m[2] : null; };
+/** היום שאליו מתייחס אזור זמן לפי ה"מתי" שלו: ערב (כניסה), מוצאי (יציאה), או היום עצמו */
+const dayForWhen = (occ, when) => when === 'כניסה' ? occ.erev : when === 'יציאה' ? occ.last : occ.first;
+
+/**
+ * ניחוש התאריך של לוח ישן בלי תאריך מפורש בקובץ, לפי שם הפרשה (name – הטקסט שזוהה באזור
+ * הפרשה) והזמנים שכבר זוהו באזורי "זמן היום" (slots): מחפשים בטווח שנים את כל השבתות
+ * שבהן חלה אותה פרשה, ובוחרים לפי ההתאמה הטובה ביותר בין הזמנים בקובץ לזמנים המחושבים
+ * לאותה שבת. אם אין התאמה מספיק ברורה – לפי הקִרבה לתאריך היצירה של הקובץ (docDayNum),
+ * רק אם הפער סביר (לוח נכתב בדרך כלל זמן קצר לפני השבת, לא חודשים לפני).
+ */
+export function guessOldDay(name, slots, cfg, docDayNum) {
+  const target = canonicalParasha(name);
+  if (!target) return null;
+  const today = Math.floor(Date.now() / DAY_MS);
+  const from = today - 365 * 12, to = today + 120;
+  const occs = [];
+  for (let d = from; d <= to;) {
+    const occ = findOccasion(d, cfg.il, 1);
+    if (!occ || occ.first > to) break;
+    if (occ.days.some(x => x.parasha === target)) occs.push(occ);
+    d = occ.last + 1;
+  }
+  if (!occs.length) return null;
+  if (occs.length === 1) return occs[0].first;
+
+  const anchors = (slots || []).filter(s => s.kind === 'zman' && parseHM(s.old) != null)
+    .map(s => ({ min: parseHM(s.old), key: s.zman, when: s.when }));
+  if (anchors.length) {
+    const scored = occs.map(occ => {
+      let total = 0, n = 0;
+      for (const a of anchors) {
+        const t = timesFor(cfg, dayForWhen(occ, a.when));
+        const ms = t[a.key];
+        if (ms == null) continue;
+        const [h, m] = hm(ms, cfg.tz).split(':').map(Number);
+        total += Math.abs(a.min - (h * 60 + m)); n++;
+      }
+      return { occ, avg: n ? total / n : null };
+    }).filter(x => x.avg != null);
+    scored.sort((a, b) => a.avg - b.avg);
+    if (scored.length && scored[0].avg <= 5 && (scored.length < 2 || scored[1].avg - scored[0].avg >= 3)) return scored[0].occ.first;
+  }
+
+  if (docDayNum != null) {
+    const near = occs.map(occ => ({ occ, diff: occ.first - docDayNum })).filter(x => x.diff >= -7 && x.diff <= 45)
+      .sort((a, b) => a.diff - b.diff);
+    if (near.length === 1 || (near.length > 1 && near[1].diff - near[0].diff >= 7)) return near[0].occ.first;
+  }
+  return null;
+}
+
+/**
+ * מנסה למצוא בקובץ הישן את שם בית הכנסת ואת הכתובת – הצעה בלבד, שמוצגת למשתמש לאישור
+ * ולא נכתבת אוטומטית. שם בית הכנסת נלקח רק מהכותרת העליונה או מהשורה התחתונה של העמוד,
+ * כדי שטקסט לא קשור באמצע העמוד (פרסומת, טקסט מוסתר שנשאר בקובץ מתבנית ישנה וכו')
+ * שמזכיר "קהילת" או "בית כנסת" בדרך אגב לא ייתפס בטעות.
+ */
 export function detectShulAddress(tokens) {
-  let shul = null, address = null;
+  let address = null, addrY = Infinity, maxY = 0;
+  const shulCands = [];
   for (const t of tokens) {
     if (t.kind === 'time') continue;
-    if (!address && t.kind === 'address') address = t.str.trim();
-    if (!shul) {
-      const m = SHUL_RE.exec(t.str);
-      if (m && m[1].trim()) shul = m[1].trim();
-    }
-    if (shul && address) break;
+    maxY = Math.max(maxY, t.y + t.h);
+    if (t.kind === 'address' && t.y < addrY) { address = t.str.trim(); addrY = t.y; }
+    const m = SHUL_RE.exec(t.str);
+    if (m && m[1].trim()) shulCands.push({ name: m[1].trim(), y: t.y, bottom: t.y + t.h });
   }
+  const inEdge = c => c.y < maxY * 0.2 || c.bottom > maxY * 0.8;
+  const edgeCands = shulCands.filter(inEdge).sort((a, b) => a.y - b.y);
+  const shul = edgeCands[0] ? edgeCands[0].name : null;
   return { shul, address };
 }
 
