@@ -13,10 +13,14 @@ const RANGES = [[0x20, 0x7e], [0xa0, 0xbf], [0xd7, 0xd7], [0x0591, 0x05f4], [0x2
 
 export const canReadLocalFonts = () => typeof window.queryLocalFonts === 'function';
 
-/** האותיות העבריות שחסרות בגופן המוטמע (ריק אם הגופן לא מוטמע או כבר הושלם) */
+/**
+ * האותיות העבריות שחסרות בגופן המוטמע (ריק אם הגופן לא מוטמע או כבר הושלם).
+ * גופן שאין בו אף אות עברית משמש בקובץ רק לאנגלית, לספרות או לרווחים – ואין בו מה להשלים
+ */
 export function missingLetters(f) {
   if (!f || !f.data || !f.map || f.full) return '';
-  return [...HEB_LETTERS].filter(ch => !(ch in f.map)).join('');
+  const missing = [...HEB_LETTERS].filter(ch => !(ch in f.map));
+  return missing.length < HEB_LETTERS.length ? missing.join('') : '';
 }
 
 /** הגופנים בתבנית שחסרות בהם אותיות: [[מפתח, גופן, אותיות חסרות]] */
@@ -29,58 +33,140 @@ const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const psName = f => f.ps || f.family || '';
 
 /**
+ * גופן שהשם האמיתי שלו לא נשמר בקובץ ("CIDFont+F1", "F3", "TT2", "T1_0" – כך שומרות חלק מהתוכנות):
+ * אי אפשר לחפש אותו לפי השם, ולכן מזהים אותו לפי רוחב האותיות (ראו matchByWidths)
+ */
+export const isUnnamed = f => /^(CIDFont\+)?(F|TT|T\d+_)\d+$/i.test(psName(f));
+
+/** שם הגופן להצגה: השם שזוהה לפי צורת האותיות, או תיאור של גופן בלי שם */
+export function fontLabel(f) {
+  if (f.realName) return f.realName;
+  return isUnnamed(f) ? 'גופן בלי שם (' + psName(f).replace(/^CIDFont\+/i, '') + ')' : f.family;
+}
+
+/** רוחב כל תו בגופן המוטמע, ביחס לגודל הגופן: { תו: רוחב } */
+const widthsCache = new WeakMap();
+async function embeddedWidths(f) {
+  if (!widthsCache.has(f)) {
+    const opentype = await loadOpentype();
+    const bin = atob(f.data), bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const font = opentype.parse(bytes.buffer, { lowMemory: true });
+    const out = {};
+    for (const [ch, fc] of Object.entries(f.map)) {
+      const g = font.charToGlyph(fc);
+      if (g && g.index) out[ch] = g.advanceWidth / font.unitsPerEm;
+    }
+    widthsCache.set(f, out);
+  }
+  return widthsCache.get(f);
+}
+
+/**
+ * הגופן מהרשימה שרוחב האותיות שלו זהה לגופן המוטמע, או null.
+ * רוחבי האותיות נשמרים ב-PDF בדיוק כמו בגופן המקורי, ולכן גופן אחר כמעט אף פעם לא מתאים בכולן.
+ * כשכמה גופנים מתאימים (למשל Arial Bold ו-Arial Bold Italic) – מעדיפים את המשקל והנטייה שבקובץ
+ */
+async function matchByWidths(f, list) {
+  const want = Object.entries(await embeddedWidths(f));
+  const scored = [];
+  for (const x of list) {
+    let n = 0, diff = 0;
+    for (const [ch, w] of want) {
+      const g = x.font.charToGlyph(ch);
+      if (!g || !g.index) continue;
+      n++; diff += Math.abs(g.advanceWidth / x.font.unitsPerEm - w);
+    }
+    // מעט מדי תווים משותפים לא מספיקים לזיהוי
+    if (n >= 3 && n >= want.length * 0.8 && diff / n < 0.004) scored.push({ x, d: diff / n });
+  }
+  if (!scored.length) return null;
+  const best = Math.min(...scored.map(s => s.d));
+  const tied = scored.filter(s => s.d - best < 0.001).map(s => s.x);
+  return tied.find(x => x.bold === !!f.bold && x.italic === !!f.italic) || tied.find(x => x.italic === !!f.italic) || tied[0];
+}
+
+/** כל הגופנים העבריים שבמחשב, לזיהוי גופן בלי שם: [{ ...parseAll, d (הגופן במחשב) }]. לוקח כמה שניות */
+async function localHebrewFonts(list) {
+  const out = [], seen = new Set();
+  for (const d of list) {
+    if (seen.has(d.postscriptName)) continue;
+    seen.add(d.postscriptName);
+    let fonts;
+    try { fonts = await parseAll(await (await d.blob()).arrayBuffer(), true); } catch (e) { continue; }
+    const x = fonts.find(x => x.ps === norm(d.postscriptName)) || (fonts.length === 1 && fonts[0]);
+    if (x && x.font.charToGlyph('א').index) out.push({ ...x, d });
+  }
+  return out;
+}
+
+/**
  * השלמה מהגופנים שמותקנים במחשב. חייב להיקרא ישר מלחיצה (הדפדפן מבקש אישור).
- * מחזיר { filled: [שמות], notFound: [שמות], failed: [{ family, file (שם הגופן במחשב), why }] }.
+ * מחזיר { filled: [שמות], notFound: [שמות], unknown: [גופנים בלי שם שלא זוהו], failed: [{ family, file (שם הגופן במחשב), why }] }.
  * why: 'format' – פורמט שלא ניתן לקרוא (למשל Type 1 ב-Linux), 'noHebrew' – אין בגופן עברית, 'network' – אין חיבור
  */
 export async function fillFromLocal(fonts) {
   const list = await window.queryLocalFonts();
-  const filled = [], notFound = [], failed = [];
+  const filled = [], notFound = [], unknown = [], failed = [];
+  let hebrew = null;   // נסרק רק כשיש גופן בלי שם
   for (const [, f] of fontsToFill(fonts)) {
-    const ps = norm(psName(f)), fam = norm(f.family);
-    const sameFam = list.filter(d => norm(d.family) === fam);
-    const d = list.find(d => norm(d.postscriptName) === ps) || list.find(d => norm(d.fullName) === ps)
-      || sameFam.find(d => /bold|black|heavy/i.test(d.style) === !!f.bold) || sameFam[0];
-    if (!d) { notFound.push(f.family); continue; }
+    let d;
+    if (isUnnamed(f)) {
+      hebrew = hebrew || await localHebrewFonts(list);
+      const hit = await matchByWidths(f, hebrew);
+      if (!hit) { unknown.push(fontLabel(f)); continue; }
+      d = hit.d;
+      f.realName = d.fullName;
+    } else {
+      const ps = norm(psName(f)), fam = norm(f.family);
+      const sameFam = list.filter(d => norm(d.family) === fam);
+      d = list.find(d => norm(d.postscriptName) === ps) || list.find(d => norm(d.fullName) === ps)
+        || sameFam.find(d => /bold|black|heavy/i.test(d.style) === !!f.bold) || sameFam[0];
+    }
+    if (!d) { notFound.push(fontLabel(f)); continue; }
     try {
       // ב-Mac גופנים רבים שמורים באוסף (‎.ttc) – לוקחים ממנו את הגופן שהמחשב מצא
       const list = await parseAll(await (await d.blob()).arrayBuffer());
       if (!list.length) throw Object.assign(new Error('פורמט גופן לא נתמך'), { code: 'format' });
       const src = list.find(x => x.ps === norm(d.postscriptName)) || pick(f, list);
       f.full = await subset(src.font);
-      filled.push(f.family);
+      filled.push(fontLabel(f));
     } catch (e) {
       console.warn('לא ניתן לקרוא את הגופן ' + d.fullName, e);
-      failed.push({ family: f.family, file: d.fullName, why: e.code || 'format' });
+      failed.push({ family: fontLabel(f), file: d.fullName, why: e.code || 'format' });
     }
   }
-  return { filled, notFound, failed };
+  return { filled, notFound, unknown, failed };
 }
 
 /**
  * השלמה מקובץ גופן (‎.ttf/‎.otf, או אוסף ‎.ttc/‎.otc) שהגבאי העלה. הקובץ משלים את הגופנים באותו שם,
- * ואם בלוח יש רק משפחת גופן אחת שחסרות בה אותיות – משלים אותה בכל מקרה.
+ * וגופן בלי שם – כשרוחב האותיות שלו זהה. אם בלוח יש רק משפחת גופן אחת שחסרות בה אותיות – משלים אותה בכל מקרה.
  * מחזיר את שמות הגופנים שהושלמו, או זורק שגיאה עם הסבר
  */
 export async function fillFromFile(fonts, file) {
   const list = await parseAll(await file.arrayBuffer());
   if (!list.length) throw new Error('לא ניתן לקרוא את קובץ הגופן. צריך קובץ ‎.ttf, ‎.otf או ‎.ttc.');
   const need = fontsToFill(fonts);
-  const matches = f => list.some(x => x.names.includes(norm(f.family)) || x.names.includes(norm(psName(f))));
-  let hit = need.filter(([, f]) => matches(f));
-  if (!hit.length && new Set(need.map(([, f]) => f.family)).size === 1) hit = need;
-  if (!hit.length) {
-    throw new Error('הקובץ הוא הגופן ' + list.map(x => x.title).join(', ') + ', ובלוח יש את הגופנים: ' +
-      [...new Set(need.map(([, f]) => f.family))].join(', ') + '.');
+  // [גופן בלוח, הגופן המתאים לו מהקובץ (רגיל או מודגש, כשהקובץ הוא אוסף)]
+  let hit = [];
+  for (const [, f] of need) {
+    const src = isUnnamed(f) ? await matchByWidths(f, list)
+      : list.some(x => x.names.includes(norm(f.family)) || x.names.includes(norm(psName(f)))) ? pick(f, list) : null;
+    if (src) hit.push([f, src]);
   }
-  // כל גופן בלוח מקבל את הגופן המתאים לו מהקובץ (רגיל או מודגש, כשהקובץ הוא אוסף)
+  if (!hit.length && new Set(need.map(([, f]) => f.family)).size === 1) hit = need.map(([, f]) => [f, pick(f, list)]);
+  if (!hit.length) {
+    throw new Error('הקובץ הוא הגופן ' + list.map(x => x.title).join(', ') + ', והוא לא מתאים לגופנים שבלוח: ' +
+      [...new Set(need.map(([, f]) => fontLabel(f)))].join(', ') + '.');
+  }
   const done = new Map();
-  for (const [, f] of hit) {
-    const src = pick(f, list);
+  for (const [f, src] of hit) {
     if (!done.has(src)) done.set(src, await subset(src.font));
     f.full = done.get(src);
+    if (isUnnamed(f)) f.realName = src.title;
   }
-  return [...new Set(hit.map(([, f]) => f.family))];
+  return [...new Set(hit.map(([f]) => fontLabel(f)))];
 }
 
 /** הגופן מהרשימה שהכי מתאים לגופן מה-PDF: לפי השם המלא, אחר כך משפחה ומשקל */
@@ -92,18 +178,21 @@ function pick(f, list) {
   return list.find(x => x.ps === ps) || pool.find(x => x.bold === !!f.bold) || pool[0];
 }
 
-/** כל הגופנים בקובץ: [{ font, names (מנורמלים), ps, title, bold }]. גופן שלא ניתן לקרוא מדולג */
-async function parseAll(buf) {
+/**
+ * כל הגופנים בקובץ: [{ font, names (מנורמלים), ps, title, bold, italic }]. גופן שלא ניתן לקרוא מדולג.
+ * lowMemory: צורות האותיות נקראות רק כשצריך – לסריקה מהירה של כל הגופנים שבמחשב
+ */
+async function parseAll(buf, lowMemory = false) {
   const opentype = await loadOpentype();
   const out = [];
   for (const b of splitCollection(buf)) {
     let font;
-    try { font = opentype.parse(b); } catch (e) { continue; }
-    const n = font.names;
+    try { font = opentype.parse(b, { lowMemory }); } catch (e) { continue; }
+    const n = font.names, os2 = font.tables.os2;
     const vals = k => n[k] ? Object.values(n[k]) : [];
     out.push({ font, title: vals('fullName')[0] || vals('fontFamily')[0] || '', ps: norm(vals('postScriptName')[0]),
       names: ['fontFamily', 'postScriptName', 'fullName', 'preferredFamily'].flatMap(vals).map(norm),
-      bold: ((font.tables.os2 && font.tables.os2.usWeightClass) || 400) >= 600 });
+      bold: ((os2 && os2.usWeightClass) || 400) >= 600, italic: !!(os2 && os2.fsSelection & 1) });
   }
   return out;
 }

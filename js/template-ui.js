@@ -9,7 +9,7 @@ import { analyzeSlot, refineBox, templateCanvas, specialHost } from './template-
 import { findOccasion, findPeriod, periodFor, buildLuach, buildDaysLuach, timesFor } from './luach.js';
 import { toDayNum, toYmd, todayIn, dow } from './dates.js';
 import { esc } from './render.js';
-import { fontsToFill, canReadLocalFonts, fillFromLocal, fillFromFile } from './font-fill.js';
+import { fontsToFill, fontLabel, isUnnamed, canReadLocalFonts, fillFromLocal, fillFromFile } from './font-fill.js';
 
 const $ = id => document.getElementById(id);
 const KINDS = [['text', 'טקסט שכותבים כאן'], ['rule', 'תפילה או שיעור'], ['kiddush', 'קידוש (מלוח הקידושים)'], ['zman', 'זמן היום'], ['title', 'כותרת (שבת פרשת…)'], ['parasha', 'פרשת…'],
@@ -129,22 +129,29 @@ function open() {
   $('tplPreviewWrap').hidden = true;
   st.drawing = false;
   $('tplDraw').setAttribute('aria-pressed', 'false');
-  renderOcc(); renderBoxes(); renderSlots(); renderFontFill();
+  renderOcc(); renderBoxes(); renderSlots();
   window.scrollTo(0, 0);
 }
 
 /* ---------- השלמת אותיות חסרות בגופן מהקובץ ---------- */
 
+/** הגופנים של האזורים הכחולים: בשאר הגופנים לא נכתב טקסט חדש, וגם הם לא נשמרים בתבנית */
+const slotFonts = () => Object.fromEntries(st.slots.map(s => s.box.font).filter(k => st.fonts[k]).map(k => [k, st.fonts[k]]));
+
 /** הודעה כשבגופן המוטמע חסרות אותיות, עם אפשרות להשלים אותן מהמחשב או מקובץ גופן */
 function renderFontFill(done) {
-  const need = fontsToFill(st.fonts);
+  const need = fontsToFill(slotFonts());
   const box = $('tplFontFill');
   box.hidden = !need.length && !done;
   if (box.hidden) return;
-  const letters = [...new Set(need.flatMap(([, , m]) => [...m]))].join(' ');
-  const names = [...new Set(need.map(([, f]) => f.family))].join(', ');
+  // האותיות החסרות לכל גופן בנפרד: "David: צ ץ; Arial: ף"
+  const byFamily = new Map();
+  for (const [, f, m] of need) byFamily.set(fontLabel(f), new Set([...(byFamily.get(fontLabel(f)) || []), ...m]));
+  const list = [...byFamily].map(([name, m]) => name + ': ' + [...m].join(' ')).join('; ');
   $('tplFontMsg').textContent = (done ? done + ' ' : '') + (need.length
-    ? 'בגופן שבקובץ (' + names + ') חסרות האותיות ' + letters + ', ולכן הן ייכתבו בגופן דומה. ' +
+    ? 'בגופנים שבקובץ חסרות אותיות (' + list + '), ולכן הן ייכתבו בגופן דומה. ' +
+      (need.some(([, f]) => isUnnamed(f) && !f.realName)
+        ? 'כשהקובץ לא שומר את שם הגופן, האתר מזהה אותו לפי צורת האותיות. ' : '') +
       (canReadLocalFonts()
         ? 'אם הגופן מותקן במחשב שלך או שיש לך קובץ שלו, אפשר להשלים ממנו את האותיות ולשמור אותן בתבנית.'
         // בטלפון (ובדפדפנים אחרים) אין גישה לגופנים שבמכשיר, ולרוב גם אין קובץ גופן להעלות
@@ -156,13 +163,16 @@ function renderFontFill(done) {
 }
 
 $('tplFontLocal').onclick = async () => {
+  const btn = $('tplFontLocal');
   let res;
-  try { res = await fillFromLocal(st.fonts); }
+  // זיהוי גופן בלי שם סורק את כל הגופנים שבמחשב, וזה לוקח כמה שניות
+  btn.disabled = true;
+  try { res = await fillFromLocal(slotFonts()); }
   catch (e) {
     console.warn('אין גישה לגופנים שבמחשב', e);
     SiteDialog.alert('לא התקבלה גישה לגופנים שבמחשב. אפשר לאשר את הגישה בהגדרות האתר בדפדפן, או להעלות קובץ גופן.');
     return;
-  }
+  } finally { btn.disabled = false; }
   // הסבר נפרד לכל סיבה: לא נמצא, נמצא בפורמט שלא נקרא (Type 1 ב-Linux), בלי עברית, או בלי חיבור
   const WHY = {
     format: x => 'הגופן ' + x.family + ' נמצא במחשב (' + x.file + '), אבל הוא שמור בפורמט ישן שהאתר לא יודע לקרוא. אפשר להעלות קובץ ‎.ttf או ‎.otf שלו.',
@@ -171,6 +181,7 @@ $('tplFontLocal').onclick = async () => {
   };
   const problems = [...new Set([
     ...[...new Set(res.notFound)].map(n => 'הגופן ' + n + ' לא נמצא במחשב. אפשר להעלות קובץ גופן.'),
+    ...[...new Set(res.unknown)].map(n => 'לא נמצא במחשב גופן שהאותיות שלו זהות ל' + n + '. אפשר להעלות קובץ גופן.'),
     ...res.failed.map(x => (WHY[x.why] || WHY.format)(x))
   ])];
   if (res.filled.length) renderFontFill('הושלמו האותיות מהגופן ' + [...new Set(res.filled)].join(', ') + '.');
@@ -181,7 +192,7 @@ $('tplFontFile').onchange = async e => {
   const file = e.target.files[0];
   e.target.value = '';
   if (!file) return;
-  try { renderFontFill('הושלמו האותיות מהגופן ' + (await fillFromFile(st.fonts, file)).join(', ') + '.'); }
+  try { renderFontFill('הושלמו האותיות מהגופן ' + (await fillFromFile(slotFonts(), file)).join(', ') + '.'); }
   catch (err) { SiteDialog.alert(err.message || 'לא ניתן לקרוא את קובץ הגופן.'); }
 };
 
@@ -489,6 +500,8 @@ function slotSum(s) {
 }
 
 function renderSlots() {
+  // אזור שנוסף או הוסר משנה את הגופנים שכותבים בהם
+  renderFontFill();
   if (!st.slots.length) {
     $('tplSlots').innerHTML = '<p class="hint">לא זוהו אזורים. ' + (st.scanned ? 'לחצו "סימון אזור" וגררו על כל שעה בדף.' : '') + '</p>';
     return;
@@ -665,6 +678,7 @@ async function renderTemplatePreview() {
   const canvas = await templateCanvas(tpl, values);
   $('tplPreviewTitle').textContent = 'תצוגה מקדימה – ' + occ.title;
   $('tplPreviewImg').src = canvas.toDataURL('image/png');
+  return canvas;
 }
 
 $('tplPreview').onclick = async () => {
@@ -673,12 +687,15 @@ $('tplPreview').onclick = async () => {
   $('tplPreviewWrap').scrollIntoView({ behavior: 'smooth' });
 };
 
-/* כשהתצוגה המקדימה כבר פתוחה, שינוי גודל טקסט מתעדכן בה מיד ולא רק בלחיצה חוזרת על "תצוגה מקדימה" */
-let previewTimer;
+/* שינוי גודל טקסט מצויר מיד על העמוד שבעורך (ובתצוגה המקדימה), בלי לחכות לשמירה */
+let previewTimer, previewSeq = 0;
 function schedulePreviewRefresh() {
-  if ($('tplPreviewWrap').hidden) return;
   clearTimeout(previewTimer);
-  previewTimer = setTimeout(renderTemplatePreview, 200);
+  previewTimer = setTimeout(async () => {
+    const seq = ++previewSeq, cur = st;
+    const canvas = await renderTemplatePreview();
+    if (seq === previewSeq && cur === st) $('tplImg').src = canvas.toDataURL('image/png');
+  }, 200);
 }
 
 $('tplSave').onclick = () => {
