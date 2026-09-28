@@ -531,12 +531,25 @@ $('tplNewOk').onclick = () => {
   } else toast('התבנית נוצרה. בחרו מתי היא חלה');
 };
 
+const openRules = new WeakSet();   // תפילות שהשורה שלהן פתוחה לעריכה
+
+/** תקציר לשורה הסגורה: מתי, על מה חל, ולפי מה */
+function ruleSum(r, days) {
+  const n = parseInt(r.offset, 10) || 0;
+  const at = r.base === 'שעה קבועה' ? 'בשעה ' + (r.offset || '')
+    : BASES[r.base] === 'kiddush' ? r.base
+    : n ? Math.abs(n) + ' דק׳ ' + (n < 0 ? 'לפני ' : 'אחרי ') + r.base : r.base;
+  return [days ? '' : r.when, r.applies, at].filter(Boolean).join(' · ');
+}
+
 function renderRules() {
   const days = selTpl().kind === 'days';
   $('rules').innerHTML = rules().map((r, i) => {
     const fixed = r.base === 'שעה קבועה';
     const kiddush = BASES[r.base] === 'kiddush';
-    return '<div class="rule" data-i="' + i + '"><div class="rule-top">' +
+    return '<details class="rule" data-i="' + i + '"' + (openRules.has(r) ? ' open' : '') + '>' +
+      '<summary><b class="rule-name">' + (esc(r.name) || 'תפילה חדשה') + '</b><span class="rule-sum">' + esc(ruleSum(r, days)) + '</span></summary>' +
+      '<div class="rule-top">' +
       '<input data-k="name" value="' + esc(r.name) + '" placeholder="שם התפילה או השיעור" aria-label="שם התפילה">' +
       '<button type="button" data-del="' + i + '" aria-label="מחיקת ' + esc(r.name) + '">מחיקה</button></div>' +
       '<div class="rgrid">' +
@@ -550,9 +563,13 @@ function renderRules() {
       '</div>' + (kiddush ? '<p class="hint">הטקסט יתמלא לפי מי שאושר לקידוש בתאריך הזה (מלוח הקידושים של הקהילה). ' +
         'אפשר להשתמש ב-{שם} (שם התורם), ב-{סיבה} (לרגל מה נתרם) וב-{לרגל} (מוסיף "לרגל ..." רק אם יש סיבה). ' +
         'בלי תאריך מאושר, השורה לא תופיע.</p>' : '') +
-      '</div>';
+      '</details>';
   }).join('');
 }
+$('rules').addEventListener('toggle', e => {
+  const r = rules()[+e.target.getAttribute('data-i')];
+  if (r) e.target.open ? openRules.add(r) : openRules.delete(r);
+}, true);
 
 /* ---------- שמירה וסנכרון ---------- */
 
@@ -629,6 +646,9 @@ $('rules').addEventListener('input', e => {
     if (kiddush && /^-?\d+$/.test(r.offset)) r.offset = '';
     if (!kiddush && r.base !== 'שעה קבועה' && r.offset.indexOf(':') >= 0) r.offset = '0';
     renderRules();
+  } else {
+    box.querySelector('.rule-name').textContent = r.name || 'תפילה חדשה';
+    box.querySelector('.rule-sum').textContent = ruleSum(r, selTpl().kind === 'days');
   }
   changed();
 });
@@ -638,7 +658,8 @@ $('rules').addEventListener('click', e => {
   rules().splice(+i, 1); renderRules(); changed();
 });
 $('addRule').onclick = () => {
-  rules().push({ name: '', when: 'כל יום', applies: selTpl().kind === 'days' ? 'כל הימים' : 'שבת וחג', base: 'שקיעה', offset: '0', round: 'ללא' });
+  const r = { name: '', when: 'כל יום', applies: selTpl().kind === 'days' ? 'כל הימים' : 'שבת וחג', base: 'שקיעה', offset: '0', round: 'ללא' };
+  rules().push(r); openRules.add(r);
   renderRules(); changed();
   $('rules').lastElementChild.querySelector('input').focus();
 };
