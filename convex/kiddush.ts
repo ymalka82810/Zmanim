@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -23,13 +23,13 @@ const clip = (s: string, max: number) => s.trim().slice(0, max);
 
 function checkDateKey(dateKey: string) {
   if (!DATE_KEY_RE.test(dateKey)) {
-    throw new Error("תאריך לא תקין");
+    throw new ConvexError("תאריך לא תקין");
   }
 }
 function assertNotPast(dateKey: string) {
   const yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
   if (dateKey < yesterday) {
-    throw new Error("התאריך כבר עבר");
+    throw new ConvexError("התאריך כבר עבר");
   }
 }
 
@@ -44,7 +44,7 @@ async function requireFreeDate(ctx: QueryCtx, synagogueId: Id<"synagogues">, dat
   checkDateKey(dateKey);
   assertNotPast(dateKey);
   if ((await getBooking(ctx, synagogueId, dateKey)) !== null) {
-    throw new Error("התאריך כבר תפוס");
+    throw new ConvexError("התאריך כבר תפוס");
   }
 }
 
@@ -81,7 +81,7 @@ export const board = query({
     const manager = isManager(membership.role);
     const synagogue = await ctx.db.get(args.synagogueId);
     if (synagogue === null) {
-      throw new Error("הקהילה לא נמצאה");
+      throw new ConvexError("הקהילה לא נמצאה");
     }
 
     const bookingDocs = await ctx.db
@@ -160,7 +160,7 @@ export const register = mutation({
     await requireFreeDate(ctx, args.synagogueId, args.dateKey);
     const sponsorName = clip(args.sponsorName, 60);
     if (!sponsorName) {
-      throw new Error("נא למלא שם שיוצג בלוח");
+      throw new ConvexError("נא למלא שם שיוצג בלוח");
     }
     const phone = clip(args.phone, 20);
     await ctx.db.insert("kiddushBookings", {
@@ -196,7 +196,7 @@ export const cancelMine = mutation({
       return;
     }
     if (booking.userId !== userId || booking.manual || booking.status === "blocked") {
-      throw new Error("אפשר לבטל רק רישום שלך");
+      throw new ConvexError("אפשר לבטל רק רישום שלך");
     }
     await ctx.db.delete(booking._id);
     await notify(ctx, args.synagogueId, userId, "managers", args.dateKey,
@@ -210,7 +210,7 @@ export const ackTerms = mutation({
     const { userId } = await requireMember(ctx, args.synagogueId);
     const booking = await getBooking(ctx, args.synagogueId, args.dateKey);
     if (booking === null || booking.userId !== userId || booking.manual) {
-      throw new Error("הרישום לא נמצא");
+      throw new ConvexError("הרישום לא נמצא");
     }
     await ctx.db.patch(booking._id, {
       termsVersion: await currentTermsVersion(ctx, args.synagogueId),
@@ -222,7 +222,7 @@ export const ackTerms = mutation({
 async function requireBooking(ctx: QueryCtx, synagogueId: Id<"synagogues">, dateKey: string): Promise<Doc<"kiddushBookings">> {
   const booking = await getBooking(ctx, synagogueId, dateKey);
   if (booking === null) {
-    throw new Error("הרישום לא נמצא");
+    throw new ConvexError("הרישום לא נמצא");
   }
   return booking;
 }
@@ -249,7 +249,7 @@ export const reject = mutation({
     const { userId } = await requireManager(ctx, args.synagogueId);
     const booking = await requireBooking(ctx, args.synagogueId, args.dateKey);
     if (booking.status === "blocked") {
-      throw new Error("התאריך חסום. יש לשחרר אותו");
+      throw new ConvexError("התאריך חסום. יש לשחרר אותו");
     }
     await ctx.db.delete(booking._id);
     if (!booking.manual) {
@@ -267,7 +267,7 @@ export const block = mutation({
     await requireFreeDate(ctx, args.synagogueId, args.dateKey);
     const blockLabel = clip(args.blockLabel, 40);
     if (!blockLabel) {
-      throw new Error("נא למלא מה יוצג בלוח");
+      throw new ConvexError("נא למלא מה יוצג בלוח");
     }
     await ctx.db.insert("kiddushBookings", {
       synagogueId: args.synagogueId,
@@ -292,7 +292,7 @@ export const unblock = mutation({
     await requireManager(ctx, args.synagogueId);
     const booking = await requireBooking(ctx, args.synagogueId, args.dateKey);
     if (booking.status !== "blocked") {
-      throw new Error("התאריך לא חסום");
+      throw new ConvexError("התאריך לא חסום");
     }
     await ctx.db.delete(booking._id);
   },
@@ -311,7 +311,7 @@ export const registerManual = mutation({
     await requireFreeDate(ctx, args.synagogueId, args.dateKey);
     const sponsorName = clip(args.sponsorName, 60);
     if (!sponsorName) {
-      throw new Error("נא למלא שם שיוצג בלוח");
+      throw new ConvexError("נא למלא שם שיוצג בלוח");
     }
     await ctx.db.insert("kiddushBookings", {
       synagogueId: args.synagogueId,
@@ -350,7 +350,7 @@ export const saveTerms = mutation({
     const intro = clip(args.intro, 2000);
     const items = args.items.map((i) => clip(i, 500)).filter(Boolean).slice(0, 50);
     if (!intro && !items.length) {
-      throw new Error("ההנחיות ריקות");
+      throw new ConvexError("ההנחיות ריקות");
     }
     return await insertTerms(ctx, args.synagogueId, userId, { intro, items, note: clip(args.note, 120) || "עדכון הנחיות" });
   },
@@ -365,7 +365,7 @@ export const restoreTerms = mutation({
       .withIndex("by_synagogue_version", (q) => q.eq("synagogueId", args.synagogueId).eq("version", args.version))
       .unique();
     if (old === null) {
-      throw new Error("הגרסה לא נמצאה");
+      throw new ConvexError("הגרסה לא נמצאה");
     }
     return await insertTerms(ctx, args.synagogueId, userId, {
       intro: old.intro,

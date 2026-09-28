@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
@@ -26,7 +26,7 @@ async function deleteFile(ctx: MutationCtx, file: Doc<"scheduleFiles">) {
 async function requireFile(ctx: MutationCtx, synagogueId: Id<"synagogues">, fileId: Id<"scheduleFiles">) {
   const file = await ctx.db.get(fileId);
   if (file === null || file.synagogueId !== synagogueId) {
-    throw new Error("הקובץ לא נמצא");
+    throw new ConvexError("הקובץ לא נמצא");
   }
   return file;
 }

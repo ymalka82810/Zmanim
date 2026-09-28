@@ -16,7 +16,7 @@ const S = { ready:false, isAuthenticated:false, me:null, synagogues:[], invitati
 
 let toastT;
 function toast(msg){ let t = $('.toast'); if (!t){ t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role','status'); document.body.appendChild(t); } t.textContent = msg; clearTimeout(toastT); toastT = setTimeout(() => t.remove(), 3600); }
-function errMsg(e){ return (e && e.data && typeof e.data === 'string') ? e.data : (e && e.message) || 'משהו השתבש. נסו שוב.'; }
+function errMsg(e){ return (e && typeof e.data === 'string') ? e.data : 'משהו השתבש. נסו שוב.'; }
 
 function openSheet(html){
   $('#sheet').innerHTML = html;

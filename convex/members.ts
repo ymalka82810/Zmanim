@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
@@ -40,7 +40,7 @@ export const list = query({
 
 async function assertNotLastManager(ctx: MutationCtx, synagogueId: Id<"synagogues">, message: string) {
   if ((await countManagers(ctx, synagogueId)) <= 1) {
-    throw new Error(message);
+    throw new ConvexError(message);
   }
 }
 
@@ -50,7 +50,7 @@ async function assertNotSoleInRole(ctx: MutationCtx, synagogueId: Id<"synagogues
     return;
   }
   const label = role === "rabbi" ? "רב" : "גבאי";
-  throw new Error(`אתה ה${label} היחיד בקהילה. יש למנות ${label} אחר במקומך לפני ${action}`);
+  throw new ConvexError(`אתה ה${label} היחיד בקהילה. יש למנות ${label} אחר במקומך לפני ${action}`);
 }
 
 export const setRole = mutation({
@@ -63,7 +63,7 @@ export const setRole = mutation({
     const { userId: callerId, membership: callerMembership } = await requireManager(ctx, args.synagogueId);
     const membership = await getMembership(ctx, args.synagogueId, args.userId);
     if (membership === null) {
-      throw new Error("החבר לא נמצא בקהילה");
+      throw new ConvexError("החבר לא נמצא בקהילה");
     }
     if (membership.role === args.role) {
       return;

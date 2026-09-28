@@ -1,5 +1,5 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 
@@ -11,7 +11,7 @@ export const isManager = (role: Role) => role === "gabbai" || role === "rabbi";
 export async function requireUser(ctx: QueryCtx) {
   const userId = await getAuthUserId(ctx);
   if (userId === null) {
-    throw new Error("יש להתחבר");
+    throw new ConvexError("יש להתחבר");
   }
   return userId;
 }
@@ -27,7 +27,7 @@ export async function requireMember(ctx: QueryCtx, synagogueId: Id<"synagogues">
   const userId = await requireUser(ctx);
   const membership = await getMembership(ctx, synagogueId, userId);
   if (membership === null) {
-    throw new Error("אינך חבר בקהילה הזו");
+    throw new ConvexError("אינך חבר בקהילה הזו");
   }
   return { userId, membership };
 }
@@ -37,7 +37,7 @@ export async function requireManager(ctx: QueryCtx, synagogueId: Id<"synagogues"
   const userId = await requireUser(ctx);
   const membership = await getMembership(ctx, synagogueId, userId);
   if (membership === null || !isManager(membership.role)) {
-    throw new Error("פעולה זו מותרת לגבאי או לרב בלבד");
+    throw new ConvexError("פעולה זו מותרת לגבאי או לרב בלבד");
   }
   return { userId, membership };
 }
@@ -70,7 +70,7 @@ export async function assertRabbiAvailable(
     .collect();
   const hasOtherRabbi = memberships.some((m) => m.role === "rabbi" && m.userId !== excludeUserId);
   if (hasOtherRabbi) {
-    throw new Error("יכול להיות רב אחד בלבד בקהילה");
+    throw new ConvexError("יכול להיות רב אחד בלבד בקהילה");
   }
 }
 

@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -22,14 +22,14 @@ export const create = mutation({
     const { userId } = await requireManager(ctx, args.synagogueId);
     const email = normalizeEmail(args.email);
     if (!EMAIL_RE.test(email)) {
-      throw new Error("כתובת המייל לא תקינה");
+      throw new ConvexError("כתובת המייל לא תקינה");
     }
     const existingUser = await ctx.db
       .query("users")
       .withIndex("email", (q) => q.eq("email", email))
       .first();
     if (existingUser !== null && (await getMembership(ctx, args.synagogueId, existingUser._id)) !== null) {
-      throw new Error("המשתמש כבר חבר בקהילה");
+      throw new ConvexError("המשתמש כבר חבר בקהילה");
     }
     if (args.role === "rabbi") {
       await assertRabbiAvailable(ctx, args.synagogueId);
@@ -155,7 +155,7 @@ async function requireOwnInvitation(ctx: QueryCtx, invitationId: Id<"invitations
   const userId = await requireUser(ctx);
   const invitation = await ctx.db.get(invitationId);
   if (invitation === null || invitation.email !== (await myEmail(ctx, userId))) {
-    throw new Error("ההזמנה לא נמצאה");
+    throw new ConvexError("ההזמנה לא נמצאה");
   }
   return { userId, invitation };
 }

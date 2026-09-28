@@ -1,5 +1,5 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { randomInviteCode } from "./inviteCode";
 import { isManager, requireManager } from "./roles";
@@ -13,7 +13,7 @@ export const create = mutation({
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (userId === null) {
-      throw new Error("יש להתחבר");
+      throw new ConvexError("יש להתחבר");
     }
     const synagogueId = await ctx.db.insert("synagogues", {
       name: args.name,

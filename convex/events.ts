@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
@@ -9,7 +9,7 @@ const clip = (s: string, max: number) => s.trim().slice(0, max);
 
 function checkDateKey(dateKey: string) {
   if (!DATE_KEY_RE.test(dateKey)) {
-    throw new Error("תאריך לא תקין");
+    throw new ConvexError("תאריך לא תקין");
   }
 }
 
@@ -49,7 +49,7 @@ export const add = mutation({
     checkDateKey(args.dateKey);
     const title = clip(args.title, 80);
     if (!title) {
-      throw new Error("נא למלא כותרת לאירוע");
+      throw new ConvexError("נא למלא כותרת לאירוע");
     }
     await ctx.db.insert("communityEvents", {
       synagogueId: args.synagogueId,
@@ -68,11 +68,11 @@ export const update = mutation({
     const { userId } = await requireManager(ctx, args.synagogueId);
     const event = await ctx.db.get(args.id);
     if (event === null || event.synagogueId !== args.synagogueId) {
-      throw new Error("האירוע לא נמצא");
+      throw new ConvexError("האירוע לא נמצא");
     }
     const title = clip(args.title, 80);
     if (!title) {
-      throw new Error("נא למלא כותרת לאירוע");
+      throw new ConvexError("נא למלא כותרת לאירוע");
     }
     await ctx.db.patch(args.id, { title, details: clip(args.details, 300), editedBy: userId, editedAt: Date.now() });
   },
@@ -84,7 +84,7 @@ export const remove = mutation({
     await requireManager(ctx, args.synagogueId);
     const event = await ctx.db.get(args.id);
     if (event === null || event.synagogueId !== args.synagogueId) {
-      throw new Error("האירוע לא נמצא");
+      throw new ConvexError("האירוע לא נמצא");
     }
     await ctx.db.delete(args.id);
   },

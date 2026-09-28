@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -50,10 +50,10 @@ const clip = (s: string | undefined, max: number) => (s ?? "").trim().slice(0, m
 /** מנקה ומאמת רישום. השדות שלא שייכים לסוג הרישום מתאפסים. */
 async function clean(ctx: MutationCtx, synagogueId: Id<"synagogues">, tx: TxInput) {
   if (!(tx.amount > 0 && tx.amount < 1e9)) {
-    throw new Error("יש להזין סכום גדול מאפס");
+    throw new ConvexError("יש להזין סכום גדול מאפס");
   }
   if (!DATE_RE.test(tx.date)) {
-    throw new Error("תאריך לא תקין");
+    throw new ConvexError("תאריך לא תקין");
   }
   const withDonor = DONOR_TYPES.has(tx.type);
   const income = INCOME_TYPES.has(tx.type);
@@ -62,7 +62,7 @@ async function clean(ctx: MutationCtx, synagogueId: Id<"synagogues">, tx: TxInpu
   let donorId: Id<"users"> | undefined = undefined;
   if (withDonor && tx.donorId) {
     if ((await getMembership(ctx, synagogueId, tx.donorId)) === null) {
-      throw new Error("התורם שנבחר אינו חבר בקהילה");
+      throw new ConvexError("התורם שנבחר אינו חבר בקהילה");
     }
     donorId = tx.donorId;
   }
@@ -118,7 +118,7 @@ export const ledger = query({
     const { userId, membership } = await requireMember(ctx, args.synagogueId);
     const synagogue = await ctx.db.get(args.synagogueId);
     if (synagogue === null) {
-      throw new Error("הקהילה לא נמצאה");
+      throw new ConvexError("הקהילה לא נמצאה");
     }
     const base = { synagogue: { name: synagogue.name, il: synagogue.il }, role: membership.role };
 
@@ -257,7 +257,7 @@ export const save = mutation({
     if (id) {
       const existing = await ctx.db.get(id);
       if (existing === null || existing.synagogueId !== synagogueId) {
-        throw new Error("הרישום לא נמצא");
+        throw new ConvexError("הרישום לא נמצא");
       }
       await ctx.db.patch(id, data);
       return id;
@@ -272,7 +272,7 @@ export const markPaid = mutation({
     await requireManager(ctx, args.synagogueId);
     const existing = await ctx.db.get(args.id);
     if (existing === null || existing.synagogueId !== args.synagogueId || !INCOME_TYPES.has(existing.type)) {
-      throw new Error("הרישום לא נמצא");
+      throw new ConvexError("הרישום לא נמצא");
     }
     await ctx.db.patch(args.id, { paid: true, paidDate: DATE_RE.test(args.paidDate) ? args.paidDate : existing.date });
   },
@@ -318,7 +318,7 @@ export const importLocal = mutation({
   handler: async (ctx, args) => {
     const { userId } = await requireManager(ctx, args.synagogueId);
     if (args.txs.length > 2000) {
-      throw new Error("יותר מדי רישומים לייבוא בבת אחת");
+      throw new ConvexError("יותר מדי רישומים לייבוא בבת אחת");
     }
     for (const tx of args.txs) {
       const data = await clean(ctx, args.synagogueId, { ...tx, donorId: null });

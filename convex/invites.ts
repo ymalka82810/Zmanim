@@ -1,5 +1,5 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { requireManager } from "./roles";
 import { randomInviteCode } from "./inviteCode";
@@ -23,14 +23,14 @@ export const join = mutation({
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (userId === null) {
-      throw new Error("יש להתחבר");
+      throw new ConvexError("יש להתחבר");
     }
     const synagogue = await ctx.db
       .query("synagogues")
       .withIndex("by_invite", (q) => q.eq("inviteCode", args.code))
       .unique();
     if (synagogue === null) {
-      throw new Error("קישור ההזמנה לא נמצא");
+      throw new ConvexError("קישור ההזמנה לא נמצא");
     }
     const existingMembership = await ctx.db
       .query("memberships")
