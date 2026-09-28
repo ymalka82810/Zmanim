@@ -347,31 +347,7 @@ function chosenLines(text, lines, count) {
  * shift(cut, end, k) – נקרא על כל הזזה: מה שבין cut ל-end ירד ב-k
  */
 function openRows(canvas, from, to, d, shift) {
-  const W = canvas.width, H = canvas.height, c2 = canvas.getContext('2d', { willReadFrequently: true });
-  const data = c2.getImageData(0, 0, W, H).data;
-  const sample = [];
-  for (let y = 0; y < H; y += 7) for (let x = 0; x < W; x += 7) { const i = (y * W + x) * 4; sample.push([data[i], data[i + 1], data[i + 2]]); }
-  const bg = median(sample);
-  const ink = i => Math.abs(data[i] - bg[0]) + Math.abs(data[i + 1] - bg[1]) + Math.abs(data[i + 2] - bg[2]) > 110;
-  // עמודה שיש בה דיו ברוב הגובה היא קו אנכי (מסגרת): שורה שיש בה רק קווים כאלה היא ריקה
-  const col = new Uint32Array(W);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (ink((y * W + x) * 4)) col[x]++;
-  const blank = new Uint8Array(H);
-  for (let y = 0; y < H; y++) {
-    let n = 0;
-    for (let x = 0; x < W && n <= 2; x++) if (col[x] < H * 0.5 && ink((y * W + x) * 4)) n++;
-    blank[y] = n <= 2;
-  }
-  const runs = [];
-  for (let y = 0, s = -1; y <= H; y++) {
-    if (y < H && blank[y]) { if (s < 0) s = y; } else if (s >= 0) { runs.push({ s, e: y }); s = -1; }
-  }
-  // השורה שבה פותחים: אמצע הרווח הארוך ביותר בין from ל-to
-  let best = null;
-  for (const r of runs) {
-    const s = Math.max(r.s, Math.ceil(from)), e = Math.min(r.e, Math.floor(to));
-    if (e - s > 0 && (!best || e - s > best.e - best.s)) best = { s, e, run: r };
-  }
+  const { W, H, c2, runs, best } = blankGap(canvas, from, to);
   if (!best) return 0;
   const cut = (best.s + best.e) >> 1;
   // השוליים שבתחתית התמונה לא נלקחים
@@ -395,6 +371,119 @@ function openRows(canvas, from, to, d, shift) {
     shift(cut, at, k);
   }
   return Math.ceil(d) - left;
+}
+
+/**
+ * ההפך מ-openRows: סוגר עד d שורות ריקות ברווח שבין from ל-to, ומה שמתחתיו עולה. השורות שנסגרו נוספות
+ * לרווחים הריקים הגדולים שמתחתיו (עד פי 2 מכל רווח), ואם אין כאלה – לשוליים שבתחתית
+ */
+function closeRows(canvas, from, to, d, shift) {
+  const { W, H, c2, runs, best } = blankGap(canvas, from, to);
+  if (!best) return 0;
+  // שורה ריקה אחת לפחות נשארת בין השורות
+  const total = Math.min(Math.ceil(d), best.e - best.s - 1);
+  if (total < 1) return 0;
+  const cut = best.s + ((best.e - best.s - total) >> 1);
+  const blankRow = document.createElement('canvas');
+  blankRow.width = W; blankRow.height = 1;
+  blankRow.getContext('2d').drawImage(canvas, 0, cut, W, 1, 0, 0, W, 1);
+  const below = runs.filter(r => r.s > best.run.e).sort((a, b) => (a.e === H) - (b.e === H) || (b.e - b.s) - (a.e - a.s));
+  const give = [];
+  let left = total;
+  for (const r of below) {
+    if (left <= 0) break;
+    const k = r.e === H ? left : Math.min(left, r.e - r.s);
+    if (k < 1) continue;
+    give.push({ at: r.e === H ? H : r.s + ((r.e - r.s) >> 1), k });
+    left -= k;
+  }
+  if (left > 0) give.push({ at: H, k: left });
+  c2.imageSmoothingEnabled = false;
+  for (const { at, k } of give.sort((a, b) => a.at - b.at)) {
+    const h = at - cut - k;
+    if (h > 0) {
+      const tmp = document.createElement('canvas');
+      tmp.width = W; tmp.height = h;
+      tmp.getContext('2d').drawImage(canvas, 0, cut + k, W, h, 0, 0, W, h);
+      c2.drawImage(tmp, 0, cut);
+    }
+    c2.drawImage(blankRow, 0, 0, W, 1, 0, at - k, W, k);
+    shift(cut + k, at, -k);
+  }
+  return total;
+}
+
+/** השורות הריקות בתמונה (runs: { s, e }), והרווח הריק הארוך ביותר שבין from ל-to (best) */
+function blankGap(canvas, from, to) {
+  const W = canvas.width, H = canvas.height, c2 = canvas.getContext('2d', { willReadFrequently: true });
+  const data = c2.getImageData(0, 0, W, H).data;
+  const sample = [];
+  for (let y = 0; y < H; y += 7) for (let x = 0; x < W; x += 7) { const i = (y * W + x) * 4; sample.push([data[i], data[i + 1], data[i + 2]]); }
+  const bg = median(sample);
+  const ink = i => Math.abs(data[i] - bg[0]) + Math.abs(data[i + 1] - bg[1]) + Math.abs(data[i + 2] - bg[2]) > 110;
+  // עמודה שיש בה דיו ברוב הגובה היא קו אנכי (מסגרת): שורה שיש בה רק קווים כאלה היא ריקה
+  const col = new Uint32Array(W);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (ink((y * W + x) * 4)) col[x]++;
+  const blank = new Uint8Array(H);
+  for (let y = 0; y < H; y++) {
+    let n = 0;
+    for (let x = 0; x < W && n <= 2; x++) if (col[x] < H * 0.5 && ink((y * W + x) * 4)) n++;
+    blank[y] = n <= 2;
+  }
+  const runs = [];
+  for (let y = 0, s = -1; y <= H; y++) {
+    if (y < H && blank[y]) { if (s < 0) s = y; } else if (s >= 0) { runs.push({ s, e: y }); s = -1; }
+  }
+  // הרווח הארוך ביותר בין from ל-to
+  let best = null;
+  for (const r of runs) {
+    const s = Math.max(r.s, Math.ceil(from)), e = Math.min(r.e, Math.floor(to));
+    if (e - s > 0 && (!best || e - s > best.e - best.s)) best = { s, e, run: r };
+  }
+  return { W, H, c2, runs, best };
+}
+
+/**
+ * מספור האזורים לפי הסדר בעמוד: מלמעלה למטה, ובאותה שורה – מימין לשמאל. ranks[i] – המספר של slots[i]
+ */
+export function slotRanks(slots) {
+  const items = slots.map((s, i) => ({ i, x: s.box.x, y: s.box.y, h: s.box.h }));
+  items.sort((a, b) => a.y - b.y);
+  const rows = [];
+  items.forEach(it => {
+    const row = rows.find(r => Math.abs(r.y - it.y) <= it.h * 0.6);
+    if (row) { row.items.push(it); row.y = (row.y * (row.items.length - 1) + it.y) / row.items.length; }
+    else rows.push({ y: it.y, items: [it] });
+  });
+  rows.sort((a, b) => a.y - b.y);
+  const ranks = [];
+  let n = 0;
+  rows.forEach(r => { r.items.sort((a, b) => b.x - a.x); r.items.forEach(it => { ranks[it.i] = ++n; }); });
+  return ranks;
+}
+
+/**
+ * הפסקאות: אזור שסומן joinPrev מצטרף לפסקה של האזור שלפניו בעמוד. הרווח לפני הפסקה נקבע באזור הראשון שלה
+ * (spaceBefore), והרווח אחריה – באחרון (spaceAfter), באחוזים מגודל הטקסט. לכל אזור: { top, bottom } –
+ * { pct } רווח שנקבע, {} אוטומטי, { inner: true } בתוך הפסקה. אזורים בשורה הראשונה או האחרונה מקבלים את רווח הפסקה
+ */
+export function paraEdges(slots) {
+  const ranks = slotRanks(slots);
+  const groups = [];
+  for (const i of slots.map((s, i) => i).sort((a, b) => ranks[a] - ranks[b])) {
+    if (slots[i].joinPrev && groups.length) groups[groups.length - 1].push(slots[i]);
+    else groups.push([slots[i]]);
+  }
+  const sameRow = (a, b) => Math.abs(a.box.y - b.box.y) <= Math.max(a.box.h, b.box.h) * 0.6;
+  const out = new Map();
+  for (const g of groups) {
+    const head = g[0], tail = g[g.length - 1];
+    for (const s of g) out.set(s, {
+      top: !sameRow(s, head) ? { inner: true } : head.spaceBefore != null ? { pct: head.spaceBefore } : {},
+      bottom: !sameRow(s, tail) ? { inner: true } : tail.spaceAfter != null ? { pct: tail.spaceAfter } : {}
+    });
+  }
+  return out;
 }
 
 export async function templateCanvas(tpl, values) {
@@ -474,32 +563,85 @@ export async function templateCanvas(tpl, values) {
       const gap = Math.max(sz * 1.15 * pct, need + sz * 0.15);
       // ריווח פסקה: הרווח שמעל הטקסט ומתחתיו גדול מהרווח שבין שורותיו, כדי שייראה כפסקה נפרדת מהשורות השכנות
       const para = n > 1 ? gap - touch + sz * 0.35 : 0;
-      return { ink, need, gap, para, minPara: n > 1 ? sz * 0.15 : 0, height: g => (n - 1) * g + ink[0].asc + ink[n - 1].desc };
+      return { ink, need, gap, touch, para, minPara: n > 1 ? sz * 0.15 : 0, height: g => (n - 1) * g + ink[0].asc + ink[n - 1].desc };
     };
-    plans.push({ s, text, st, size, minSize, cx, writeAt, lines, w, n, layout });
+    // pen – כותב באותו גופן על קנבס אחר (התמונה שעליה מסדרים את הפסקאות)
+    plans.push({ s, text, st, size, minSize, cx, writeAt, lines, w, n, layout, pen: c => textWriter(c, f, slotLook(s, f, st), cx) });
   }
 
-  // שלב 2: טקסט של כמה שורות שלא נכנס בין השורות השכנות – מורידים את מה שמתחתיו, כשיש בהמשך הדף מקום ריק
+  // שלב 2: ריווח הפסקאות, מלמעלה למטה. הרווח מעל פסקה ומתחתיה נקבע בשורות הריקות שבתמונה (מה שמתחת עולה או יורד),
+  // וטקסט של כמה שורות נכתב כבר כאן על התמונה, כדי שהרווח מהשורה שמתחתיו יימדד מהטקסט החדש
   const spaceOf = (p, sz) => {
     const b = p.s.box;
     return verticalRoom(src, b, Math.min(b.x, p.cx - p.w / 2), Math.max(b.x + b.w, p.cx + p.w / 2), sideBoxes(tpl, p.s), p.st.bg, sz * (p.n + 1), sz);
   };
+  const edges = paraEdges(tpl.slots);
+  // המרווח הרצוי: { px, exact }. exact – בדיוק כך (הגבאי קבע), אחרת – לפחות כך. null – נשאר כמו בקובץ
+  const want = (spec, p, L) => {
+    if (spec.pct != null) return { px: spec.pct / 100 * p.size, exact: true };
+    if (p.n < 2) return null;
+    // בתוך פסקה – כמו הרווח שבין השורות; פסקה אוטומטית – רווח מעט גדול ממנו
+    return { px: spec.inner ? L.gap - L.touch : L.para, exact: false };
+  };
+  // רווח שנקבע מתחת לפסקה נשמר, כדי שרווח קטן יותר שנקבע מעל הפסקה שאחריה לא יבטל אותו (הגדול קובע)
+  const marks = [];
+  const markBelow = (y, px) => { const m = { x: 0, y, w: 0, h: 0, px }; marks.push(m); allBoxes.push(m); };
+  const markAt = (y, p) => marks.find(m => Math.abs(m.y - y) < p.size * 0.3);
+  const resize = (from, to, d) => d > 0.5 ? openRows(src, from, to, d, shiftBoxes) : d < -0.5 ? closeRows(src, from, to, -d, shiftBoxes) : 0;
+  const sctx = src.getContext('2d');
+  sctx.direction = 'rtl';
+  sctx.textAlign = 'center';
+  const done = new Set();
   for (const p of [...plans].sort((a, b) => a.s.box.y - b.s.box.y)) {
-    if (p.n < 2) continue;
-    const L = p.layout(p.size), space = spaceOf(p, p.size);
-    const miss = L.height(L.gap) + 2 * L.para - (space.bottom - space.top);
-    if (miss > 1) openRows(src, p.s.box.y + p.s.box.h, space.bottom + p.size * 0.06, miss, shiftBoxes);
+    const b = p.s.box, e = edges.get(p.s), L = p.layout(p.size), pad = Math.max(1, p.size * 0.06);
+    let top = want(e.top, p, L);
+    const bottom = want(e.bottom, p, L);
+    const baseline = () => b.baseline ?? (b.y + b.h * 0.78);
+    let space = spaceOf(p, p.size);
+    const mark = markAt(space.top - pad, p);
+    if (mark) top = { px: Math.max(mark.px, top ? top.px : 0), exact: true };
+    if (p.n < 2) {
+      // שורה אחת נשארת במקומה, והרווחים שהגבאי קבע נקבעים סביבה
+      if (top) {
+        const inkTop = Math.min(b.y, baseline() - L.ink[0].asc), above = space.top - pad;
+        resize(above, inkTop, top.px - (inkTop - above));
+        space = spaceOf(p, p.size);
+      }
+      if (bottom) {
+        const inkBottom = Math.max(b.y + b.h, baseline() + L.ink[0].desc), below = space.bottom + pad;
+        resize(inkBottom, below, bottom.px - (below - inkBottom));
+        markBelow(inkBottom, bottom.px);
+      }
+      continue;
+    }
+    // כמה שורות: לא נכנס עם הרווחים – מורידים את מה שמתחתיו; נשאר יותר מדי מקום ושני הרווחים נקבעו – מעלים אותו
+    const a = top ? top.px : 0, z = bottom ? bottom.px : 0, h = L.height(L.gap);
+    const miss = h + a + z - (space.bottom - space.top + (top && top.exact ? pad : 0) + (bottom && bottom.exact ? pad : 0));
+    if (miss > 1) openRows(src, b.y + b.h, space.bottom + pad, miss, shiftBoxes);
+    else if (miss < -1 && top && top.exact && bottom && bottom.exact) resize(Math.max(b.y + b.h, space.top - pad + a + h), space.bottom + pad, miss);
+    const inkBottom = paint(p, sctx, p.pen(sctx), top, bottom);
+    done.add(p);
+    if (bottom && bottom.exact) markBelow(inkBottom, bottom.px);
   }
   ctx.drawImage(src, 0, 0);
 
-  // שלב 3: המקום, המרווח והגודל הסופיים, והכתיבה
+  // שלב 3: כתיבת שאר האזורים, והשם שליד השעה
   for (const p of plans) {
-    const { s, st, cx, writeAt, lines, n, minSize } = p, b = s.box;
+    if (!done.has(p)) paint(p, ctx, p.writeAt, null, null);
+    if ((p.s.sizePct || 100) !== 100) redrawLabel(ctx, tpl, p.s, fonts, p.st);
+  }
+
+  /**
+   * המקום, המרווח והגודל הסופיים, והכתיבה על c. top, bottom – הרווח הרצוי מעל ומתחת (מ-want).
+   * מחזיר את תחתית הדיו של הטקסט
+   */
+  function paint(p, c, write, top, bottom) {
+    const { s, st, cx, lines, n, minSize } = p, b = s.box;
     let { size, w } = p;
     const baseline = b.baseline ?? (b.y + b.h * 0.78);
     let L = p.layout(size), lineGap = L.gap;
-    const space = spaceOf(p, size);
-    const avail = space.bottom - space.top, para = L.para, room = avail - 2 * L.minPara;
+    const space = spaceOf(p, size), pad = Math.max(1, size * 0.06);
+    const avail = space.bottom - space.top, room = avail - (top ? L.minPara : 0) - (bottom ? L.minPara : 0);
     // לא נכנס: קודם מצמצמים את ריווח הפסקה, אחר כך את המרווח בין השורות (עד שהן כמעט נוגעות), ואחר כך מקטינים את הטקסט
     if (L.height(lineGap) > room && n > 1) lineGap = Math.max(L.need, lineGap - (L.height(lineGap) - room) / (n - 1));
     if (L.height(lineGap) > room && size > minSize) {
@@ -507,24 +649,30 @@ export async function templateCanvas(tpl, values) {
       size *= k;
       L = p.layout(size);
       lineGap = Math.max(L.need, lineGap * k);
-      w = Math.max(...lines.map(ln => writeAt(ln, size, baseline, false)));
+      w = Math.max(...lines.map(ln => p.writeAt(ln, size, baseline, false)));
     }
-    // השורות ממורכזות סביב קו הבסיס המקורי, ומוזזות מעט למעלה או למטה כדי לא לעלות על השורה השכנה
+    // השורות ממורכזות סביב קו הבסיס המקורי, ומוזזות למעלה או למטה לפי הרווחים שמעליהן ומתחתיהן.
+    // רווח שהגבאי קבע נמדד מהדיו השכן עצמו; כשאין מספיק מקום, הרווחים קטנים באותו יחס
     const first = baseline - (n - 1) / 2 * lineGap;
     const top0 = first - L.ink[0].asc, bottom0 = first + (n - 1) * lineGap + L.ink[n - 1].desc;
-    const cl = Math.max(0, Math.min(para, (avail - (bottom0 - top0)) / 2));
-    const fit = { top: space.top + cl, bottom: space.bottom - cl };
-    const shift = bottom0 - top0 > avail ? (space.top + space.bottom) / 2 - (top0 + bottom0) / 2
-      : top0 < fit.top ? fit.top - top0 : bottom0 > fit.bottom ? fit.bottom - bottom0 : 0;
+    const lo0 = space.top - (top && top.exact ? pad : 0), hi0 = space.bottom + (bottom && bottom.exact ? pad : 0);
+    const a = top ? top.px : 0, z = bottom ? bottom.px : 0, slack = hi0 - lo0 - (bottom0 - top0);
+    let shift;
+    if (slack < 0) shift = (space.top + space.bottom) / 2 - (top0 + bottom0) / 2;
+    else {
+      const k = a + z > slack ? slack / (a + z) : 1, lo = lo0 + a * k, hi = hi0 - z * k;
+      shift = top && top.exact ? lo - top0 : bottom && bottom.exact ? hi - bottom0
+        : top0 < lo ? lo - top0 : bottom0 > hi ? hi - bottom0 : 0;
+    }
     const baselines = lines.map((ln, i) => first + shift + i * lineGap);
     const left = Math.min(b.x, cx - w / 2) - 2, right = Math.max(b.x + b.w, cx + w / 2) + 2;
     // הרקע מכסה את הטקסט המקורי ואת הדיו של החדש, ולא יותר – כדי לא למחוק את השורה השכנה
-    const top = Math.min(b.y, baselines[0] - L.ink[0].asc - 2) - 1, bottom = Math.max(b.y + b.h, baselines[n - 1] + L.ink[n - 1].desc + 2) + 1;
-    ctx.fillStyle = st.bg;
-    ctx.fillRect(left, top, right - left, bottom - top);
-    ctx.fillStyle = st.fg;
-    lines.forEach((ln, i) => writeAt(ln, size, baselines[i], true));
-    if ((s.sizePct || 100) !== 100) redrawLabel(ctx, tpl, s, fonts, st);
+    const y0 = Math.min(b.y, baselines[0] - L.ink[0].asc - 2) - 1, y1 = Math.max(b.y + b.h, baselines[n - 1] + L.ink[n - 1].desc + 2) + 1;
+    c.fillStyle = st.bg;
+    c.fillRect(left, y0, right - left, y1 - y0);
+    c.fillStyle = st.fg;
+    lines.forEach((ln, i) => write(ln, size, baselines[i], true));
+    return baselines[n - 1] + L.ink[n - 1].desc;
   }
   return canvas;
 }

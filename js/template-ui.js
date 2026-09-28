@@ -5,7 +5,7 @@
 
 import { BASES, WHEN, WHEN_LABELS, ROUND, SIZES, DAY_APPLIES, appliesOnDay, prayerBases, designOf } from './config.js';
 import { readFile, tokenize, detectDate, detectHebDate, detectShulAddress, suggestSlots, textCandidates, ruleOptions, agreeRules, printedTimes, approxStart, guessOldDay } from './template-read.js';
-import { analyzeSlot, refineBox, inkLines, templateCanvas, specialHost, slotText, slotLook, wordLine } from './template-render.js';
+import { analyzeSlot, refineBox, inkLines, templateCanvas, specialHost, slotText, slotLook, wordLine, slotRanks as pageRanks } from './template-render.js';
 import { findOccasion, findPeriod, periodFor, buildLuach, buildDaysLuach, timesFor } from './luach.js';
 import { toDayNum, toYmd, todayIn, dow } from './dates.js';
 import { esc } from './render.js';
@@ -294,21 +294,7 @@ function boxStyle(b) {
 }
 
 /** מספור האזורים לפי מיקומם בעמוד (שורה עליונה למטה, בכל שורה מימין לשמאל) ולא לפי סדר ההוספה */
-function slotRanks() {
-  const items = st.slots.map((s, i) => ({ i, x: s.box.x, y: s.box.y, h: s.box.h }));
-  items.sort((a, b) => a.y - b.y);
-  const rows = [];
-  items.forEach(it => {
-    const row = rows.find(r => Math.abs(r.y - it.y) <= it.h * 0.6);
-    if (row) { row.items.push(it); row.y = (row.y * (row.items.length - 1) + it.y) / row.items.length; }
-    else rows.push({ y: it.y, items: [it] });
-  });
-  rows.sort((a, b) => a.y - b.y);
-  const ranks = [];
-  let n = 0;
-  rows.forEach(r => { r.items.sort((a, b) => b.x - a.x); r.items.forEach(it => { ranks[it.i] = ++n; }); });
-  return ranks;
-}
+const slotRanks = () => pageRanks(st.slots);
 
 function unionBox(a, b) {
   const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
@@ -566,6 +552,32 @@ function ruleChoices(s) {
     '</div></div>';
 }
 
+/** הרווחים לפני פסקה ואחריה, באחוזים מגובה הטקסט */
+const SPACES = [[0, 'ללא'], [25, 'רבע שורה'], [50, 'חצי שורה'], [75, '¾ שורה'], [100, 'שורה'], [150, 'שורה וחצי'], [200, 'שתי שורות']];
+
+/**
+ * הפסקה של האזור: צירוף לפסקה של האזור שלפניו בעמוד, והרווח לפני הפסקה ואחריה.
+ * הרווח לפני נקבע באזור הראשון בפסקה, והרווח אחרי – באחרון. order – סדר האזורים בעמוד (אינדקסים ב-st.slots)
+ */
+function paraFields(s, i, order, ranks) {
+  const pos = order.indexOf(i), prev = order[pos - 1], next = st.slots[order[pos + 1]];
+  const joined = !!s.joinPrev && prev != null;
+  // האזורים שבפסקה: מהראשון (שלא מצורף לקודם) עד האחרון (שהבא אחריו לא מצורף אליו)
+  let a = pos, z = pos;
+  while (a > 0 && st.slots[order[a]].joinPrev) a--;
+  while (z < order.length - 1 && st.slots[order[z + 1]].joinPrev) z++;
+  const spaceOpts = v => '<option value=""' + (v == null ? ' selected' : '') + '>אוטומטי</option>' +
+    SPACES.map(([n, t]) => '<option value="' + n + '"' + (n === v ? ' selected' : '') + '>' + t + '</option>').join('');
+  const where = a === z ? '' : ' (הפסקה: אזורים ' + ranks[order[a]] + '–' + ranks[order[z]] + ')';
+  return '<div class="rgrid">' +
+    (prev != null ? '<div class="wide"><label class="check"><input type="checkbox" data-k="joinPrev"' + (joined ? ' checked' : '') +
+      '> באותה פסקה עם האזור שלפניו (' + ranks[prev] + ')</label></div>' : '') +
+    (joined ? '' : '<div><label>רווח לפני הפסקה' + where + '</label><select data-k="spaceBefore">' + spaceOpts(s.spaceBefore) + '</select></div>') +
+    (next && next.joinPrev ? '' : '<div><label>רווח אחרי הפסקה' + where + '</label><select data-k="spaceAfter">' + spaceOpts(s.spaceAfter) + '</select></div>') +
+    '<p class="hint wide">הרווח נמדד מהשורה הסמוכה, ביחס לגובה הטקסט. אוטומטי – כמו בקובץ (טקסט של כמה שורות מקבל רווח מעט גדול מהרווח שבין שורותיו). ' +
+    'כדי לצרף לפסקה שורה שאין בה זמן, לחצו עליה בדף והיא תהפוך לאזור של טקסט קבוע.</p></div>';
+}
+
 /** גודל הטקסט, הדגשה, נטייה וריווח השורות באזור, בנפרד מהאזורים האחרים */
 function sizeFields(s) {
   const sizeOpts = v => SIZES.map(n => '<option value="' + n + '"' + (n === (v || 100) ? ' selected' : '') + '>' + n + '%</option>').join('');
@@ -656,7 +668,7 @@ function renderSlots() {
     '<summary><span class="num">' + ranks[i] + '</span><b class="rule-name">' + esc(slotLabel(s)) + '</b>' +
     '<span class="rule-sum">' + esc(slotSum(s)) + '</span></summary>' +
     '<div class="slot-top"><select data-k="kind" aria-label="מה יופיע באזור ' + ranks[i] + '">' + opts(KINDS, s.kind) + '</select>' +
-    '<button type="button" class="del" data-del="' + i + '">הסרה</button></div>' + slotFields(s) + sizeFields(s) + '</details>'
+    '<button type="button" class="del" data-del="' + i + '">הסרה</button></div>' + slotFields(s) + sizeFields(s) + paraFields(s, i, order, ranks) + '</details>'
   ).join('') + specialHint();
 }
 
@@ -691,6 +703,8 @@ $('tplSlots').addEventListener('input', e => {
     focusSlot(+ed.dataset.i); return;
   }
   if (k === 'sizePct' || k === 'lineHeightPct') { s[k] = Number(v); schedulePreviewRefresh(); return; }
+  if (k === 'spaceBefore' || k === 'spaceAfter') { if (v === '') delete s[k]; else s[k] = Number(v); schedulePreviewRefresh(); return; }
+  if (k === 'joinPrev') { if (e.target.checked) s.joinPrev = true; else delete s.joinPrev; renderSlots(); schedulePreviewRefresh(); return; }
   if (k === 'lineCount') { s.lineCount = Number(v); ed.querySelector('.wrap-lines').innerHTML = wrapLines(s); schedulePreviewRefresh(); return; }
   if (k === 'wrap') { s.wrap = e.target.checked; renderSlots(); schedulePreviewRefresh(); return; }
   if (k === 'day') {
@@ -838,6 +852,10 @@ function builtSlots() {
     // הדגשה ונטייה נשמרות רק כשהגבאי בחר בהן. בלי בחירה – כמו בקובץ
     if (s.bold != null) c.bold = s.bold;
     if (s.italic != null) c.italic = s.italic;
+    // ריווח הפסקה נשמר רק כשהגבאי קבע אותו. בלי – כמו בקובץ
+    if (s.joinPrev) c.joinPrev = true;
+    if (s.spaceBefore != null) c.spaceBefore = s.spaceBefore;
+    if (s.spaceAfter != null) c.spaceAfter = s.spaceAfter;
     c.wrap = !!s.wrap;
     if (c.wrap) {
       c.lineHeightPct = s.lineHeightPct || 100;
