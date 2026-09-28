@@ -250,19 +250,23 @@ const spellings = name => [...name].map((c, i) => c === ' ' ? '\\s+' : i > 0 && 
 const NAMES = '(?:' + [...PARSHIYOT].sort((a, b) => b.length - a.length).map(spellings).join('|') + ')(?![א-ת])';
 const PAIR = NAMES + '(?:\\s*[-–־]\\s*' + NAMES + ')?';
 const PARASHA_RE = new RegExp('פרשת\\s+' + PAIR);
-// "לשבת ניצבים-וילך", "שבת קודש וירא" – בלי המילה "פרשת". האזור הוא שם הפרשה בלבד
-const NAME_RE = new RegExp('(?:^|[^א-ת])ל?שבת\\s+(?:קודש\\s+)?(' + PAIR + ')');
+// "לשבת ניצבים-וילך", "שבת קודש וירא" – בלי המילה "פרשת". האזור כולל את "לשבת", שנשמר כטקסט קבוע לפני השם
+const NAME_RE = new RegExp('(?:^|[^א-ת])(ל?שבת\\s+(?:קודש\\s+)?)(' + PAIR + ')');
+const PREFIX_RE = /^ל?שבת(?:\s+קודש)?$/;
 // המקף בקצה הפריט כבר הוסר ב-trimSeparators
 const PAIR_TAIL_RE = new RegExp('^[-–־]?\\s*' + NAMES + '\\s*[-–־]?$');
 
 /** טקסט רגיל; אם יש בו פרשה באמצע שורה (למשל "זמני תפילות – פרשת וירא"), הפרשה הופכת לאזור נפרד */
 function pushText(tokens, it) {
   const kind = classifyText(it.str);
-  let m = kind === 'text' && PARASHA_RE.exec(it.str), pk = 'parasha', at, s;
+  let m = kind === 'text' && PARASHA_RE.exec(it.str), pk = 'parasha', at, s, prefix;
   if (m) { at = m.index; s = m[0]; }
-  else if (kind === 'text' && (m = NAME_RE.exec(it.str))) { pk = 'parashaName'; s = m[1]; at = m.index + m[0].length - s.length; }
+  else if (kind === 'text' && (m = NAME_RE.exec(it.str))) {
+    pk = 'parashaName'; s = m[1] + m[2]; at = m.index + m[0].length - s.length;
+    prefix = m[1].replace(/\s+/g, ' ');
+  }
   if (!m) { tokens.push({ ...it, kind }); return; }
-  tokens.push({ ...it, ...subBox(it, at, s), str: s, kind: pk });
+  tokens.push({ ...it, ...subBox(it, at, s), str: s, kind: pk, ...(prefix ? { prefix } : {}) });
   const rest = (it.str.slice(0, at) + ' ' + it.str.slice(at + s.length)).replace(/[\s|–-]+/g, ' ').trim();
   if (/[א-ת]/.test(rest)) tokens.push({ ...it, ...restBox(it, at, s), str: rest, kind: 'text', partOf: true });
 }
@@ -276,6 +280,18 @@ function restBox(it, at, s) {
 /** פרשות מחוברות שנשמרו בשני פריטים ("…ניצבים" ו"-וילך"): מחברים לאזור אחד */
 function joinParashaPairs(tokens) {
   const drop = new Set();
+  const absorb = (p, t) => {
+    const x = Math.min(p.x, t.x);
+    p.w = Math.max(p.x + p.w, t.x + t.w) - x; p.x = x;
+    drop.add(t);
+  };
+  // שם פרשה בודד ("וילך") ש"לשבת" לפניו בפריט נפרד
+  for (const t of tokens) {
+    if (t.kind !== 'text' || !new RegExp('^' + PAIR + '$').test(t.str)) continue;
+    const pre = tokens.find(x => x.kind === 'text' && !drop.has(x) && PREFIX_RE.test(x.str) && sameLine(x, t) &&
+      x.x > t.x && x.x - (t.x + t.w) < t.size * 1.5);
+    if (pre) { t.kind = 'parashaName'; t.prefix = pre.str.replace(/\s+/g, ' ') + ' '; t.str = pre.str + ' ' + t.str; absorb(t, pre); }
+  }
   for (const p of tokens) {
     if (p.kind !== 'parasha' && p.kind !== 'parashaName') continue;
     if (new RegExp('[-–־]\\s*' + NAMES + '$').test(p.str)) continue;
@@ -283,9 +299,7 @@ function joinParashaPairs(tokens) {
       Math.abs(p.x - (t.x + t.w)) < p.size * 1.5 && Math.abs(t.x - p.x) > 1);
     if (!tail) continue;
     p.str = p.str + '-' + tail.str.replace(/^[-–־\s]+|[-–־\s]+$/g, '');
-    const x = Math.min(p.x, tail.x);
-    p.w = Math.max(p.x + p.w, tail.x + tail.w) - x; p.x = x;
-    drop.add(tail);
+    absorb(p, tail);
   }
   return tokens.filter(t => !drop.has(t));
 }
@@ -497,7 +511,7 @@ const isFixedKind = k => ['title', 'parasha', 'parashaName', 'hebDate', 'gregDat
 function fixedSlot(t, box) {
   if (t.kind === 'gregDate') return { box, kind: 'gregDate', old: t.str, fmt: gregFormat(t.str) };
   if (t.kind === 'address') return { box, kind: 'address', old: t.str };
-  return { box, kind: t.kind, old: t.str, ascii: /["']/.test(t.str) && !/[״׳]/.test(t.str), noYear: t.kind === 'hebDate' && !HEB_DATE_RE.exec(t.str)[3] };
+  return { box, kind: t.kind, old: t.str, ...(t.prefix ? { prefix: t.prefix } : {}), ascii: /["']/.test(t.str) && !/[״׳]/.test(t.str), noYear: t.kind === 'hebDate' && !HEB_DATE_RE.exec(t.str)[3] };
 }
 
 /** כמו suggestSlots, ללוח של ימי חול: היום נקבע לפי שם היום בשורה או בכותרת שמעל */

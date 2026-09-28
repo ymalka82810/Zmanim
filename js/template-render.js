@@ -97,8 +97,8 @@ export function slotValue(slot, v) {
     case 'rule': return v.rules[slot.when + '|' + slot.name] ?? null;
     case 'zman': return (v.zmanim[slot.when] || {})[slot.zman] ?? null;
     case 'title': return v.title;
-    case 'parasha': return v.parasha;
-    case 'parashaName': return v.parashaName;
+    case 'parasha': return (slot.prefix || '') + v.parasha;
+    case 'parashaName': return (slot.prefix || '') + v.parashaName;
     // בלי כתובת בהגדרות – הכתובת מהקובץ נשארת כמו שהיא
     case 'address': return v.address || null;
     case 'hebDate': {

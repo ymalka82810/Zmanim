@@ -177,22 +177,54 @@ function slotRanks() {
   return ranks;
 }
 
+function unionBox(a, b) {
+  const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+  return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
+}
+
 function renderBoxes() {
   const ranks = slotRanks();
   let h = '';
   const same = (a, b) => a && a.x === b.x && a.y === b.y;
   st.candidates.forEach((c, i) => {
-    if (st.slots.some(s => same(s.box, c.box) || same(s.labelBox, c.box))) return;
+    if (st.slots.some(s => same(s.box, c.box) || same(s.labelBox, c.box) || covers(s.box, c.box))) return;
     h += '<button type="button" class="tb cand" data-c="' + i + '" style="' + boxStyle(c.box) + '" title="' + esc(c.old) + '" aria-label="הוספת אזור: ' + esc(c.old) + '"></button>';
   });
   st.slots.forEach((s, i) => {
-    // השם שליד השעה – מסומן יחד עם האזור, כדי שיהיה ברור לאיזו שעה הוא שייך
-    if (s.labelBox && (s.kind === 'rule' || s.kind === 'zman')) {
-      h += '<button type="button" class="tb lab" data-s="' + i + '" style="' + boxStyle(s.labelBox) + '" title="השם של אזור ' + ranks[i] + '" aria-label="השם של אזור ' + ranks[i] + '"></button>';
-    }
-    h += '<button type="button" class="tb slot" data-s="' + i + '" style="' + boxStyle(s.box) + '" aria-label="אזור ' + ranks[i] + '"><span>' + ranks[i] + '</span></button>';
+    // שעה עם השם שלידה: מסגרת אחת לשניהם, ובתוכה מסומן המקום שבו תיכתב השעה החדשה
+    const lb = (s.kind === 'rule' || s.kind === 'zman') && s.labelBox;
+    const outer = lb ? unionBox(s.box, lb) : s.box;
+    h += '<button type="button" class="tb slot" data-s="' + i + '" style="' + boxStyle(outer) + '" aria-label="אזור ' + ranks[i] + '"><span>' + ranks[i] + '</span></button>';
+    if (lb) h += '<div class="tb val" style="' + boxStyle(s.box) + '"></div>';
   });
+  const sel = st.slots[st.sel];
+  if (sel && !st.drawing) {
+    // ידיות למתיחת האזור הנבחר
+    const b = sel.box, at = (right, top) => 'right:' + pct(right, st.W) + ';top:' + pct(top, st.H);
+    for (const [edge, r, t, label] of [['r', st.W - b.x - b.w, b.y + b.h / 2, 'שמאל'], ['l', st.W - b.x, b.y + b.h / 2, 'ימין'],
+      ['t', st.W - b.x - b.w / 2, b.y, 'למעלה'], ['b', st.W - b.x - b.w / 2, b.y + b.h, 'למטה']]) {
+      h += '<div class="rh rh-' + edge + '" data-edge="' + edge + '" style="' + at(r, t) + '" title="מתיחת האזור ' + label + '"></div>';
+    }
+  }
   $('tplBoxes').innerHTML = h;
+}
+
+/** האם מרכז התיבה b נמצא בתוך a */
+const covers = (a, b) => {
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  return cx > a.x && cx < a.x + a.w && cy > a.y && cy < a.y + a.h;
+};
+
+/**
+ * אזור של פרשה שנמתח על טקסט שלפניו ("לשבת", "זמני התפילות לשבת"): הטקסט המכוסה נשמר
+ * כטקסט שלפני הפרשה ונכתב מחדש יחד איתה. nameBox – האזור לפני המתיחה הראשונה
+ */
+function stretchPrefix(s) {
+  const edge = s.nameBox.x + s.nameBox.w - 2;
+  const words = st.candidates.filter(c => covers(s.box, c.box) && c.box.x + c.box.w / 2 > edge)
+    .sort((a, b) => b.box.x - a.box.x).map(c => c.old);
+  const all = [...words, (s.autoPrefix || '').trim()].filter(Boolean);
+  s.prefix = all.length ? all.join(' ') + ' ' : '';
 }
 
 $('tplBoxes').addEventListener('click', e => {
@@ -209,7 +241,8 @@ function focusSlot(i) {
   const s = st.slots[i];
   if (!s) return;
   openSlots.add(s);
-  renderSlots();
+  st.sel = i;
+  renderBoxes(); renderSlots();
   const ed = document.querySelector('.slot-ed[data-i="' + i + '"]');
   if (!ed) return;
   document.querySelectorAll('.slot-ed.sel').forEach(x => x.classList.remove('sel'));
@@ -229,7 +262,18 @@ const toImg = (e) => {
   const r = $('tplPage').getBoundingClientRect();
   return { x: (e.clientX - r.left) / r.width * st.W, y: (e.clientY - r.top) / r.height * st.H };
 };
+let resize = null;
 $('tplPage').addEventListener('pointerdown', e => {
+  const h = st && !st.drawing && e.target.closest('.rh');
+  if (h) {
+    e.preventDefault();
+    $('tplPage').setPointerCapture(e.pointerId);
+    const s = st.slots[st.sel];
+    s.box = { ...s.box };   // אזור שנוצר מטקסט בדף חולק איתו את אותה תיבה
+    if (!s.nameBox) { s.nameBox = { ...s.box }; s.autoPrefix = s.prefix || ''; }
+    resize = { s, edge: h.dataset.edge };
+    return;
+  }
   if (!st || !st.drawing) return;
   e.preventDefault();
   $('tplPage').setPointerCapture(e.pointerId);
@@ -238,12 +282,31 @@ $('tplPage').addEventListener('pointerdown', e => {
   $('tplBoxes').appendChild(drag.el);
 });
 $('tplPage').addEventListener('pointermove', e => {
+  if (resize) {
+    const p = toImg(e), b = resize.s.box, MIN = 8;
+    const r = b.x + b.w, bot = b.y + b.h;
+    if (resize.edge === 'l') { b.x = Math.min(p.x, r - MIN); b.w = r - b.x; }
+    if (resize.edge === 'r') b.w = Math.max(MIN, p.x - b.x);
+    if (resize.edge === 't') { b.y = Math.min(p.y, bot - MIN); b.h = bot - b.y; }
+    if (resize.edge === 'b') b.h = Math.max(MIN, p.y - b.y);
+    renderBoxes();
+    return;
+  }
   if (!drag) return;
   const p = toImg(e), s = drag.start;
   drag.box = { x: Math.min(s.x, p.x), y: Math.min(s.y, p.y), w: Math.abs(p.x - s.x), h: Math.abs(p.y - s.y) };
   drag.el.setAttribute('style', boxStyle(drag.box));
 });
 $('tplPage').addEventListener('pointerup', () => {
+  if (resize) {
+    const s = resize.s, b = s.box;
+    resize = null;
+    // קו הבסיס של הכתיבה נשאר, אלא אם האזור זז ממנו
+    if (b.baseline != null && (b.baseline < b.y || b.baseline > b.y + b.h)) b.baseline = b.y + b.h * 0.78;
+    if (s.kind === 'parasha' || s.kind === 'parashaName') stretchPrefix(s);
+    renderBoxes(); renderSlots();
+    return;
+  }
   if (!drag) return;
   const b = drag.box;
   drag.el.remove(); drag = null;
@@ -275,6 +338,10 @@ function slotFields(s) {
         : '<div><label>הפרש (דקות)</label><div class="offset-pair"><input data-k="offsetAbs" type="number" min="0" inputmode="numeric" dir="ltr" value="' +
           esc(offsetAbs(s)) + '" placeholder="20"><select data-k="offsetDir">' + opts(['אחרי', 'לפני'], offsetDir(s)) + '</select></div></div>') +
       '<div><label>עיגול</label><select data-k="round"' + (fixed || kd ? ' disabled' : '') + '>' + opts(ROUND, s.round) + '</select></div></div>';
+  }
+  if (s.kind === 'parasha' || s.kind === 'parashaName') {
+    return '<div class="rgrid"><div class="wide"><label>טקסט לפני הפרשה</label><input data-k="prefix" value="' + esc(s.prefix || '') +
+      '" placeholder="למשל: לשבת"></div></div>';
   }
   if (s.kind === 'zman') {
     return '<div class="rgrid">' +
@@ -368,6 +435,7 @@ $('tplSlots').addEventListener('click', async e => {
   if (i == null) return;
   if (!await SiteDialog.confirm('להסיר את האזור מהתבנית?', { ok: 'הסרה', danger: true })) return;
   st.slots.splice(+i, 1);
+  st.sel = null;
   renderBoxes(); renderSlots();
 });
 
@@ -431,6 +499,7 @@ function buildTemplate() {
   const slots = st.slots.map(s => {
     const c = { box: s.box, kind: s.kind, old: s.old || '' };
     if (s.labelBox) c.labelBox = s.labelBox;
+    if ((s.kind === 'parasha' || s.kind === 'parashaName') && s.prefix && s.prefix.trim()) c.prefix = s.prefix.trim() + ' ';
     if (s.kind === 'rule') Object.assign(c, { name: String(s.name).trim(), when: s.when });
     if (s.kind === 'zman') Object.assign(c, { zman: s.zman, when: s.when });
     if (s.kind === 'hebDate') Object.assign(c, { ascii: !!s.ascii, noYear: !!s.noYear });

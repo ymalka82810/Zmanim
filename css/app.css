@@ -190,10 +190,13 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .tb { position: absolute; padding: 0; border-radius: 2px; min-width: 6px; min-height: 6px; }
 .tb.cand { border: 1px dashed #9aa7ba; background: rgba(154, 167, 186, .08); }
 .tb.cand:hover { background: rgba(44, 74, 124, .15); }
-.tb.slot { border: 2px solid var(--blue); background: rgba(44, 74, 124, .12); }
+.tb.slot { border: 2px solid var(--blue); background: rgba(44, 74, 124, .06); }
 .tb.slot span { position: absolute; top: -9px; right: -9px; background: var(--blue); color: var(--on-accent); font-size: 11px; line-height: 16px; min-width: 16px; border-radius: 8px; padding: 0 3px; }
-.tb.lab { border: 1px solid var(--blue); background: rgba(44, 74, 124, .05); }
+.tb.val { border: 1px dashed var(--blue); background: rgba(44, 74, 124, .14); pointer-events: none; }
 .tb.drag { pointer-events: none; }
+.rh { position: absolute; width: 14px; height: 14px; margin: -7px -7px 0 0; border-radius: 50%; background: var(--blue); border: 2px solid #fff; box-shadow: 0 0 0 1px var(--blue); touch-action: none; z-index: 2; }
+.rh-l, .rh-r { cursor: ew-resize; }
+.rh-t, .rh-b { cursor: ns-resize; }
 .tpl-page.drawing .tb { pointer-events: none; }
 .slot-ed.sel { border-color: var(--blue); box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 25%, transparent); }
 .slot-ed > summary { align-items: center; }
