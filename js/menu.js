@@ -9,7 +9,6 @@ const PAGES = [
   { path: '',                   title: 'לוח זמנים' },
   { path: 'kiddush/',           title: 'לוח קידושים' },
   { path: 'gabbai/',            title: 'קופת בית הכנסת' },
-  { path: 'community-calendar/', title: 'יומן קהילה' },
   { path: 'account/',           title: 'החשבון שלי' }
 ];
 const here = location.pathname.replace(/index\.html$/, '');

@@ -4,7 +4,7 @@
  */
 (function(){
 "use strict";
-const { H, esc, gShort, heMonth, heYear, heDay, getSlots, monthRange } = window.KiddushCalendar || {};
+const { H, esc, pkey, gShort, gFull, heMonth, heYear, heDay, heFull, getSlots, slotFor, slotTitle, monthRange } = window.KiddushCalendar || {};
 const $ = s => document.querySelector(s);
 const Auth = window.SiteAuth;
 const ROLE_LABEL = { gabbai: 'גבאי', rabbi: 'רב', member: 'חבר קהילה' };
@@ -18,7 +18,7 @@ const ICON = {
 
 const S = {
   ready: false, fatal: null, signedIn: false, synagogues: [], sid: null,
-  board: null, boardError: null, schedule: null, fund: null,
+  board: null, boardError: null, schedule: null, fund: null, events: [],
   anchor: (window.KiddushCalendar ? today0() : new Date()),
 };
 function today0(){ const d = new Date(); d.setHours(0,0,0,0); return d; }
@@ -53,20 +53,24 @@ async function loadSynagogues(){
   render();
 }
 
-let unsubBoard = null, unsubSchedule = null, unsubFund = null;
+let unsubBoard = null, unsubSchedule = null, unsubFund = null, unsubEvents = null;
 function attach(sid){
   if (sid === S.sid && unsubBoard) return;
-  [unsubBoard, unsubSchedule, unsubFund].forEach(u => u && u());
-  unsubBoard = unsubSchedule = unsubFund = null;
-  S.sid = sid; S.board = null; S.boardError = null; S.schedule = null; S.fund = null;
+  [unsubBoard, unsubSchedule, unsubFund, unsubEvents].forEach(u => u && u());
+  unsubBoard = unsubSchedule = unsubFund = unsubEvents = null;
+  S.sid = sid; S.board = null; S.boardError = null; S.schedule = null; S.fund = null; S.events = [];
   if (!sid) return;
   unsubBoard = Auth.client().onUpdate('kiddush:board', { synagogueId: sid }, board => { S.board = board; render(); },
     e => { console.warn(e); S.boardError = errMsg(e); render(); });
   unsubSchedule = Auth.client().onUpdate('schedules:list', { synagogueId: sid }, data => { S.schedule = data; render(); }, () => {});
   unsubFund = Auth.client().onUpdate('fund:ledger', { synagogueId: sid }, data => { S.fund = data; render(); }, () => {});
+  unsubEvents = Auth.client().onUpdate('events:list', { synagogueId: sid }, data => { S.events = data; render(); }, () => {});
 }
 
 function errMsg(e){ return (e && typeof e.data === 'string') ? e.data : 'הפעולה לא נשמרה. נסו שוב.'; }
+async function call(name, args){ return await Auth.client().mutation(name, { synagogueId: S.sid, ...args }); }
+function guard(fn){ return async (...a) => { try { await fn(...a); } catch(e){ console.warn(e); toast(errMsg(e)); } }; }
+function eventsOf(k){ return S.events.filter(e => e.dateKey === k); }
 
 /* ---------- Derived data ---------- */
 function currentScheduleFile(){
@@ -92,7 +96,7 @@ function render(){
   const app = $('#app');
   if (S.fatal){ app.innerHTML = hero(esc(S.fatal)); return; }
   if (!S.ready){ app.innerHTML = '<div class="empty">טוען…</div>'; return; }
-  if (!S.signedIn){ app.innerHTML = hero('כדי לראות את יומן הקהילה יש להתחבר עם חשבון Google.', '<button class="btn" data-act="signIn">כניסה עם Google</button>'); return; }
+  if (!S.signedIn){ app.innerHTML = hero('כדי לראות את יומן הקהילה יש להתחבר עם חשבון Google.', '<button class="btn btn-google" data-act="signIn">כניסה עם Google</button>'); return; }
   if (!S.sid){ app.innerHTML = hero('עדיין לא הצטרפת לקהילה. אפשר להצטרף דרך הזמנה מהגבאי או לפתוח קהילה חדשה.', `<a class="btn" href="${ACCOUNT_URL}">לחשבון שלי</a>`); return; }
   if (S.boardError){ app.innerHTML = hero(esc(S.boardError), `<a class="btn" href="${ACCOUNT_URL}">לחשבון שלי</a>`); return; }
   if (!S.board){ app.innerHTML = '<div class="empty">טוען…</div>'; return; }
@@ -141,27 +145,79 @@ function bannersHTML(){
 function calendarHTML(){
   const s = S.board.synagogue, { start, end } = monthRange(S.anchor, 'heb');
   const slots = getSlots(start, end, !!s.il);
+  const slotKeys = new Set(slots.map(sl => sl.key));
+  const extra = [];
+  for (const e of S.events){
+    const d = pkey(e.dateKey);
+    if (d < start || d > end || slotKeys.has(e.dateKey) || extra.some(x => x.key === e.dateKey)) continue;
+    extra.push({ key: e.dateKey, date: d, hd: new H.HDate(d), kind: 'אירוע קהילתי', name: '', subs: [] });
+  }
+  const rows = [...slots, ...extra].sort((a, b) => a.date - b.date);
   const hs = new H.HDate(start);
   const title = heMonth(hs) + ' ' + heYear(hs.getFullYear());
   const alt = (function(){
     const m1 = start.toLocaleDateString('he-IL', { month: 'long' }), m2 = end.toLocaleDateString('he-IL', { month: 'long' });
     return (m1 === m2 ? m1 : m1 + ' – ' + m2) + ' ' + end.getFullYear();
   })();
-  const rows = slots.map(sl => {
+  const rowsHtml = rows.map(sl => {
     const b = bookingOf(sl.key), past = sl.date < today0(), isToday = +sl.date === +today0();
     const big = heDay(sl.hd), small = gShort(sl.date);
-    return `<a class="slot${past ? ' past' : ''}${isToday ? ' today' : ''}" href="../kiddush/">
+    const evts = eventsOf(sl.key);
+    const name = sl.name || evts[0]?.title || '';
+    const evtLine = evts.length ? (sl.name ? evts.map(e => e.title).join(' · ') : (evts.length > 1 ? `+${evts.length - 1} אירועים נוספים` : '')) : '';
+    return `<button type="button" class="slot${past ? ' past' : ''}${isToday ? ' today' : ''}" data-act="day" data-k="${sl.key}">
       <div class="date"><div class="big">${big}</div><div class="small">${esc(small)}</div></div>
-      <div><div class="kind">${esc(sl.kind)}</div><h3>${esc(sl.name)}</h3>${sl.subs.length ? `<div class="sub">${esc(sl.subs.join(', '))}</div>` : ''}</div>
-      <div class="stcol">${kiddushChip(b, past)}</div></a>`;
+      <div><div class="kind">${esc(sl.kind)}</div><h3>${esc(name)}</h3>${sl.subs.length ? `<div class="sub">${esc(sl.subs.join(', '))}</div>` : ''}${evtLine ? `<div class="sub">${esc(evtLine)}</div>` : ''}</div>
+      <div class="stcol">${slotKeys.has(sl.key) ? kiddushChip(b, past) : `<span class="chip appr">${evts.length} אירוע${evts.length > 1 ? 'ים' : ''}</span>`}</div></button>`;
   }).join('');
+  const addBtn = isManager() ? `<div class="row" style="margin:10px 0"><button class="btn sec" type="button" data-act="addEventAny">+ הוספת אירוע</button></div>` : '';
   return `<div class="monthbar">
     <button class="nav" type="button" data-act="prev" aria-label="החודש הקודם">${ICON.right}</button>
     <div class="title"><h2>${esc(title)}</h2><div class="alt">${esc(alt)}</div></div>
     <button class="nav" type="button" data-act="next" aria-label="החודש הבא">${ICON.left}</button>
   </div>
   <div class="modebar"><button class="link" type="button" data-act="today">היום</button></div>
-  <div class="slots">${rows || '<div class="empty">אין שבתות או חגים בחודש הזה.</div>'}</div>`;
+  ${addBtn}
+  <div class="slots">${rowsHtml || '<div class="empty">אין שבתות, חגים או אירועים בחודש הזה.</div>'}</div>`;
+}
+
+/* ---------- Sheets ---------- */
+function openSheet(html){ $('#sheet').innerHTML = html; $('#sheetWrap').hidden = false; const f = $('#sheet').querySelector('input,textarea,select'); if (f && window.innerWidth > 700) f.focus(); }
+function closeSheet(){ $('#sheetWrap').hidden = true; $('#sheet').innerHTML = ''; }
+const sheetHead = (t, sub) => `<div class="sh"><div style="flex:1"><h2>${esc(t)}</h2>${sub ? `<div class="meta">${esc(sub)}</div>` : ''}</div><button class="x" data-act="close" aria-label="סגירה">×</button></div>`;
+let toastT;
+function toast(msg){ let t = document.querySelector('.toast'); if (!t){ t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); } t.textContent = msg; clearTimeout(toastT); toastT = setTimeout(() => t.remove(), 3200); }
+
+function kiddushStatusLine(b, past){
+  if (!b) return `<p class="small">${past ? 'עבר ללא קידוש' : 'פנוי לקידוש'}</p>`;
+  if (b.status === 'blocked') return `<p><span class="chip block">${esc(b.blockLabel || 'לא זמין')}</span></p>`;
+  if (b.status === 'approved') return `<p><span class="chip appr">מאושר</span> ${esc(b.sponsorName)}${b.occasion ? ' · ' + esc(b.occasion) : ''}</p>`;
+  return `<p><span class="chip pend">ממתין לאישור</span></p>`;
+}
+function eventLine(e){
+  const canEdit = isManager();
+  return `<div class="li"><div class="grow"><div class="t">${esc(e.title)}</div>${e.details ? `<div class="meta">${esc(e.details)}</div>` : ''}<div class="meta">נוסף ע״י ${esc(e.createdBy)}</div></div>
+    ${canEdit ? `<button class="btn sec" type="button" data-act="editEvent" data-id="${e._id}">עריכה</button><button class="btn danger" type="button" data-act="delEvent" data-id="${e._id}">מחיקה</button>` : ''}</div>`;
+}
+function daySheet(k){
+  const s = S.board.synagogue, sl = slotFor(k, !!s.il), b = bookingOf(k), evts = eventsOf(k), isSlot = !!sl.kind, past = sl.date < today0();
+  let html = sheetHead(isSlot ? slotTitle(sl) : gFull(sl.date), heFull(sl.hd) + ' | ' + gFull(sl.date));
+  if (isSlot){
+    html += `<div class="card" style="background:var(--surface2)"><h3>קידוש</h3>${kiddushStatusLine(b, past)}
+      <div class="row" style="margin-top:8px"><a class="btn sec" href="../kiddush/">לפרטים ולהרשמה</a></div></div>`;
+  }
+  html += `<h3 style="margin-top:16px">אירועים קהילתיים</h3>`;
+  html += evts.length ? `<div class="list">${evts.map(eventLine).join('')}</div>` : '<p class="muted small">אין אירועים ביום זה.</p>';
+  if (isManager()) html += `<div class="row" style="margin-top:14px"><button class="btn" type="button" data-act="addEvent" data-k="${k}">הוספת אירוע ליום זה</button></div>`;
+  openSheet(html);
+}
+function eventFormSheet(k, existing){
+  const title = existing ? 'עריכת אירוע' : 'הוספת אירוע';
+  const dateField = existing ? '' : `<label class="f" for="evDate">תאריך</label><input type="date" id="evDate" value="${k || ''}">`;
+  openSheet(sheetHead(title) + dateField +
+    `<label class="f" for="evTitle">כותרת</label><input type="text" id="evTitle" maxlength="80" placeholder="לדוגמה: מדורת ל״ג בעומר, שיעור לנשים…" value="${esc(existing?.title || '')}">
+     <label class="f" for="evDetails">פרטים (לא חובה)</label><textarea id="evDetails" maxlength="300">${esc(existing?.details || '')}</textarea>
+     <div class="row" style="margin-top:16px"><button class="btn" type="button" data-act="saveEvent" data-id="${existing?._id || ''}" data-k="${k || ''}">שמירה</button><button class="btn ghost" type="button" data-act="close">ביטול</button></div>`);
 }
 
 function kiddushChip(b, past){
@@ -177,16 +233,34 @@ const A = {
   prev: () => { const hd = new H.HDate(S.anchor), first = new H.HDate(1, hd.getMonth(), hd.getFullYear()); S.anchor = new H.HDate(first.abs() - 1).greg(); render(); },
   next: () => { const hd = new H.HDate(S.anchor), first = new H.HDate(1, hd.getMonth(), hd.getFullYear()); S.anchor = new H.HDate(first.abs() + first.daysInMonth()).greg(); render(); },
   today: () => { S.anchor = today0(); render(); },
+  close: closeSheet,
+  day: d => daySheet(d.k),
+  addEvent: d => eventFormSheet(d.k, null),
+  addEventAny: () => eventFormSheet('', null),
+  editEvent: d => { const ev = S.events.find(x => x._id === d.id); if (ev) eventFormSheet(ev.dateKey, ev); },
+  delEvent: guard(async d => { await call('events:remove', { id: d.id }); toast('האירוע נמחק'); closeSheet(); }),
+  saveEvent: guard(async d => {
+    const title = $('#evTitle').value, details = $('#evDetails').value;
+    if (!title.trim()) return toast('נא למלא כותרת לאירוע');
+    if (d.id){
+      await call('events:update', { id: d.id, title, details });
+    } else {
+      const dateEl = $('#evDate'), k = dateEl ? dateEl.value : d.k;
+      if (!k) return toast('נא לבחור תאריך');
+      await call('events:add', { dateKey: k, title, details });
+    }
+    closeSheet(); toast('נשמר');
+  }),
 };
 document.addEventListener('click', e => {
   const t = e.target.closest('[data-act]');
-  if (!t) return;
-  const f = A[t.dataset.act];
-  if (f){ e.preventDefault(); f(); }
+  if (t){ const f = A[t.dataset.act]; if (f){ e.preventDefault(); f(t.dataset, t); } return; }
+  if (e.target === $('#sheetWrap')) closeSheet();
 });
 document.addEventListener('change', e => {
   if (e.target.id === 'synSwitch'){ Auth.setActiveSynagogueId(e.target.value); attach(e.target.value); render(); }
 });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#sheetWrap').hidden) closeSheet(); });
 
 boot();
 })();

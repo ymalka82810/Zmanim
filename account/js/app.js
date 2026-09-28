@@ -269,7 +269,7 @@ function renderSignedOut(app){
       html += `<div class="card"><h3>הזמנה להצטרף</h3><p>${esc(S.joinInfo.name)}, ${esc(S.joinInfo.city)}</p><p class="muted small">התחברו עם Google כדי להצטרף.</p></div>`;
     }
   }
-  html += `<button class="btn" id="btnSignIn">כניסה עם Google</button>`;
+  html += `<button class="btn btn-google" id="btnSignIn">כניסה עם Google</button>`;
   app.innerHTML = html;
   $('#btnSignIn').addEventListener('click', signIn);
 }

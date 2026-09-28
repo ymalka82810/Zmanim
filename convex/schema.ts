@@ -130,6 +130,17 @@ export default defineSchema({
     approvedAt: v.optional(v.number()),
   }).index("by_synagogue_first", ["synagogueId", "firstDate"]),
 
+  communityEvents: defineTable({
+    synagogueId: v.id("synagogues"),
+    dateKey: v.string(),
+    title: v.string(),
+    details: v.string(),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+    editedBy: v.optional(v.id("users")),
+    editedAt: v.optional(v.number()),
+  }).index("by_synagogue_date", ["synagogueId", "dateKey"]),
+
   fundSettings: defineTable({
     synagogueId: v.id("synagogues"),
     openMain: v.number(),

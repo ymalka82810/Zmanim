@@ -252,7 +252,7 @@ function render(){
   $("#addBtn").hidden=!manager;
   $("#openSettings").hidden=!manager;
   if(stage==="loading"){$("#view").innerHTML=viewMessage("טוען…");return}
-  if(stage==="signedOut"){$("#view").innerHTML=viewMessage("כדי לראות את הקופה יש להתחבר עם חשבון Google.",`<button class="btn" id="signIn">כניסה עם Google</button>`);return}
+  if(stage==="signedOut"){$("#view").innerHTML=viewMessage("כדי לראות את הקופה יש להתחבר עם חשבון Google.",`<button class="btn btn-google" id="signIn">כניסה עם Google</button>`);return}
   if(stage==="noCommunity"){$("#view").innerHTML=viewMessage("עדיין לא הצטרפת לקהילה.",`<a class="btn" href="../account/">לחשבון שלי</a>`);return}
   if(stage==="error"){$("#view").innerHTML=viewMessage(esc(ledgerError),`<a class="btn" href="../account/">לחשבון שלי</a>`);return}
   if(!manager){$("#view").innerHTML=viewMine();return}

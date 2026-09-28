@@ -122,7 +122,7 @@ function renderMain(){
   const app = $('#app');
   if (S.fatal){ app.innerHTML = hero(esc(S.fatal)); return; }
   if (!S.ready){ app.innerHTML = '<div class="empty">טוען…</div>'; return; }
-  if (!S.signedIn){ app.innerHTML = hero('כדי לראות את הלוח ולהירשם לקידוש יש להתחבר עם חשבון Google.', '<button class="btn" data-act="signIn">כניסה עם Google</button>'); return; }
+  if (!S.signedIn){ app.innerHTML = hero('כדי לראות את הלוח ולהירשם לקידוש יש להתחבר עם חשבון Google.', '<button class="btn btn-google" data-act="signIn">כניסה עם Google</button>'); return; }
   if (!S.sid){ app.innerHTML = hero('עדיין לא הצטרפת לקהילה. אפשר להצטרף דרך הזמנה מהגבאי או לפתוח קהילה חדשה.', `<a class="btn" href="${ACCOUNT_URL}">לחשבון שלי</a>`); return; }
   if (S.boardError){ app.innerHTML = hero(esc(S.boardError), `<a class="btn" href="${ACCOUNT_URL}">לחשבון שלי</a>`); return; }
   if (!S.board){ app.innerHTML = '<div class="empty">טוען…</div>'; return; }

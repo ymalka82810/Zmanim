@@ -101,7 +101,7 @@ async function load(){
   if (!Auth.isAuthenticated()) {
     if (unsubscribe) { unsubscribe(); unsubscribe = null; }
     if (unsubscribeKiddush) { unsubscribeKiddush(); unsubscribeKiddush = null; }
-    return gate('כדי לראות את לוח הזמנים של הקהילה יש להתחבר עם חשבון Google.', '<button type="button" class="primary" id="gateSignIn">כניסה עם Google</button>');
+    return gate('כדי לראות את לוח הזמנים של הקהילה יש להתחבר עם חשבון Google.', '<button type="button" class="primary btn-google" id="gateSignIn">כניסה עם Google</button>');
   }
   let synagogues = [];
   try {
