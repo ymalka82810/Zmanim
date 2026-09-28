@@ -534,7 +534,7 @@ $('tplSlots').addEventListener('input', e => {
     if (v === 'text' && s.text == null) s.text = s.old || '';
     focusSlot(+ed.dataset.i); return;
   }
-  if (k === 'sizePct' || k === 'lineHeightPct') { s[k] = Number(v); return; }
+  if (k === 'sizePct' || k === 'lineHeightPct') { s[k] = Number(v); schedulePreviewRefresh(); return; }
   if (k === 'wrap') { s.wrap = e.target.checked; renderSlots(); return; }
   if (k === 'day') {
     const keys = [...ed.querySelectorAll('input[data-k="day"]:checked')].map(x => x.value);
@@ -656,7 +656,7 @@ function buildTemplate() {
     slots, candidates: st.candidates, fonts, mainFont };
 }
 
-$('tplPreview').onclick = async () => {
+async function renderTemplatePreview() {
   const tpl = buildTemplate();
   const cfg = { ...st.cfg, rules: mergeRules(st.cfg.rules, slotRules(), $('tplRules').checked, st.tpl.kind) };
   const today = todayIn(cfg.tz);
@@ -665,9 +665,21 @@ $('tplPreview').onclick = async () => {
   const canvas = await templateCanvas(tpl, values);
   $('tplPreviewTitle').textContent = 'תצוגה מקדימה – ' + occ.title;
   $('tplPreviewImg').src = canvas.toDataURL('image/png');
+}
+
+$('tplPreview').onclick = async () => {
+  await renderTemplatePreview();
   $('tplPreviewWrap').hidden = false;
   $('tplPreviewWrap').scrollIntoView({ behavior: 'smooth' });
 };
+
+/* כשהתצוגה המקדימה כבר פתוחה, שינוי גודל טקסט מתעדכן בה מיד ולא רק בלחיצה חוזרת על "תצוגה מקדימה" */
+let previewTimer;
+function schedulePreviewRefresh() {
+  if ($('tplPreviewWrap').hidden) return;
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(renderTemplatePreview, 200);
+}
 
 $('tplSave').onclick = () => {
   const bad = st.slots.find(s => (s.kind === 'rule' || s.kind === 'kiddush') && !String(s.name).trim());
