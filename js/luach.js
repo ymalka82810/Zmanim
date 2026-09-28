@@ -30,14 +30,16 @@ export function findOccasion(from, il, dir = 1) {
     days.push({ day: x, shabbat, chag: yomTov(x, il), chol: shabbat ? cholHamoed(x, il) : null, parasha: shabbat ? parasha(x, il) : null });
   }
 
+  return { mode: 'holy', id: first, erev: first - 1, first, last, days, title: holyTitle(days) };
+}
+
+/** "ראש השנה ושבת", "שבת חול המועד סוכות", "שבת פרשת נח" */
+function holyTitle(days) {
   const names = [];
   days.forEach(x => { if (x.chag && names.indexOf(x.chag) < 0) names.push(x.chag); });
-  let title;
-  if (names.length) title = names.join(' ו') + (days.some(x => x.shabbat) ? ' ושבת' : '');
-  else if (days[0].chol) title = 'שבת חול המועד ' + days[0].chol;
-  else title = days[0].parasha ? 'שבת פרשת ' + days[0].parasha : 'שבת';
-
-  return { mode: 'holy', id: first, erev: first - 1, first, last, days, title };
+  if (names.length) return names.join(' ו') + (days.some(x => x.shabbat) ? ' ושבת' : '');
+  if (days[0].chol) return 'שבת חול המועד ' + days[0].chol;
+  return days[0].parasha ? 'שבת פרשת ' + days[0].parasha : 'שבת';
 }
 
 /* ---------- ימות השבוע וחול המועד ---------- */
@@ -269,6 +271,15 @@ export function buildLuach(cfg, occ, kiddush) {
       multiDay: occ.days.length > 1
     }
   };
+}
+
+/**
+ * ערכים לעיצוב מקובץ, עמוד לכל יום של שבת/חג רב-יומי: כל יום מחושב כמו לוח של יום אחד,
+ * שהערב שלו הוא היום שלפניו (ביום השני – הדלקת הנרות ממוצאי היום הראשון), והמוצאי שלו הוא צאת אותו יום.
+ */
+export function dayPages(cfg, occ, kiddush) {
+  return occ.days.map((d, i) => buildLuach(cfg, { ...occ, erev: i ? occ.days[i - 1].day : occ.erev,
+    first: d.day, last: d.day, days: [d], title: holyTitle([d]) }, kiddush).values);
 }
 
 /** "כ״ז תשרי – ב׳ חשון תשפ״ז · 18.10–23.10.2026" */

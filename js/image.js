@@ -177,36 +177,54 @@ const toBlob = (canvas, type, q) => new Promise((ok, fail) =>
 
 export const pngBlob = canvas => toBlob(canvas, 'image/png');
 
-/** PDF בעמוד A4 אחד, עם התמונה בראש העמוד (מוקטנת אם היא ארוכה מהעמוד) */
-export async function pdfBlob(canvas) {
-  const jpeg = new Uint8Array(await (await toBlob(canvas, 'image/jpeg', 0.92)).arrayBuffer());
-  const PW = 595.28, PH = 841.89, iw = canvas.width, ih = canvas.height;
-  let dw = PW, dh = PW * ih / iw;
-  if (dh > PH) { dh = PH; dw = PH * iw / ih; }
-  const x = (PW - dw) / 2, y = PH - dh;
+/** כמה עמודים (עמוד לכל יום בחג רב-יומי) בתמונה אחת, אחד מתחת לשני – לשיתוף כתמונה */
+export function stackCanvases(list) {
+  if (list.length === 1) return list[0];
+  const gap = 24, W = Math.max(...list.map(c => c.width));
+  const out = document.createElement('canvas');
+  out.width = W; out.height = list.reduce((h, c) => h + c.height, 0) + gap * (list.length - 1);
+  const ctx = out.getContext('2d');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, out.width, out.height);
+  let y = 0;
+  for (const c of list) { ctx.drawImage(c, (W - c.width) / 2, y); y += c.height + gap; }
+  return out;
+}
+
+/** PDF בעמודי A4, תמונה בראש כל עמוד (מוקטנת אם היא ארוכה מהעמוד). canvases – קנבס אחד או רשימה, עמוד לכל אחד */
+export async function pdfBlob(canvases) {
+  const list = Array.isArray(canvases) ? canvases : [canvases];
+  const jpegs = await Promise.all(list.map(async c => new Uint8Array(await (await toBlob(c, 'image/jpeg', 0.92)).arrayBuffer())));
+  const PW = 595.28, PH = 841.89;
   const f = n => n.toFixed(2);
 
   const enc = new TextEncoder(), parts = [], offsets = [];
   let len = 0;
   const push = p => { const b = typeof p === 'string' ? enc.encode(p) : p; parts.push(b); len += b.length; };
   const obj = (n, body) => { offsets[n] = len; push(n + ' 0 obj\n'); body(); push('\nendobj\n'); };
-  const content = 'q ' + f(dw) + ' 0 0 ' + f(dh) + ' ' + f(x) + ' ' + f(y) + ' cm /Im0 Do Q';
+  // לכל עמוד שלושה אובייקטים: העמוד, התמונה והתוכן
+  const pageNum = i => 3 + i * 3, total = 2 + list.length * 3;
 
   push('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
   obj(1, () => push('<< /Type /Catalog /Pages 2 0 R >>'));
-  obj(2, () => push('<< /Type /Pages /Kids [3 0 R] /Count 1 >>'));
-  obj(3, () => push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + f(PW) + ' ' + f(PH) + '] ' +
-    '/Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>'));
-  obj(4, () => {
-    push('<< /Type /XObject /Subtype /Image /Width ' + iw + ' /Height ' + ih +
-      ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + jpeg.length + ' >>\nstream\n');
-    push(jpeg); push('\nendstream');
+  obj(2, () => push('<< /Type /Pages /Kids [' + list.map((c, i) => pageNum(i) + ' 0 R').join(' ') + '] /Count ' + list.length + ' >>'));
+  list.forEach((canvas, i) => {
+    const n = pageNum(i), jpeg = jpegs[i], iw = canvas.width, ih = canvas.height;
+    let dw = PW, dh = PW * ih / iw;
+    if (dh > PH) { dh = PH; dw = PH * iw / ih; }
+    const content = 'q ' + f(dw) + ' 0 0 ' + f(dh) + ' ' + f((PW - dw) / 2) + ' ' + f(PH - dh) + ' cm /Im0 Do Q';
+    obj(n, () => push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + f(PW) + ' ' + f(PH) + '] ' +
+      '/Resources << /XObject << /Im0 ' + (n + 1) + ' 0 R >> >> /Contents ' + (n + 2) + ' 0 R >>'));
+    obj(n + 1, () => {
+      push('<< /Type /XObject /Subtype /Image /Width ' + iw + ' /Height ' + ih +
+        ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + jpeg.length + ' >>\nstream\n');
+      push(jpeg); push('\nendstream');
+    });
+    obj(n + 2, () => push('<< /Length ' + content.length + ' >>\nstream\n' + content + '\nendstream'));
   });
-  obj(5, () => push('<< /Length ' + content.length + ' >>\nstream\n' + content + '\nendstream'));
 
   const xref = len;
-  push('xref\n0 6\n0000000000 65535 f \n' +
-    [1, 2, 3, 4, 5].map(n => String(offsets[n]).padStart(10, '0') + ' 00000 n \n').join('') +
-    'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF\n');
+  push('xref\n0 ' + (total + 1) + '\n0000000000 65535 f \n' +
+    Array.from({ length: total }, (_, i) => String(offsets[i + 1]).padStart(10, '0') + ' 00000 n \n').join('') +
+    'trailer\n<< /Size ' + (total + 1) + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF\n');
   return new Blob(parts, { type: 'application/pdf' });
 }

@@ -127,6 +127,8 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .tpl-occ { align-self: end; margin: 0 0 8px; }
 .luach-img { display: block; width: 100%; height: auto; }
 .luach:has(.luach-img) { padding: 8px; background: #fff; }
+/* שבת/חג רב-יומי בעיצוב מקובץ: עמוד לכל יום */
+.luach-img + .luach-img { margin-top: 16px; }
 .tpl-layout { display: grid; gap: 14px; }
 @media (min-width: 900px) {
   main.wrap:has(#view-template:not([hidden])) { max-width: 1200px; }
@@ -158,6 +160,7 @@ button[aria-pressed="true"] { background: var(--blue); color: var(--on-accent); 
 @media print {
   #view-template { display: none !important; }
   .luach:has(.luach-img) { padding: 0; }
+  .luach-img + .luach-img { margin-top: 0; break-before: page; }
 }
 
 /* קהילה */

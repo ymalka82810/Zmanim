@@ -2,11 +2,11 @@
 
 import { CITIES, BASES, WHEN, APPLIES, ROUND, FONTS, THEMES, SIZE_PARTS, SIZES, DEFAULT_CONFIG, DAY_APPLIES, BUILTIN, isBuiltin, newTemplate, designOf, activeDesign,
   prayerBases, fontFamilies, fontsHref, themeColors, normalize, loadConfig, saveConfig, clearConfig } from './config.js';
-import { findPeriod, stepPeriod, templateFor, nextPeriodFor, buildLuach, buildDaysLuach } from './luach.js';
+import { findPeriod, stepPeriod, templateFor, nextPeriodFor, buildLuach, buildDaysLuach, dayPages } from './luach.js';
 import { MOADIM } from './moadim.js';
 import { luachHtml, luachText, esc } from './render.js';
 import { todayIn, toYmd } from './dates.js';
-import { luachCanvas, pngBlob, pdfBlob } from './image.js';
+import { luachCanvas, pngBlob, pdfBlob, stackCanvases } from './image.js';
 import { templateCanvas } from './template-render.js';
 import { editFromFile, editExisting, mergeRules } from './template-ui.js';
 import { initCommunity } from './community.js';
@@ -59,17 +59,21 @@ $('modeDays').onclick = () => setMode('days');
 
 /* ---------- הלוח ---------- */
 
-/** הלוח לפי התבנית שחלה עליו. l.design – העיצוב מהקובץ הישן, רק לשבת/חג של יום אחד כמו בלוח המקורי */
+/**
+ * הלוח לפי התבנית שחלה עליו. l.design – העיצוב מהקובץ הישן, ו-l.pages – הערכים לכל עמוד שלו:
+ * הקובץ הוא לוח של יום אחד, ולכן בשבת/חג רב-יומי יש עמוד לכל יום.
+ */
 function build(p) {
   const t = templateFor(cfg, p), c = { ...cfg, rules: t.rules };
   const l = p.mode === 'days' ? buildDaysLuach(c, p, kiddush) : buildLuach(c, p, kiddush);
-  const d = activeDesign(cfg, t);
-  l.design = d && !l.values.multiDay ? d : null;
-  l.designSkipped = !!d && !l.design;
+  l.design = activeDesign(cfg, t);
+  l.pages = l.design ? (l.values.multiDay ? dayPages(c, p, kiddush) : [l.values]) : null;
   l.tpl = t;
   return l;
 }
-const drawLuach = l => l.design ? templateCanvas(l.design, l.values) : luachCanvas(l, l.tpl.font, l.tpl.sizes, l.tpl.theme);
+/** העמודים של הלוח כקנבסים: עמוד לכל יום בעיצוב מקובץ, או עמוד אחד בעיצוב של האתר */
+const drawLuach = async l => l.design ? Promise.all(l.pages.map(v => templateCanvas(l.design, v)))
+  : [await luachCanvas(l, l.tpl.font, l.tpl.sizes, l.tpl.theme)];
 
 /**
  * החלת הגופן, ערכת הצבעים והגדלים של התבנית t על el (הלוח, או הדוגמה בהגדרות).
@@ -109,13 +113,14 @@ function renderLuach() {
   $('luachTpl').textContent = 'תבנית: ' + current.tpl.name;
   if (current.design) {
     const l = current;
-    $('luach').innerHTML = '<img class="luach-img" alt="' + esc(l.title) + '">';
-    templateCanvas(l.design, l.values).then(c => {
-      if (current === l) $('luach').querySelector('img').src = c.toDataURL('image/png');
+    $('luach').innerHTML = l.pages.map(v => '<img class="luach-img" alt="' + esc(v.title) + '">').join('');
+    drawLuach(l).then(pages => {
+      if (current !== l) return;
+      const imgs = $('luach').querySelectorAll('img');
+      pages.forEach((c, i) => { imgs[i].src = c.toDataURL('image/png'); });
     }).catch(() => { if (current === l) $('luach').innerHTML = luachHtml(l); });
   } else {
-    $('luach').innerHTML = luachHtml(current) + (current.designSkipped
-      ? '<p class="hint">העיצוב מהקובץ מתאים לשבת או חג של יום אחד, ולכן הלוח הזה מוצג בעיצוב הרגיל.</p>' : '');
+    $('luach').innerHTML = luachHtml(current);
   }
   const now = findPeriod(mode, todayIn(cfg.tz), cfg.il);
   $('todayOcc').disabled = !!now && now.first === p.first;
@@ -143,9 +148,9 @@ let prepTimer;
 
 function makeFiles(l) {
   const name = ('לוח זמנים - ' + l.title).replace(/[\\/:*?"<>|]/g, '');
-  const promise = drawLuach(l).then(async canvas => ({
-    png: new File([await pngBlob(canvas)], name + '.png', { type: 'image/png' }),
-    pdf: new File([await pdfBlob(canvas)], name + '.pdf', { type: 'application/pdf' })
+  const promise = drawLuach(l).then(async pages => ({
+    png: new File([await pngBlob(stackCanvases(pages))], name + '.png', { type: 'image/png' }),
+    pdf: new File([await pdfBlob(pages)], name + '.pdf', { type: 'application/pdf' })
   }));
   promise.catch(() => {});
   files = { luach: l, promise };
@@ -301,10 +306,15 @@ $('sizes').addEventListener('input', e => {
 
 /* ---------- ייבוא מתבנית אחרת: זמנים, עיצוב, גופן וגדלים ---------- */
 
-/** התבניות שאפשר לייבא מהן. עיצוב מלוח ישן – רק מתבנית מאותו סוג, כי האזורים שלו בנויים לפי סוג הלוח */
+/**
+ * התבניות שאפשר לייבא מהן. עיצוב מלוח ישן – רק מתבנית מאותו סוג, כי האזורים שלו בנויים לפי סוג הלוח.
+ * part='ref' – שיוך לעיצוב של תבנית אחרת בלי עותק, ולכן רק תבנית שהעיצוב שמור בה עצמה.
+ */
 function importSources(part) {
   const t = selTpl();
-  return cfg.templates.filter(x => x !== t && (part !== 'design' || (x.kind === t.kind && designOf(cfg, x))));
+  if (part === 'design') return cfg.templates.filter(x => x !== t && x.kind === t.kind && designOf(cfg, x));
+  if (part === 'ref') return cfg.templates.filter(x => x !== t && x.kind === t.kind && x.design && !x.design.ref);
+  return cfg.templates.filter(x => x !== t);
 }
 function closeImport(box) {
   box.querySelector('.imp-form').hidden = true;
@@ -314,13 +324,20 @@ function closeImport(box) {
 function openImport(box) {
   const part = box.dataset.part, t = selTpl(), list = importSources(part), hint = box.querySelector('.imp-hint');
   if (!list.length) {
-    hint.textContent = part === 'design' ? 'אין תבנית אחרת מאותו סוג (' + (t.kind === 'days' ? 'ימי חול' : 'שבת או חג') + ') שיש לה עיצוב מלוח ישן.' : 'אין תבניות אחרות.';
+    hint.textContent = part === 'design' || part === 'ref'
+      ? 'אין תבנית אחרת מאותו סוג (' + (t.kind === 'days' ? 'ימי חול' : 'שבת או חג') + ') שיש לה עיצוב מלוח ישן.'
+      : 'אין תבניות אחרות.';
     hint.hidden = false;
     return;
   }
-  box.querySelector('.imp-from').innerHTML = list.map(x => '<option value="' + esc(x.id) + '">מ' + esc(x.name) + '</option>').join('');
+  box.querySelector('.imp-from').innerHTML = list.map(x => '<option value="' + esc(x.id) + '">' + (part === 'ref' ? '' : 'מ') + esc(x.name) + '</option>').join('');
   box.querySelector('.imp-open').hidden = true;
   box.querySelector('.imp-form').hidden = false;
+  if (part === 'ref') {
+    hint.textContent = 'העיצוב לא ישוכפל: שתי התבניות ישתמשו באותו קובץ, וזמני התפילות בו יילקחו מכל תבנית בנפרד. ' +
+      'אפשר לכבות אותו כאן בלי להשפיע על התבנית השנייה.';
+    hint.hidden = false;
+  }
   if (part === 'rules') {
     hint.textContent = 'בייבוא בין לוח של שבת/חג ללוח של ימי חול, "מתי" ו"חל על" מתאימים את עצמם לסוג הלוח. כדאי לעבור על הזמנים אחרי הייבוא.';
     hint.hidden = false;
@@ -347,6 +364,11 @@ function doImport(box) {
     const list = convertRules(src.rules, t.kind);
     t.rules = box.querySelector('.imp-how').value === 'add' ? mergeRules(t.rules, list, false, t.kind) : list;
     toast('הזמנים יובאו מ' + src.name);
+  } else if (part === 'ref') {
+    // שיוך בלי עותק: התבנית מצביעה על העיצוב של src, כך שהלוח שלה נראה כמו הלוח הישן בלי להכפיל את הקובץ במכשיר
+    t.design = { ref: src.id, enabled: true };
+    if (!saveConfig(cfg)) { t.design = null; toast('לא ניתן לשמור במכשיר הזה', true); return; }
+    toast('העיצוב של "' + src.name + '" ישמש גם ב"' + t.name + '", עם זמני התפילות של "' + t.name + '"');
   } else if (part === 'design') {
     const d = designOf(cfg, src);
     if (designOf(cfg, t) && !confirm('להחליף את העיצוב של "' + t.name + '" בעיצוב של "' + src.name + '"?')) return;
@@ -548,6 +570,8 @@ function renderTemplateStatus() {
   $('tplRemove').hidden = !d;
   $('designShared').hidden = !(d && shared);
   $('tplUpload').textContent = d ? 'העלאת לוח אחר' : 'העלאת לוח ישן (PDF או תמונה)';
+  // שיוך לעיצוב של תבנית אחרת מוצע רק לתבנית בלי עיצוב משלה, כשיש ממה לשייך
+  document.querySelector('.imp[data-part="ref"]').hidden = !!t.design || !importSources('ref').length;
   if (d) {
     $('tplStatus').textContent = 'קובץ: ' + d.name + ' (' + d.slots.length + ' אזורים)';
     $('tplUse').checked = !!activeDesign(cfg, t);
