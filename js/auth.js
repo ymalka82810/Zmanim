@@ -137,6 +137,8 @@ async function completeSignInFromRedirect(){
   write(VERIFIER_KEY, null);
   const { tokens } = await unauthenticatedAction('auth:signIn', { params: { code }, verifier });
   applyTokens(tokens ?? null);
+  /* ה-client כבר נוצר בטעינת הדף וקרא טוקן ריק; בלי זה הוא נשאר לא מחובר עד רענון הדף */
+  if (client) client.setAuth(fetchToken, notify);
   return true;
 }
 
