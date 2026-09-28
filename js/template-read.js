@@ -197,8 +197,9 @@ const isGregDate = s => { const m = GREG_RE.exec(s); return !!m && +m[1] >= 1 &&
 const isHebDate = s => { const m = HEB_DATE_RE.exec(s); if (!m) return false; const d = gemValue(m[1]); return d >= 1 && d <= 30; };
 // "רח' הרצל 3", "רחוב…", "שד' ירושלים", "כתובת: …"
 const ADDRESS_RE = /(?:^|[^א-ת])ב?(?:רח['׳"]?|רחוב|שד['׳]|שדרות|סמ['׳]|סמטת|כיכר|ככר|כתובת)(?![א-ת])\s*:?\s*[א-ת]/;
-// "בית הכנסת אור החיים", "קהילת …", "ק"ק …" – שם בית הכנסת שאחרי אחד הכינויים הרגילים
-const SHUL_RE = /(?:^|[^א-ת])(?:ק"ק|קהיל(?:ת|ה קדושה)|ביהכנ"ס|בית\s+(?:ה)?כנסת)(?![א-ת])\s*[-:]?\s*"?([א-ת][^,."\n]{1,40}?)"?(?=\s*[,.\n]|\s*$)/;
+// שורה שמתחילה ב"בית הכנסת …", "קהילת …", "ק"ק …". רק בתחילת שורה, כדי ש"אין להביא לשטח בית הכנסת מוצרים" לא ייתפס.
+// "בית ה כנסת": בקובץ המילים נשמרות לפעמים בפריטים נפרדים
+const SHUL_RE = /^(?:ב["״]ה\s+)?(?:ק["״]ק|קהילת|קהילה קדושה|ביהכנ["״]ס|בית\s*ה?\s*כנסת)(?![א-ת])\s*[-:–]?\s*(.+)$/;
 
 let measureCtx;
 function textWidth(s, size) {
@@ -434,26 +435,30 @@ export function guessOldDay(name, slots, cfg, docDayNum) {
   return null;
 }
 
+/** שורות הטקסט בעמוד: פריטים באותה שורה ובאותו גודל, מחוברים מימין לשמאל */
+function textLines(tokens) {
+  const lines = [];
+  for (const t of tokens.filter(t => t.kind !== 'time').sort((a, b) => a.baseline - b.baseline)) {
+    const l = lines.find(l => sameLine(l[0], t) && Math.abs(l[0].size - t.size) < l[0].size * 0.3);
+    if (l) l.push(t); else lines.push([t]);
+  }
+  return lines.map(l => ({ str: l.sort((a, b) => b.x - a.x).map(t => t.str).join(' ').replace(/\s+/g, ' ').trim(), size: l[0].size }));
+}
+
 /**
- * מנסה למצוא בקובץ הישן את שם בית הכנסת ואת הכתובת – הצעה בלבד, שמוצגת למשתמש לאישור
- * ולא נכתבת אוטומטית. שם בית הכנסת נלקח רק מהכותרת העליונה או מהשורה התחתונה של העמוד,
- * כדי שטקסט לא קשור באמצע העמוד (פרסומת, טקסט מוסתר שנשאר בקובץ מתבנית ישנה וכו')
- * שמזכיר "קהילת" או "בית כנסת" בדרך אגב לא ייתפס בטעות.
+ * שם בית הכנסת והכתובת מהקובץ הישן – הצעה שמוצגת למשתמש לאישור.
+ * השם: משורה שמתחילה ב"בית הכנסת…" (בכל מקום בעמוד), ואם יש כמה – בגופן הגדול ביותר.
  */
 export function detectShulAddress(tokens) {
-  let address = null, addrY = Infinity, maxY = 0;
-  const shulCands = [];
-  for (const t of tokens) {
-    if (t.kind === 'time') continue;
-    maxY = Math.max(maxY, t.y + t.h);
-    if (t.kind === 'address' && t.y < addrY) { address = t.str.trim(); addrY = t.y; }
-    const m = SHUL_RE.exec(t.str);
-    if (m && m[1].trim()) shulCands.push({ name: m[1].trim(), y: t.y, bottom: t.y + t.h });
+  const addr = tokens.filter(t => t.kind === 'address').sort((a, b) => a.y - b.y)[0];
+  let best = null;
+  for (const l of textLines(tokens)) {
+    const m = SHUL_RE.exec(l.str);
+    const name = m && m[1].replace(/^["״'׳]+|["״'׳]+$/g, '').trim();
+    if (!name || name.length > 40 || !/[א-ת]{2}/.test(name)) continue;
+    if (!best || l.size > best.size) best = { name, size: l.size };
   }
-  const inEdge = c => c.y < maxY * 0.2 || c.bottom > maxY * 0.8;
-  const edgeCands = shulCands.filter(inEdge).sort((a, b) => a.y - b.y);
-  const shul = edgeCands[0] ? edgeCands[0].name : null;
-  return { shul, address };
+  return { shul: best ? best.name : null, address: addr ? addr.str.trim() : null };
 }
 
 /** תבנית התאריך הלועזי כמו בקובץ הישן (מפריד, ספרות שנה, אפסים מובילים) */

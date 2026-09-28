@@ -767,15 +767,16 @@ async function templateDone(result) {
   } else showTab('settings');
 }
 
-/** אם זוהו בקובץ הישן שם בית הכנסת ו/או כתובת שעוד לא מוגדרים – מציעים למלא אותם בהגדרות, ולא כותבים בלי אישור */
+/** אם זוהו בקובץ הישן שם בית הכנסת ו/או כתובת ששונים מההגדרות – מציעים לעדכן, ולא כותבים בלי אישור */
 async function offerDetected(d) {
   if (!d) return;
-  const wantShul = d.shul && !cfg.shul, wantAddr = d.address && !cfg.address;
+  const wantShul = d.shul && d.shul !== (cfg.shul || '').trim(), wantAddr = d.address && d.address !== (cfg.address || '').trim();
   if (!wantShul && !wantAddr) return;
+  const was = v => v ? ' (במקום "' + v + '")' : '';
   const lines = [];
-  if (wantShul) lines.push('שם בית הכנסת: "' + d.shul + '"');
-  if (wantAddr) lines.push('כתובת: "' + d.address + '"');
-  const msg = 'זוהו בקובץ הישן הפרטים האלה:\n' + lines.join('\n') + '\nלמלא אותם בהגדרות בית הכנסת?';
+  if (wantShul) lines.push('שם בית הכנסת: "' + d.shul + '"' + was(cfg.shul));
+  if (wantAddr) lines.push('כתובת: "' + d.address + '"' + was(cfg.address));
+  const msg = 'זוהו בקובץ הישן הפרטים האלה:\n' + lines.join('\n') + '\nלעדכן אותם בהגדרות בית הכנסת?';
   if (!await SiteDialog.confirm(msg, { ok: 'מילוי' })) return;
   if (wantShul) cfg.shul = d.shul;
   if (wantAddr) cfg.address = d.address;
