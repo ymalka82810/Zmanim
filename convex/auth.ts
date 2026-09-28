@@ -1,7 +1,12 @@
 import Google from "@auth/core/providers/google";
 import { convexAuth } from "@convex-dev/auth/server";
 
-const ALLOWED_REDIRECT_BASE_URLS = [process.env.SITE_URL, "http://localhost:8080"].filter(
+// com.zmanim.luach://localhost – חזרה לאפליקציית האנדרואיד אחרי הכניסה בדפדפן החיצוני (ראו MainActivity).
+const ALLOWED_REDIRECT_BASE_URLS = [
+  process.env.SITE_URL,
+  "http://localhost:8080",
+  "com.zmanim.luach://localhost",
+].filter(
   (url): url is string => !!url,
 );
 

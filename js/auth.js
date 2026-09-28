@@ -115,10 +115,21 @@ function checkConnection(){
 }
 setInterval(checkConnection, 2000);
 
+/* באפליקציה הדף רץ על https://localhost, שקיים רק בתוך האפליקציה. הכניסה עצמה נפתחת בדפדפן החיצוני,
+ * ולכן החזרה מגוגל עוברת בכתובת עם scheme של האפליקציה, ו-MainActivity טוען אותה בחזרה ב-WebView. */
+const APP_RETURN_ORIGIN = 'com.zmanim.luach://localhost';
+const isNativeApp = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+
+function returnUrl(redirectTo){
+  const url = redirectTo || location.href;
+  if (!isNativeApp() || !url.startsWith(location.origin + '/')) return url;
+  return APP_RETURN_ORIGIN + url.slice(location.origin.length);
+}
+
 async function signInWithGoogle(redirectTo){
   const result = await getClient().action('auth:signIn', {
     provider: 'google',
-    params: { redirectTo: redirectTo || location.href }
+    params: { redirectTo: returnUrl(redirectTo) }
   });
   if (result.redirect){
     write(VERIFIER_KEY, result.verifier);

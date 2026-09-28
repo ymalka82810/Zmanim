@@ -7,7 +7,9 @@ const OUT = ROOT + 'www';
 const FILES = [
   'index.html', 'manifest.webmanifest', 'sw.js', 'css', 'js', 'icons', 'vendor',
   'gabbai/index.html', 'gabbai/css', 'gabbai/js',
-  'kiddush/index.html', 'kiddush/css', 'kiddush/js'
+  'kiddush/index.html', 'kiddush/css', 'kiddush/js',
+  'account/index.html', 'account/css', 'account/js',
+  'community-calendar/index.html', 'community-calendar/js'
 ];
 
 await rm(OUT, { recursive: true, force: true });
