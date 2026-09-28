@@ -23,6 +23,7 @@ import type * as roles from "../roles.js";
 import type * as schedules from "../schedules.js";
 import type * as synagogues from "../synagogues.js";
 import type * as users from "../users.js";
+import type * as zmanimSettings from "../zmanimSettings.js";
 
 import type {
   ApiFromModules,
@@ -46,6 +47,7 @@ declare const fullApi: ApiFromModules<{
   schedules: typeof schedules;
   synagogues: typeof synagogues;
   users: typeof users;
+  zmanimSettings: typeof zmanimSettings;
 }>;
 
 /**
