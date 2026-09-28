@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@700;900&family=Assistant:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@400;700;900&family=Assistant:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/app.css">
 <script src="js/theme.js"></script>
 </head>
@@ -200,6 +200,12 @@
       <label class="check"><input type="checkbox" id="tplRules" checked> לעדכן את זמני התפילות של התבנית לפי הקובץ</label>
       <p class="hint">האזורים המסומנים בכחול יוחלפו בכל לוח. לוחצים על אזור כדי לערוך אותו: לכתוב בו טקסט משלכם ("טקסט שכותבים כאן"), או לבחור ערך שמתעדכן בכל לוח (תפילה, זמן, פרשה, תאריך). לוחצים על טקסט אפור כדי לסמן אותו ולשנות אותו.</p>
       <p class="hint" id="tplScanHint" hidden>לא זוהה טקסט בקובץ (מסמך סרוק, תמונה לא ברורה, או שאין חיבור לאינטרנט לזיהוי טקסט בתמונה). לחצו "סימון אזור" וגררו על כל שעה או תאריך שצריך להחליף.</p>
+      <div class="tpl-fontfill" id="tplFontFill" hidden>
+        <p class="hint" id="tplFontMsg"></p>
+        <button type="button" id="tplFontLocal" hidden>השלמה מהגופנים שבמחשב</button>
+        <button type="button" id="tplFontUpload">העלאת קובץ גופן</button>
+        <input type="file" id="tplFontFile" accept=".ttf,.otf,.ttc,.otc,font/ttf,font/otf,font/collection" hidden>
+      </div>
       <button type="button" id="tplDraw" aria-pressed="false">סימון אזור</button>
     </div>
     <div class="tpl-layout">

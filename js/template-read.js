@@ -110,7 +110,7 @@ export function joinFragments(items) {
  * הגופנים שבקובץ. pdf.js ממיר כל גופן מוטמע לקובץ OpenType שבו כל אות נמצאת בקוד פרטי (PUA),
  * ולכן שומרים גם מפה מהאות האמיתית לקוד שבגופן, לפי האותיות שמופיעות בעמוד.
  * גופן מוטמע הוא בדרך כלל חלקי – יש בו רק האותיות שהיו בקובץ.
- * מחזיר { [שם פנימי]: { family, bold, italic, data (base64) או null, map } }
+ * מחזיר { [שם פנימי]: { family, ps (השם המלא), bold, italic, serif, data (base64) או null, map } }
  */
 async function readFonts(pdfjs, page) {
   const ops = await page.getOperatorList();
@@ -134,7 +134,8 @@ async function readFonts(pdfjs, page) {
     if (!f || f.isType3Font) continue;
     const raw = String(f.name || '');
     const data = f.data && !f.missingFile && !f.disableFontFace ? toBase64(f.data) : null;
-    out[name] = { family: familyName(raw), bold: !!f.bold || /bold|black|heavy/i.test(raw), italic: !!f.italic, data, map: data ? maps[name] : null };
+    out[name] = { family: familyName(raw), ps: raw.replace(/^[A-Z]{6}\+/, ''), bold: !!f.bold || /bold|black|heavy/i.test(raw), italic: !!f.italic,
+      serif: f.fallbackName === 'serif', data, map: data ? maps[name] : null };
   }
   return out;
 }
@@ -209,21 +210,45 @@ async function ocrImage(bmp, k, onStatus) {
   const item = (str, b, baseline, size) => ({ str, x: b.x0 * k, w: (b.x1 - b.x0) * k, baseline: baseline * k, size: size * k,
     y: (baseline - size * 0.92) * k, h: size * 1.2 * k, rtl: /[א-ת]/.test(str) });
 
-  // ספרות: הגובה שלהן הוא בערך 0.72 מגודל הגופן, והן יושבות על קו הבסיס
-  const nums = [];
-  for (const line of engLines) for (const w of line.words) {
-    const str = clean(w);
-    if (w.confidence >= 40 && isNum(str)) nums.push(item(str, w.bbox, w.bbox.y1, (w.bbox.y1 - w.bbox.y0) / 0.72));
-  }
-  const overlapsNum = b => nums.some(n => {
-    const ix = Math.min(b.x1 * k, n.x + n.w) - Math.max(b.x0 * k, n.x), iy = Math.min(b.y1 * k, n.baseline) - Math.max(b.y0 * k, n.baseline - n.size * 0.72);
-    return ix > 0 && iy > 0 && ix * iy > (b.x1 - b.x0) * (b.y1 - b.y0) * k * k * 0.3;
+  // שתי מילים באותו מקום (למשל "הרב" נקרא במעבר האנגלי "77"): נשארת זו שהזיהוי שלה בטוח יותר
+  const area = b => (b.x1 - b.x0) * (b.y1 - b.y0);
+  const overlaps = (a, b) => {
+    const ix = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0), iy = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
+    return ix > 0 && iy > 0 && ix * iy > Math.min(area(a), area(b)) * 0.3;
+  };
+  const numsOf = lines => lines.flatMap(l => l.words).filter(w => w.confidence >= 60 && isNum(clean(w)));
+  // שעה שרק המעבר העברי קרא – נכנסת גם היא
+  const engNums = numsOf(engLines);
+  engNums.push(...numsOf(hebLines).filter(w => !engNums.some(o => overlaps(w.bbox, o.bbox))));
+  // מילה בעברית עם ביטחון נמוך נשארת כשהיא בשורה שזוהתה היטב: Tesseract נותן לפעמים 0 למילה שנקראה נכון ("ה' באדר")
+  const hebWords = new Map(hebLines.map(line => {
+    const good = line.words.some(w => w.confidence >= 80 && /[א-ת]{2}/.test(clean(w)));
+    return [line, line.words.filter(w => {
+      const str = clean(w);
+      // כתמים קטנים (קווים, קישוטים) מזוהים לפעמים כאות בודדת
+      if (!/[א-תA-Za-z]/.test(str) || /\d/.test(str) || Math.min(w.bbox.x1 - w.bbox.x0, w.bbox.y1 - w.bbox.y0) < 12) return false;
+      return w.confidence >= 60 || (good && /[א-ת]/.test(str) && !/[A-Za-z]/.test(str));
+    })];
+  }));
+  const allHeb = [...hebWords.values()].flat();
+  const beats = (w, others) => !others.some(o => overlaps(w.bbox, o.bbox) && o.confidence > w.confidence);
+
+  // ספרות: הגובה שלהן הוא בערך 0.72 מגודל הגופן, והן יושבות על קו הבסיס.
+  // הגובה והבסיס לפי הספרות עצמן: תיבת המילה כוללת לפעמים גם מסגרת או רקע כהה סביב השעה
+  const digitBox = w => {
+    const ds = (w.symbols || []).filter(s => /\d/.test(s.text));
+    if (!ds.length) return { h: w.bbox.y1 - w.bbox.y0, base: w.bbox.y1 };
+    const mid = list => list.sort((a, b) => a - b)[list.length >> 1];
+    return { h: mid(ds.map(s => s.bbox.y1 - s.bbox.y0)), base: mid(ds.map(s => s.bbox.y1)) };
+  };
+  const nums = engNums.filter(w => beats(w, allHeb)).map(w => {
+    const d = digitBox(w);
+    return item(clean(w), w.bbox, d.base, d.h / 0.72);
   });
 
   const items = [];
   for (const line of hebLines) {
-    const words = line.words.map(w => ({ w, str: clean(w) }))
-      .filter(({ w, str }) => w.confidence >= 40 && /[א-תA-Za-z]/.test(str) && !/\d/.test(str) && !overlapsNum(w.bbox));
+    const words = hebWords.get(line).filter(w => beats(w, engNums)).map(w => ({ w, str: clean(w) }));
     if (!words.length) continue;
     // גודל הגופן לפי המילה הנמוכה בשורה: רוב האותיות בעברית בלי עולים ויורדים, בגובה של כ-0.55 מהגופן
     const size = Math.min(...words.map(({ w }) => w.bbox.y1 - w.bbox.y0)) / 0.55;
@@ -617,7 +642,8 @@ const sameLine = (a, b) => Math.abs(a.baseline - b.baseline) < Math.max(a.size, 
 
 /** התווית של שעה: הטקסט הקרוב באותה שורה, קודם מימין (עברית) ואחר כך משמאל */
 function labelFor(t, texts) {
-  const line = texts.filter(x => sameLine(x, t));
+  // פרשה, תאריך או כתובת באותה שורה אינם השם של השעה (למשל שעון בין הפרשה לתאריך)
+  const line = texts.filter(x => !isFixedKind(x.kind) && sameLine(x, t));
   const right = line.filter(x => x.x >= t.x + t.w * 0.5).sort((a, b) => a.x - b.x)[0];
   const left = line.filter(x => x.x + x.w <= t.x + t.w * 0.5).sort((a, b) => (b.x + b.w) - (a.x + a.w))[0];
   if (right && left) {
@@ -673,6 +699,24 @@ const DAY_WORDS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמיש
   .map((w, i) => [new RegExp('(^|[^א-ת])(' + w + '|יום ' + 'אבגדהו'[i] + '[\'׳]?)($|[^א-ת])'), i]);
 /** היום בשבוע (0–5) שמוזכר בטקסט, או null */
 export const dowOf = s => { for (const [re, i] of DAY_WORDS) if (re.test(s)) return i; return null; };
+
+/**
+ * הימים בשבוע (0–5) בשורה כמו "ימים: א'-ה'", "בימים ב', ד'", "ימים: שני וחמישי", או null.
+ * רק כשמופיעה המילה "ימים", כדי שאות בודדת בתוך טקסט אחר לא תיקרא כיום.
+ */
+export function daysOf(s) {
+  const m = /(?:^|[^א-ת])ב?ימים\s*:?\s*(.+)$/.exec(String(s || ''));
+  if (!m) return null;
+  let body = m[1];
+  ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי'].forEach((w, i) => { body = body.replace(new RegExp('ו?' + w + '(?![א-ת])', 'g'), 'אבגדהו'[i] + "'"); });
+  const out = new Set();
+  // אות עם גרש, אפשר עם ו' החיבור ("וה'"), ואפשר טווח ("א'-ה'", "א' עד ה'")
+  for (const r of body.matchAll(/(?<![א-ת])ו?([א-ו])['׳"]?(?:\s*(?:[-–־]|עד)\s*ו?([א-ו])['׳"]?)?(?![א-ת])/g)) {
+    const a = 'אבגדהו'.indexOf(r[1]), b = r[2] ? 'אבגדהו'.indexOf(r[2]) : a;
+    for (let i = Math.min(a, b); i <= Math.max(a, b); i++) out.add(i);
+  }
+  return out.size ? [...out].sort((x, y) => x - y) : null;
+}
 
 /**
  * הצעה ראשונית לכל האזורים בתבנית.
@@ -754,13 +798,23 @@ function suggestDaySlots(tokens, texts, cfg, period) {
       w = dowOf(s);
       if (w != null) break;
     }
-    const col = period.days.find(x => x.dow === w) || period.days[0];
+    // "ימים: א'-ה'" בתווית של השעה או מעליה באותה עמודה (הקרוב ביותר): השעה חלה על כל הימים האלה.
+    // לא כל טקסט באותה שורה – בלוח עם שתי עמודות השורה ממשיכה לעמודה השנייה
+    let spec = null;
+    for (const s of [lab ? lab.str : '', ...heads.map(h => h.str)]) {
+      spec = daysOf(s);
+      if (spec) break;
+    }
+    const specCols = spec ? period.days.filter(x => spec.includes(x.dow)) : [];
+    const col = specCols[0] || period.days.find(x => x.dow === w) || period.days[0];
+    const days = specCols.length > 1 ? { days: specCols.map(x => x.key) } : {};
     const zm = !PRAYER_WORDS.test(label) && ZMAN_WORDS.find(z => z[0].test(label));
     const name = label.replace(/[:\-–|]+$/g, '').trim();
     if (zm) slots.push({ box, labelBox, kind: 'zman', zman: zm[1], when: col.key, old: t.str, label: name });
     else {
-      const rule = inferRule(t.minutes, 'כל יום', timesFor(cfg, col.day), cfg.tz, label);
-      slots.push({ box, labelBox, kind: 'rule', when: col.key, name: name || 'תפילה', old: t.str, label: name, ...rule });
+      const rule = col.day != null ? inferRule(t.minutes, 'כל יום', timesFor(cfg, col.day), cfg.tz, label)
+        : { base: 'שעה קבועה', offset: t.str, round: 'ללא' };
+      slots.push({ box, labelBox, kind: 'rule', when: col.key, ...days, name: name || 'תפילה', old: t.str, label: name, ...rule });
     }
   }
   return slots;
@@ -768,5 +822,6 @@ function suggestDaySlots(tokens, texts, cfg, period) {
 
 /** טקסטים שאינם שעות ואינם מזוהים – אפשר ללחוץ עליהם ולהפוך אותם לאזור */
 export function textCandidates(tokens) {
-  return tokens.filter(t => t.kind === 'text').map(t => ({ box: boxOf(t), old: t.str }));
+  // טקסט בלי מילה של שתי אותיות לפחות ("6", "ה") הוא בדרך כלל מספר עמוד, קישוט או שארית של לוגו
+  return tokens.filter(t => t.kind === 'text' && /[א-תA-Za-z]{2}/.test(t.str)).map(t => ({ box: boxOf(t), old: t.str }));
 }

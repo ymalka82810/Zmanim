@@ -5,10 +5,11 @@
 
 import { BASES, WHEN, WHEN_LABELS, ROUND, SIZES, DAY_APPLIES, appliesOnDay, prayerBases, designOf } from './config.js';
 import { readFile, tokenize, detectDate, detectShulAddress, suggestSlots, textCandidates, inferRule, guessOldDay } from './template-read.js';
-import { analyzeSlot, refineBox, templateCanvas } from './template-render.js';
+import { analyzeSlot, refineBox, templateCanvas, specialHost } from './template-render.js';
 import { findOccasion, findPeriod, periodFor, buildLuach, buildDaysLuach, timesFor } from './luach.js';
 import { toDayNum, toYmd, todayIn, dow } from './dates.js';
 import { esc } from './render.js';
+import { fontsToFill, canReadLocalFonts, fillFromLocal, fillFromFile } from './font-fill.js';
 
 const $ = id => document.getElementById(id);
 const KINDS = [['text', 'טקסט שכותבים כאן'], ['rule', 'תפילה או שיעור'], ['kiddush', 'קידוש (מלוח הקידושים)'], ['zman', 'זמן היום'], ['title', 'כותרת (שבת פרשת…)'], ['parasha', 'פרשת…'],
@@ -78,7 +79,9 @@ export async function editFromFile(file, cfgAll, tpl, onDone, onStatus) {
   st = { canvas, W: canvas.width, H: canvas.height, cfg, cfgAll, tpl, name: file.name, onDone, fonts,
     candidates: textCandidates(tokens).map(fit), scanned: !items.length, detected: detectShulAddress(tokens) };
   setDay(detectDate(tokens));
-  let slots = suggestSlots(tokens, cfg, st.day, st.period);
+  // לוח ימי חול בלי תאריך בקובץ: מזהים את הימים לפי שבוע כללי (ראשון–שישי), והשעות נשמרות כשעה קבועה עד שבוחרים תאריך
+  const week = { mode: 'days', days: [0, 1, 2, 3, 4, 5].map(i => colOf('d' + i)) };
+  let slots = suggestSlots(tokens, cfg, st.day, st.period || (isDays() ? week : null));
   // אין תאריך מפורש בקובץ: מנסים לנחש אותו לפי שם הפרשה והזמנים שכבר זוהו
   if (st.day == null && !isDays()) {
     const nameSlot = slots.find(s => s.kind === 'parasha' || s.kind === 'parashaName');
@@ -126,9 +129,61 @@ function open() {
   $('tplPreviewWrap').hidden = true;
   st.drawing = false;
   $('tplDraw').setAttribute('aria-pressed', 'false');
-  renderOcc(); renderBoxes(); renderSlots();
+  renderOcc(); renderBoxes(); renderSlots(); renderFontFill();
   window.scrollTo(0, 0);
 }
+
+/* ---------- השלמת אותיות חסרות בגופן מהקובץ ---------- */
+
+/** הודעה כשבגופן המוטמע חסרות אותיות, עם אפשרות להשלים אותן מהמחשב או מקובץ גופן */
+function renderFontFill(done) {
+  const need = fontsToFill(st.fonts);
+  const box = $('tplFontFill');
+  box.hidden = !need.length && !done;
+  if (box.hidden) return;
+  const letters = [...new Set(need.flatMap(([, , m]) => [...m]))].join(' ');
+  const names = [...new Set(need.map(([, f]) => f.family))].join(', ');
+  $('tplFontMsg').textContent = (done ? done + ' ' : '') + (need.length
+    ? 'בגופן שבקובץ (' + names + ') חסרות האותיות ' + letters + ', ולכן הן ייכתבו בגופן דומה. ' +
+      (canReadLocalFonts()
+        ? 'אם הגופן מותקן במחשב שלך או שיש לך קובץ שלו, אפשר להשלים ממנו את האותיות ולשמור אותן בתבנית.'
+        // בטלפון (ובדפדפנים אחרים) אין גישה לגופנים שבמכשיר, ולרוב גם אין קובץ גופן להעלות
+        : 'אפשר להשלים אותן מקובץ של הגופן, או בקלות יותר ממחשב עם Chrome או Edge שהגופן מותקן בו: ' +
+          'פותחים שם את "עריכת התבנית" ולוחצים "השלמה מהגופנים שבמחשב". אחרי השמירה הלוח ייראה תקין בכל מכשיר.')
+    : '');
+  $('tplFontLocal').hidden = !need.length || !canReadLocalFonts();
+  $('tplFontUpload').hidden = !need.length;
+}
+
+$('tplFontLocal').onclick = async () => {
+  let res;
+  try { res = await fillFromLocal(st.fonts); }
+  catch (e) {
+    console.warn('אין גישה לגופנים שבמחשב', e);
+    SiteDialog.alert('לא התקבלה גישה לגופנים שבמחשב. אפשר לאשר את הגישה בהגדרות האתר בדפדפן, או להעלות קובץ גופן.');
+    return;
+  }
+  // הסבר נפרד לכל סיבה: לא נמצא, נמצא בפורמט שלא נקרא (Type 1 ב-Linux), בלי עברית, או בלי חיבור
+  const WHY = {
+    format: x => 'הגופן ' + x.family + ' נמצא במחשב (' + x.file + '), אבל הוא שמור בפורמט ישן שהאתר לא יודע לקרוא. אפשר להעלות קובץ ‎.ttf או ‎.otf שלו.',
+    noHebrew: x => 'הגופן ' + x.file + ' שנמצא במחשב לא כולל אותיות עבריות.',
+    network: () => 'לא ניתן לטעון את רכיב קריאת הגופנים. בדקו את החיבור לאינטרנט ונסו שוב.'
+  };
+  const problems = [...new Set([
+    ...[...new Set(res.notFound)].map(n => 'הגופן ' + n + ' לא נמצא במחשב. אפשר להעלות קובץ גופן.'),
+    ...res.failed.map(x => (WHY[x.why] || WHY.format)(x))
+  ])];
+  if (res.filled.length) renderFontFill('הושלמו האותיות מהגופן ' + [...new Set(res.filled)].join(', ') + '.');
+  if (problems.length) SiteDialog.alert(problems.join('\n'));
+};
+$('tplFontUpload').onclick = () => $('tplFontFile').click();
+$('tplFontFile').onchange = async e => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try { renderFontFill('הושלמו האותיות מהגופן ' + (await fillFromFile(st.fonts, file)).join(', ') + '.'); }
+  catch (err) { SiteDialog.alert(err.message || 'לא ניתן לקרוא את קובץ הגופן.'); }
+};
 
 function close(result) {
   const done = st.onDone;
@@ -345,7 +400,7 @@ function slotFields(s) {
     const fixed = s.base === 'שעה קבועה';
     return '<div class="rgrid">' +
       '<div class="wide"><label>שם</label><input data-k="name" value="' + esc(s.name) + '" placeholder="למשל: מנחה"></div>' +
-      (isDays() ? '<div><label>יום</label><select data-k="when">' + opts(dayOpts(), s.when) + '</select></div>'
+      (isDays() ? dayChecks(s)
         : '<div><label>מתי</label><select data-k="when">' + opts(WHEN_LABELS, s.when) + '</select></div>') +
       '<div><label>לפי</label><select data-k="base">' + baseOpts(s) + '</select></div>' +
       (fixed
@@ -357,7 +412,7 @@ function slotFields(s) {
   if (s.kind === 'kiddush') {
     return '<div class="rgrid">' +
       '<div class="wide"><label>שם</label><input data-k="name" value="' + esc(s.name) + '" placeholder="למשל: קידוש"></div>' +
-      (isDays() ? '<div><label>יום</label><select data-k="when">' + opts(dayOpts(), s.when) + '</select></div>'
+      (isDays() ? dayChecks(s)
         : '<div><label>מתי</label><select data-k="when">' + opts(WHEN_LABELS, s.when) + '</select></div>') +
       '<div class="wide"><label>נוסח</label><input data-k="offset" dir="rtl" value="' + esc(s.offset) + '" placeholder="{שם}{לרגל}"></div></div>' +
       '<p class="hint">הטקסט יתמלא לפי מי שאושר לקידוש בתאריך הזה (מלוח הקידושים של הקהילה). ' +
@@ -385,6 +440,24 @@ function sizeFields(s) {
     '> לאפשר גלישה לשתי שורות אם הטקסט ארוך מדי</label></div></div>';
 }
 
+/**
+ * הימים שבהם שעה בלוח ימי חול חלה. s.when – היום שהערך שלו נכתב באזור;
+ * s.days – כשהשעה חלה על כמה ימים ("ימים: א'-ה'"), כל הימים.
+ */
+const slotDays = s => (s.days && s.days.length ? s.days : [s.when]);
+
+function dayChecks(s) {
+  const on = new Set(slotDays(s));
+  return '<div class="wide"><label>ימים</label><div class="day-checks">' + dayOpts().map(([k, n]) =>
+    '<label class="check"><input type="checkbox" data-k="day" value="' + k + '"' + (on.has(k) ? ' checked' : '') + '> ' + esc(n) + '</label>').join('') +
+    '</div></div>';
+}
+
+function daysLabel(s) {
+  const d = slotDays(s);
+  return d.length > 1 ? d.map(whenLabel).join(', ') : whenLabel(s.when);
+}
+
 /** תרגום "מתי" למילה בעברית: בלוח ימי חול s.when הוא מפתח (d0…d5) */
 function whenLabel(w) {
   if (!isDays()) return w;
@@ -403,9 +476,9 @@ function slotSum(s) {
     const n = parseInt(s.offset, 10) || 0;
     const at = fixed ? 'בשעה ' + (s.offset || '')
       : n ? Math.abs(n) + ' דק׳ ' + (n < 0 ? 'לפני ' : 'אחרי ') + s.base : s.base;
-    parts.push(whenLabel(s.when), at);
+    parts.push(daysLabel(s), at);
   } else if (s.kind === 'kiddush') {
-    parts.push(whenLabel(s.when));
+    parts.push(daysLabel(s));
   } else if (s.kind === 'zman') {
     parts.push(zmanLabel(s.zman), whenLabel(s.when));
   } else if (s.kind === 'text' && s.text) {
@@ -429,7 +502,18 @@ function renderSlots() {
     '<span class="rule-sum">' + esc(slotSum(s)) + '</span></summary>' +
     '<div class="slot-top"><select data-k="kind" aria-label="מה יופיע באזור ' + ranks[i] + '">' + opts(KINDS, s.kind) + '</select>' +
     '<button type="button" class="del" data-del="' + i + '">הסרה</button></div>' + slotFields(s) + sizeFields(s) + '</details>'
-  ).join('');
+  ).join('') + specialHint();
+}
+
+/** הודעה כשאין בקובץ אזור לשם של שבת מיוחדת (זכור, נחמו…) */
+function specialHint() {
+  if (isChol() || st.slots.some(s => s.kind === 'special')) return '';
+  const host = specialHost(st.slots);
+  return '<p class="hint">' + (host
+    ? 'אין בקובץ אזור לשבת מיוחדת: בשבתות כמו זכור או נחמו השם יתווסף ל' + (host === 'title' ? 'כותרת' : 'פרשה') +
+      '. אפשר גם לסמן לו אזור משלו ("סימון אזור") ולבחור "שבת מיוחדת".'
+    : 'אין בקובץ אזור לשבת מיוחדת או לכותרת, ולכן בשבתות כמו זכור או נחמו השם לא יופיע. ' +
+      'כדי שיופיע, לחצו "סימון אזור", גררו על מקום פנוי ובחרו "שבת מיוחדת".') + '</p>';
 }
 $('tplSlots').addEventListener('toggle', e => {
   const s = st.slots[+e.target.getAttribute('data-i')];
@@ -452,6 +536,15 @@ $('tplSlots').addEventListener('input', e => {
   }
   if (k === 'sizePct' || k === 'lineHeightPct') { s[k] = Number(v); return; }
   if (k === 'wrap') { s.wrap = e.target.checked; renderSlots(); return; }
+  if (k === 'day') {
+    const keys = [...ed.querySelectorAll('input[data-k="day"]:checked')].map(x => x.value);
+    // לפחות יום אחד
+    if (!keys.length) { e.target.checked = true; return; }
+    if (keys.length > 1) s.days = keys; else delete s.days;
+    const when = keys[0];
+    if (when !== s.when) { s.when = when; if (s.kind === 'rule') reinfer(s); }
+    renderSlots(); return;
+  }
   if (k === 'zman') s.zman = zmanKey(v);
   else if (k === 'offsetAbs' || k === 'offsetDir') {
     const abs = k === 'offsetAbs' ? v.replace(/[^0-9]/g, '') : offsetAbs(s);
@@ -509,13 +602,16 @@ function daySlotRules() {
     const kd = s.kind === 'kiddush';
     const base = kd ? KIDDUSH_LABEL : s.base, round = kd ? 'ללא' : s.round;
     const k = [name, base, s.offset, round].join('|');
-    if (!groups.has(k)) groups.set(k, { name, base, offset: s.offset, round, keys: new Set() });
-    groups.get(k).keys.add(colOf(s.when).key);
+    if (!groups.has(k)) groups.set(k, { name, base, offset: s.offset, round, keys: new Set(), byDays: false });
+    for (const d of slotDays(s)) groups.get(k).keys.add(colOf(d).key);
+    if (s.days) groups.get(k).byDays = true;
   }
   const out = [];
   for (const g of groups.values()) {
     const want = cols.filter(c => g.keys.has(c.key)).map(c => c.key).join();
-    const applies = DAY_APPLIES.slice(0, 5).find(a => cols.filter(c => appliesOnDay(a, c)).map(c => c.key).join() === want);
+    // ימים שנכתבו במפורש בלוח ("ימים: א'-ה'"): קודם לפי הימים בשבוע, ולא לפי ערב שבת וחג
+    const order = g.byDays ? ['כל הימים', 'א׳–ה׳', 'ב׳ וה׳'] : DAY_APPLIES.slice(0, 5);
+    const applies = order.find(a => cols.filter(c => appliesOnDay(a, c)).map(c => c.key).join() === want);
     const rule = a => ({ name: g.name, when: 'כל יום', applies: a, base: g.base, offset: g.offset, round: g.round });
     if (applies) out.push(rule(applies));
     else for (const key of g.keys) out.push(rule(DOW_LABELS[colOf(key).dow]));
@@ -540,7 +636,7 @@ function buildTemplate() {
     const c = { box: s.box, kind: s.kind, old: s.old || '' };
     if (s.labelBox) c.labelBox = s.labelBox;
     if ((s.kind === 'parasha' || s.kind === 'parashaName') && s.prefix && s.prefix.trim()) c.prefix = s.prefix.trim() + ' ';
-    if (s.kind === 'rule' || s.kind === 'kiddush') Object.assign(c, { name: String(s.name).trim(), when: s.when });
+    if (s.kind === 'rule' || s.kind === 'kiddush') Object.assign(c, { name: String(s.name).trim(), when: s.when, ...(s.days ? { days: s.days } : {}) });
     if (s.kind === 'zman') Object.assign(c, { zman: s.zman, when: s.when });
     if (s.kind === 'hebDate') Object.assign(c, { ascii: !!s.ascii, noYear: !!s.noYear });
     if (s.kind === 'gregDate') c.fmt = s.fmt;

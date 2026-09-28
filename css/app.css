@@ -152,8 +152,12 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 /* תבנית מלוח קיים */
 .check { display: flex; align-items: center; gap: 8px; font-weight: 600; margin: 8px 0; }
 .check input { width: auto; transform: scale(1.2); }
+.day-checks { display: flex; flex-wrap: wrap; gap: 0 16px; }
+.day-checks .check { margin: 4px 0; font-weight: 400; }
 .tpl-status { margin: 0 0 6px; font-weight: 600; color: var(--ok); }
 .tpl-occ { align-self: end; margin: 0 0 8px; }
+.tpl-fontfill { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0 12px; }
+.tpl-fontfill .hint { flex-basis: 100%; margin: 0; }
 .luach-img { display: block; width: 100%; height: auto; border-radius: 10px; }
 .luach:has(.luach-img) { padding: 10px; background: #fff; }
 /* שבת/חג רב-יומי בעיצוב מקובץ: עמוד לכל יום */

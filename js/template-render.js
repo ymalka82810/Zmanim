@@ -8,6 +8,15 @@ import { hebDateString } from './hebrew.js';
 import { toYmd } from './dates.js';
 
 const FALLBACK = '"Assistant", Arial, sans-serif';
+const SERIF_FALLBACK = '"Frank Ruhl Libre", "David Libre", Georgia, serif';
+// pdf.js לא תמיד מזהה גופן עם תגים (למשל David מ-Chrome/Word), ותבניות ישנות נשמרו בלי serif – משלימים לפי שם הגופן
+const SERIF_NAME = /serif|times|roman|david|frank|narkis|guttman|keter|hadasim|drugulin|koren|taamey|ezra|sbl|cardo|georgia|garamond/i;
+
+/** גופן חלופי לגופן מהקובץ: קודם הגופן עצמו לפי השם (אם מותקן במכשיר), ואחר כך גופן עברי בסגנון דומה – עם תגים או בלי */
+function fallbackCss(f) {
+  const serif = f.serif || SERIF_NAME.test(f.family || '');
+  return (f.family ? '"' + f.family.replace(/"/g, '') + '", ' : '') + (serif ? SERIF_FALLBACK : FALLBACK);
+}
 
 /* ---------- ניתוח צבעים (פעם אחת, בשמירת התבנית) ---------- */
 
@@ -75,11 +84,16 @@ export function refineBox(canvas, box) {
   if (!inkRow(top)) return box;
   while (top > 0 && inkRow(top - 1)) top--;
   while (bottom < H - 1 && inkRow(bottom + 1)) bottom++;
+  // "דיו" גבוה בהרבה מהטקסט: הרקע לא אחיד (צבעים, תמונה), ואי אפשר למצוא לפיו את גבולות הטקסט
+  if (bottom - top > box.size * 1.5) return box;
   // המיקום האופקי מוערך לפי רוחב תווים, ולפעמים חותך אות: מרחיבים עד עמודה ריקה
   const inkCol = x => { for (let y = top; y <= bottom; y++) if (dist(px(x, y), bg) > 70) return true; return false; };
   let left = x0, right = x1 - 1;
   while (left > xa && inkCol(left)) left--;
   while (right < xb - 1 && inkCol(right)) right++;
+  // הגענו עד קצה התחום: זה רקע צבעוני ולא אות שנחתכה
+  if (left === xa && xa < x0) left = x0;
+  if (right === xb - 1 && xb > x1) right = x1 - 1;
   return { ...box, x: left, w: right - left + 1, y: y0 + top - 2, h: bottom - top + 5 };
 }
 
@@ -118,10 +132,23 @@ export function slotValue(slot, v) {
 export const slotKey = s => s.kind === 'text' ? 'text|' + Math.round(s.box.x) + ',' + Math.round(s.box.y)
   : [s.kind, s.when, s.name, s.zman].filter(x => x != null && x !== '').join('|');
 
-/** הטקסט שנכתב באזור: מה שהגבאי כתב (v.edits), או הערך המחושב */
-export function slotText(slot, v) {
+/**
+ * כשאין בתבנית אזור לשבת מיוחדת: סוג האזור שאליו מוסיפים את שם השבת ("שבת זכור") –
+ * הכותרת, ואם אין כותרת – הפרשה. null כשיש אזור משלה, או כשאין לאן להוסיף.
+ */
+export function specialHost(slots) {
+  if (slots.some(s => s.kind === 'special')) return null;
+  return ['title', 'parasha', 'parashaName'].find(k => slots.some(s => s.kind === k)) || null;
+}
+
+/** הטקסט שנכתב באזור: מה שהגבאי כתב (v.edits), או הערך המחושב. host – מ-specialHost */
+export function slotText(slot, v, host) {
   const k = slotKey(slot);
-  return v.edits && k in v.edits ? String(v.edits[k]) : slotValue(slot, v);
+  if (v.edits && k in v.edits) return String(v.edits[k]);
+  const text = slotValue(slot, v);
+  // "שבת פרשת תצוה – שבת זכור", "לשבת תצוה – זכור"
+  if (!v.special || slot.kind !== host || text == null) return text;
+  return text + ' – ' + (slot.kind === 'parashaName' ? v.special.replace(/^שבת\s+/, '') : v.special);
 }
 
 /* ---------- ציור ---------- */
@@ -145,13 +172,16 @@ function hash(str) {
   return (h >>> 0).toString(36) + str.length.toString(36);
 }
 
-/** טעינת גופן מוטמע (base64) לדפדפן. מחזיר את שם המשפחה, או null אם הטעינה נכשלה */
-async function loadFace(data) {
-  const family = 'tpl-' + hash(data);
+/**
+ * טעינת גופן (base64) לדפדפן. מחזיר את שם המשפחה, או null אם הטעינה נכשלה.
+ * weight – המשקל שהגופן רשום בו, כדי שהדפדפן לא יעבה שוב גופן שכבר מודגש
+ */
+async function loadFace(data, weight = 'normal') {
+  const family = 'tpl-' + hash(data) + (weight === 'normal' ? '' : '-' + weight);
   if (!faces.has(family)) {
     faces.set(family, (async () => {
       const bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0));
-      const face = new FontFace(family, bytes);
+      const face = new FontFace(family, bytes, { weight });
       await face.load();
       document.fonts.add(face);
       return true;
@@ -165,8 +195,12 @@ async function templateFonts(tpl) {
   const out = {};
   for (const [k, f] of Object.entries(tpl.fonts || {})) {
     const family = f.data && f.map ? await loadFace(f.data) : null;
-    out[k] = family ? { family, map: f.map, bold: f.bold }
-      : { css: (f.family ? '"' + f.family.replace(/"/g, '') + '", ' : '') + FALLBACK, bold: f.bold };
+    // f.full – האותיות מהגופן המלא (מהמחשב של הגבאי או מקובץ שהעלה), לאותיות שחסרות בגופן המוטמע
+    const full = f.full ? await loadFace(f.full, f.bold ? '700' : '400') : null;
+    const css = (full ? '"' + full + '", ' : '') + fallbackCss(f);
+    out[k] = family ? { family, map: f.map, bold: f.bold, css } : { css, bold: f.bold };
+    // הקנבס לא מחכה לגופן רשת – טוענים מראש את האותיות העבריות של הגופן החלופי
+    await document.fonts.load((f.bold ? '700 ' : '400 ') + '20px ' + css, 'אבצץ').catch(() => {});
   }
   return out;
 }
@@ -197,7 +231,7 @@ function embeddedText(ctx, text, f, size, cx, baseline, draw) {
     if (last && last.emb === emb) last.s += emb ? f.map[ch] : ch;
     else segs.push({ emb, s: emb ? f.map[ch] : ch });
   }
-  const fonts = { true: size + 'px "' + f.family + '"', false: (f.bold ? '700 ' : '400 ') + size + 'px ' + FALLBACK };
+  const fonts = { true: size + 'px "' + f.family + '"', false: (f.bold ? '700 ' : '400 ') + size + 'px ' + f.css };
   // LRO … PDF – כופה סדר משמאל לימין על קטע בגופן החלופי, שכבר נמצא בסדר ויזואלי
   const str = sg => sg.emb ? sg.s : '\u202D' + sg.s + '\u202C';
   let w = 0;
@@ -235,8 +269,9 @@ export async function templateCanvas(tpl, values) {
   ctx.textAlign = 'center';
   const fonts = await templateFonts(tpl);
 
+  const host = specialHost(tpl.slots);
   for (const s of tpl.slots) {
-    const text = slotText(s, values);
+    const text = slotText(s, values, host);
     if (text == null) continue;
     const b = s.box, st = s.style || { bg: '#fff', fg: '#000', bold: false };
     let size = (b.size || b.h * 0.72) * ((s.sizePct || 100) / 100);
@@ -257,7 +292,14 @@ export async function templateCanvas(tpl, values) {
     let w = writeAt(text, size, baseline, false);
     const room = Math.max(b.w * 1.15, b.w + size);
     let lines = [text];
-    if (w > room) {
+    // שם שבת מיוחדת שנוסף לכותרת ולא נכנס בשורה אחת יורד לשורה משלו, בגודל המקורי ככל האפשר
+    const added = s.kind === host && values.special ? text.lastIndexOf(' – ') : -1;
+    if (w > room && added > 0) {
+      lines = [text.slice(0, added), text.slice(added + 3)];
+      const widest = () => Math.max(...lines.map(ln => writeAt(ln, size, baseline, false)));
+      w = widest();
+      if (w > room) { size = Math.max(size * 0.7, size * room / w); w = widest(); }
+    } else if (w > room) {
       size = Math.max(size * 0.7, size * room / w);
       w = writeAt(text, size, baseline, false);
       if (s.wrap) {
