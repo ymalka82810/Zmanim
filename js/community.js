@@ -51,8 +51,8 @@ function renderManager(){
     (pending.length ? '<h3>ממתינים לאישור</h3>' + pending.map(row).join('') : '<p class="hint">אין קבצים שממתינים לאישור.</p>') +
     (approved.length ? '<details><summary>קבצים מאושרים (' + approved.length + ')</summary>' + approved.map(row).join('') + '</details>' : '');
   $('communityFiles').querySelectorAll('[data-approve]').forEach(b => b.onclick = () => act('schedules:approve', b.dataset.approve, 'הלוח אושר ופורסם לקהילה'));
-  $('communityFiles').querySelectorAll('[data-remove]').forEach(b => b.onclick = () => {
-    if (confirm('להסיר את הקובץ?')) act('schedules:remove', b.dataset.remove, 'הקובץ הוסר');
+  $('communityFiles').querySelectorAll('[data-remove]').forEach(b => b.onclick = async () => {
+    if (await SiteDialog.confirm('להסיר את הקובץ?', { ok: 'הסרה', danger: true })) act('schedules:remove', b.dataset.remove, 'הקובץ הוסר');
   });
 }
 

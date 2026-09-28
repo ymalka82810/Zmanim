@@ -65,7 +65,7 @@ async function markFundRead(){await call("fund:markNotificationsRead",{})}
 function localData(){try{const j=JSON.parse(localStorage.getItem(LS)||"null");return j&&Array.isArray(j.txs)&&j.txs.length?j:null}catch(e){return null}}
 async function importLocal(){
   const j=localData();if(!j)return;
-  if(!confirm(`להעביר ${j.txs.length} רישומים שנשמרו בדפדפן הזה לקופה של ${settings.synName}?`))return;
+  if(!await SiteDialog.confirm(`להעביר ${j.txs.length} רישומים שנשמרו בדפדפן הזה לקופה של ${settings.synName}?`,{ok:"העברה"}))return;
   const list=j.txs.map(t=>{const o={};for(const k of TX_KEYS) if(t[k]!==undefined&&t[k]!==null) o[k]=t[k]; o.amount=Number(o.amount)||0; return o}).filter(o=>o.amount>0&&o.type&&o.date);
   try{
     const n=await call("fund:importLocal",{txs:list,openMain:Number(j.settings&&j.settings.openMain)||0,openPetty:Number(j.settings&&j.settings.openPetty)||0});
@@ -350,7 +350,7 @@ $("#view").addEventListener("click",async e=>{
   if(b.dataset.dv){ui.donView=b.dataset.dv;return render()}
   if(b.dataset.df){ui.donFilter=b.dataset.df;return render()}
   if(b.dataset.edit){const t=txs.find(x=>x.id===b.dataset.edit);if(t)openForm(null,t);return}
-  if(b.dataset.del){const t=txs.find(x=>x.id===b.dataset.del);if(t&&confirm(`למחוק את הרישום "${label(t)}" על סך ${money(t.amount)}?`)){try{await delTx(t.id);toast("נמחק")}catch(err){toast(errText(err,"המחיקה נכשלה"))}}return}
+  if(b.dataset.del){const t=txs.find(x=>x.id===b.dataset.del);if(t&&await SiteDialog.confirm(`למחוק את הרישום "${label(t)}" על סך ${money(t.amount)}?`,{ok:"מחיקה",danger:true})){try{await delTx(t.id);toast("נמחק")}catch(err){toast(errText(err,"המחיקה נכשלה"))}}return}
   if(b.dataset.pay){const t=txs.find(x=>x.id===b.dataset.pay);if(t){try{await markPaid(t.id);toast("סומן כשולם")}catch(err){toast(errText(err,"העדכון נכשל"))}}return}
   if(b.id==="csv") return exportCsv();
   if(b.id==="pdf") return print();

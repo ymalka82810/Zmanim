@@ -371,7 +371,7 @@ $('tplPreview').onclick = async () => {
 
 $('tplSave').onclick = () => {
   const bad = st.slots.find(s => s.kind === 'rule' && !String(s.name).trim());
-  if (bad) { focusSlot(st.slots.indexOf(bad)); alert('יש אזור של תפילה בלי שם. כתבו שם או הסירו את האזור.'); return; }
+  if (bad) { focusSlot(st.slots.indexOf(bad)); SiteDialog.alert('יש אזור של תפילה בלי שם. כתבו שם או הסירו את האזור.'); return; }
   close({ tpl: st.tpl, template: buildTemplate(), rules: slotRules(), replace: $('tplRules').checked });
 };
 $('tplCancel').onclick = () => close(null);

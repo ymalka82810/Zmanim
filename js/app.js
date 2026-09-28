@@ -413,7 +413,7 @@ function convertRules(list, kind) {
   return out;
 }
 
-function doImport(box) {
+async function doImport(box) {
   const part = box.dataset.part, t = selTpl();
   const src = cfg.templates.find(x => x.id === box.querySelector('.imp-from').value);
   if (!src) return;
@@ -428,7 +428,7 @@ function doImport(box) {
     toast('העיצוב של "' + src.name + '" ישמש גם ב"' + t.name + '", עם זמני התפילות של "' + t.name + '"');
   } else if (part === 'design') {
     const d = designOf(cfg, src);
-    if (designOf(cfg, t) && !confirm('להחליף את העיצוב של "' + t.name + '" בעיצוב של "' + src.name + '"?')) return;
+    if (designOf(cfg, t) && !await SiteDialog.confirm('להחליף את העיצוב של "' + t.name + '" בעיצוב של "' + src.name + '"?', { ok: 'החלפה' })) return;
     // תבניות שמשתמשות בעיצוב הקודם של התבנית הזו שומרות עליו
     if (t.design && !t.design.ref) {
       for (const x of cfg.templates) if (x.design && x.design.ref === t.id) x.design = { ...t.design, enabled: x.design.enabled !== false };
@@ -484,10 +484,10 @@ $('tplInfo').addEventListener('input', e => {
     changed();
   }
 });
-$('tplInfo').addEventListener('click', e => {
+$('tplInfo').addEventListener('click', async e => {
   if (e.target.id !== 'tplDelete') return;
   const t = selTpl();
-  if (!confirm('למחוק את התבנית "' + t.name + '"?')) return;
+  if (!await SiteDialog.confirm('למחוק את התבנית "' + t.name + '"?', { ok: 'מחיקה', danger: true })) return;
   cfg.templates = cfg.templates.filter(x => x !== t);
   sel = 'shabbat';
   renderTemplates(); changed();
@@ -686,9 +686,9 @@ $('tplEdit').onclick = async () => {
   try { await editExisting(selTpl(), cfg, templateDone); showTab('template'); }
   catch (e) { toast('לא ניתן לפתוח את התבנית', true); }
 };
-$('tplRemove').onclick = () => {
+$('tplRemove').onclick = async () => {
   const t = selTpl();
-  if (!confirm('להסיר את העיצוב מהתבנית "' + t.name + '"? זמני התפילות יישארו.')) return;
+  if (!await SiteDialog.confirm('להסיר את העיצוב מהתבנית "' + t.name + '"? זמני התפילות יישארו.', { ok: 'הסרה', danger: true })) return;
   // תבניות שמשתמשות באותו עיצוב מקבלות עותק משלהן
   if (t.design && !t.design.ref) {
     for (const x of cfg.templates) if (x.design && x.design.ref === t.id) x.design = { ...t.design, enabled: x.design.enabled !== false };
@@ -723,8 +723,8 @@ $('importFile').onchange = async () => {
     toast('ההגדרות נטענו');
   } catch (e) { toast('הקובץ לא תקין', true); }
 };
-$('reset').onclick = () => {
-  if (!confirm('למחוק את כל ההגדרות במכשיר הזה ולחזור לברירת המחדל?')) return;
+$('reset').onclick = async () => {
+  if (!await SiteDialog.confirm('למחוק את כל ההגדרות במכשיר הזה ולחזור לברירת המחדל?', { ok: 'איפוס', danger: true })) return;
   clearConfig();
   cfg = normalize(DEFAULT_CONFIG); saved = false; cursor = null; sel = 'shabbat'; board = 'shabbat'; fill();
   toast('ההגדרות אופסו');
