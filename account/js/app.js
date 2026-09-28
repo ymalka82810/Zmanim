@@ -80,6 +80,8 @@ async function signIn(){
   catch(e){ toast(errMsg(e)); }
 }
 async function signOut(){
+  const ok = await SiteDialog.confirm('האם אתה בטוח שברצונך להתנתק מהחשבון?', {ok: 'התנתק', cancel: 'ביטול'});
+  if (!ok) return;
   await A.signOut();
   S.isAuthenticated = false; S.me = null; S.synagogues = []; S.invitations = [];
   render();
