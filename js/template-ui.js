@@ -6,7 +6,7 @@
 import { BASES, WHEN, ROUND, DAY_APPLIES, appliesOnDay, prayerBases, designOf } from './config.js';
 import { readFile, tokenize, detectDate, suggestSlots, textCandidates, inferRule } from './template-read.js';
 import { analyzeSlot, refineBox, templateCanvas } from './template-render.js';
-import { findOccasion, findPeriod, nextPeriodFor, buildLuach, buildDaysLuach, timesFor } from './luach.js';
+import { findOccasion, findPeriod, periodFor, buildLuach, buildDaysLuach, timesFor } from './luach.js';
 import { toDayNum, toYmd, todayIn, dow } from './dates.js';
 import { esc } from './render.js';
 
@@ -360,7 +360,7 @@ $('tplPreview').onclick = async () => {
   const tpl = buildTemplate();
   const cfg = { ...st.cfg, rules: mergeRules(st.cfg.rules, slotRules(), $('tplRules').checked, st.tpl.kind) };
   const today = todayIn(cfg.tz);
-  const occ = nextPeriodFor(st.cfgAll, st.tpl, today) || findPeriod(st.tpl.kind, today, cfg.il);
+  const occ = periodFor(st.cfgAll, st.tpl, today) || findPeriod(st.tpl.kind, today, cfg.il);
   const values = occ.mode === 'days' ? buildDaysLuach(cfg, occ).values : buildLuach(cfg, occ).values;
   const canvas = await templateCanvas(tpl, values);
   $('tplPreviewTitle').textContent = 'תצוגה מקדימה – ' + occ.title;

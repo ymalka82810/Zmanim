@@ -82,14 +82,60 @@ export function findPeriod(mode, from, il, dir = 1) {
   return mode === 'days' ? findDays(from, il, dir) : findOccasion(from, il, dir);
 }
 
-/** הלוח הבא (dir=1) או הקודם (dir=-1) מאותו סוג */
-export function stepPeriod(p, il, dir) {
-  if (p.mode !== 'days') return dir > 0 ? findOccasion(p.last + 1, il) : findOccasion(p.first - 1, il, -1);
-  // ימי חול המועד לא תמיד רצופים (שבת באמצע), ולכן מחפשים לוח שמתחיל אחרי (או לפני) הלוח הנוכחי
-  for (let d = p.first + dir, n = 0; n < 60; d += dir, n++) {
-    if (isHoly(d, il)) continue;
-    const q = daysPeriodAt(d, il);
-    if (dir > 0 ? q.first > p.first : q.first < p.first) return q;
+/* ---------- חג שצמוד לשבת: לוח משולב או לוחות נפרדים ---------- */
+
+/** אירוע שיש בו גם חג וגם שבת (באותו יום או בימים צמודים), ולכן אפשר להציג אותו בלוח אחד או בשניים */
+export const isMixed = occ => occ.mode === 'holy' && occ.days.some(d => d.chag) && occ.days.some(d => d.shabbat);
+
+/** חלק מאירוע: ימי החג בלבד או ימי השבת בלבד. הערב שלו הוא היום שלפניו, גם כשהוא שייך לחלק השני */
+function partOf(days, occ, title) {
+  const first = days[0].day;
+  return { mode: 'holy', id: first, erev: first - 1, first, last: days[days.length - 1].day, days,
+    title, mixed: true, occId: occ.id };
+}
+
+/**
+ * הלוחות של האירוע. חג שחל בשבת, או שצמוד אליה, מוצג בברירת מחדל בשני לוחות נפרדים –
+ * אחד לחג ואחד לשבת – אלא אם הגבאי בחר לשלב אותם ללוח אחד (merged[id] של האירוע).
+ * כשהחג עצמו הוא שבת, אותו יום מופיע בשני הלוחות: בלוח החג לפי זמני החג, ובלוח השבת כשבת רגילה.
+ */
+export function occasionParts(occ, merged) {
+  const mixed = isMixed(occ);
+  if (!mixed || (merged && merged[occ.id])) return [{ ...occ, mixed, occId: occ.id }];
+  const chag = occ.days.filter(d => d.chag);
+  const shabbat = occ.days.filter(d => d.shabbat).map(d => ({ ...d, chag: null }));
+  // לשבת יש לוח משלה, ולכן הכותרת של לוח החג היא שם החג בלבד ("סוכות", ולא "סוכות ושבת")
+  return [[chag, holyTitle(chag.map(d => ({ ...d, shabbat: false })))], [shabbat, holyTitle(shabbat)]]
+    .sort((a, b) => a[0][0].day - b[0][0].day).map(([days, title]) => partOf(days, occ, title));
+}
+
+/** הלוחות מהיום from והלאה (dir=1) או לפניו (dir=-1), לפי הסדר */
+function* periods(cfg, kind, from, dir) {
+  let d = from;
+  for (let n = 0; n < 120; n++) {
+    if (kind === 'days') {
+      const p = findDays(d, cfg.il, dir);
+      if (!p) return;
+      yield p;
+      d = dir > 0 ? p.last + 1 : p.first - 1;
+    } else {
+      const occ = findOccasion(d, cfg.il, dir);
+      if (!occ) return;
+      const list = occasionParts(occ, cfg.merged);
+      for (const p of dir > 0 ? list : [...list].reverse()) yield p;
+      d = dir > 0 ? occ.last + 1 : occ.first - 1;
+    }
+  }
+}
+
+/**
+ * הלוח הקרוב שמוצג בתבנית t: מהיום from והלאה (dir=1) או לפניו (dir=-1).
+ * strict – רק לוח שמתחיל אחרי from (או מסתיים לפניו), למעבר ללוח הבא או הקודם.
+ */
+export function periodFor(cfg, t, from, dir = 1, strict = false) {
+  for (const p of periods(cfg, t.kind, from, dir)) {
+    if (strict && (dir > 0 ? p.first < from : p.last > from)) continue;
+    if (templateFor(cfg, p) === t) return p;
   }
   return null;
 }
@@ -107,16 +153,6 @@ export function templateFor(cfg, p) {
   if (own) return own;
   const id = p.mode === 'days' ? p.kind : p.days.some(x => x.chag) ? 'chag' : 'shabbat';
   return cfg.templates.find(t => t.id === id);
-}
-
-/** הלוח הקרוב (מהיום from והלאה) שמשתמש בתבנית t, או null אם אין בשנה הקרובה */
-export function nextPeriodFor(cfg, t, from) {
-  let p = findPeriod(t.kind, from, cfg.il);
-  for (let n = 0; p && n < 200; n++) {
-    if (templateFor(cfg, p) === t) return p;
-    p = stepPeriod(p, cfg.il, 1);
-  }
-  return null;
 }
 
 /* ---------- זמנים ---------- */

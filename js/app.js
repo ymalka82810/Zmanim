@@ -2,7 +2,7 @@
 
 import { CITIES, BASES, WHEN, APPLIES, ROUND, FONTS, THEMES, SIZE_PARTS, SIZES, DEFAULT_CONFIG, DAY_APPLIES, BUILTIN, isBuiltin, newTemplate, designOf, activeDesign,
   prayerBases, fontFamilies, fontsHref, themeColors, normalize, loadConfig, saveConfig, clearConfig } from './config.js';
-import { findPeriod, stepPeriod, templateFor, nextPeriodFor, buildLuach, buildDaysLuach, dayPages } from './luach.js';
+import { findOccasion, templateFor, periodFor, occasionParts, buildLuach, buildDaysLuach, dayPages } from './luach.js';
 import { MOADIM } from './moadim.js';
 import { luachHtml, luachText, esc } from './render.js';
 import { todayIn, toYmd } from './dates.js';
@@ -21,10 +21,12 @@ let current = null;      // הלוח המוצג כרגע
 let sel = 'shabbat';     // התבנית שנבחרה בהגדרות
 let kiddush = null;      // dateKey ← קידוש מאושר, מהקהילה (community.js)
 
-/* סוג הלוח שמוצג: holy – שבתות וחגים, days – ימות השבוע וחול המועד. נשמר במכשיר */
+/* התבנית שהלוח מוצג לפיה (שבתות, חגים, חול המועד, ימות השבוע או תבנית של המשתמש). נשמרת במכשיר */
 const MODE_KEY = 'zmanim.mode';
-let mode = 'holy';
-try { if (localStorage.getItem(MODE_KEY) === 'days') mode = 'days'; } catch (e) { /* אין גישה לאחסון */ }
+let board = 'shabbat';
+// עד גרסה קודמת נשמר כאן סוג הלוח (holy/days), ושבתות וחגים היו כפתור אחד
+try { const v = localStorage.getItem(MODE_KEY); if (v) board = v === 'days' ? 'week' : v === 'holy' ? 'shabbat' : v; }
+catch (e) { /* אין גישה לאחסון */ }
 
 /* ---------- הודעות ---------- */
 
@@ -49,13 +51,28 @@ $('tab-luach').onclick = () => showTab('luach');
 $('tab-settings').onclick = () => showTab('settings');
 $('goSettings').onclick = () => showTab('settings');
 
-function setMode(m) {
-  mode = m; cursor = null;
-  try { localStorage.setItem(MODE_KEY, m); } catch (e) { /* אין גישה לאחסון */ }
+const boardTpl = () => cfg.templates.find(t => t.id === board) || cfg.templates[0];
+
+/** מעבר לתבנית אחרת בלוח. day – היום שממנו מחפשים את הלוח, או null ללוח הקרוב */
+function setBoard(id, day = null) {
+  board = id; cursor = day;
+  try { localStorage.setItem(MODE_KEY, id); } catch (e) { /* אין גישה לאחסון */ }
   renderLuach();
 }
-$('modeHoly').onclick = () => setMode('holy');
-$('modeDays').onclick = () => setMode('days');
+
+/** רשימת התבניות לבחירה, עם כפתור להוספת תבנית. host – 'luach' או 'settings' */
+function tplChips(el, id, host) {
+  el.innerHTML = cfg.templates.map(x => '<button type="button" class="chip" data-t="' + esc(x.id) + '" aria-pressed="' +
+    (x.id === id) + '">' + esc(x.name) + '</button>').join('') +
+    '<button type="button" class="chip add" data-add="' + host + '">+ תבנית חדשה</button>';
+}
+
+$('luachTpls').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.add) openNewTemplate('luach');
+  else setBoard(b.dataset.t);
+});
 
 /* ---------- הלוח ---------- */
 
@@ -95,22 +112,51 @@ function applyDesign(el, t) {
   el.style.setProperty('--paper', c.paper);
 }
 
+/**
+ * ההצעה לשלב חג ושבת שצמודים ללוח אחד, או לחזור להצגה בשני לוחות נפרדים.
+ * הבחירה נשמרת לאירוע הזה בלבד, לפי היום הראשון שלו.
+ */
+function renderMixOffer(p) {
+  const el = $('mixOffer');
+  el.hidden = !p || !p.mixed;
+  if (el.hidden) return;
+  const on = !!cfg.merged[p.occId];
+  el.innerHTML = (on ? 'החג והשבת מוצגים יחד בלוח אחד.' : 'החג והשבת צמודים, וכרגע יש לכל אחד לוח נפרד.') +
+    '<button type="button" class="link" id="mixToggle">' + (on ? 'להצגה בשני לוחות נפרדים' : 'לשילוב הזמנים בלוח אחד') + '</button>';
+}
+
+$('mixOffer').addEventListener('click', e => {
+  if (e.target.id !== 'mixToggle' || !period) return;
+  const id = period.occId;
+  if (cfg.merged[id]) delete cfg.merged[id];
+  else cfg.merged[id] = true;
+  changed();
+  // הלוח המשולב הוא לוח של חג, ולכן אחרי השילוב עוברים לתבנית שלו
+  const parts = occasionParts(findOccasion(id, cfg.il), cfg.merged);
+  const p = parts.find(x => templateFor(cfg, x) === boardTpl()) || parts[0];
+  setBoard(templateFor(cfg, p).id, p.first);
+});
+
 function renderLuach() {
   $('welcome').hidden = saved;
-  $('modeHoly').setAttribute('aria-pressed', String(mode === 'holy'));
-  $('modeDays').setAttribute('aria-pressed', String(mode === 'days'));
+  const t = boardTpl();
+  board = t.id;
+  tplChips($('luachTpls'), board, 'luach');
   if (cursor == null) cursor = todayIn(cfg.tz);
-  const p = findPeriod(mode, cursor, cfg.il);
-  if (!p || !isFinite(cfg.lat) || !isFinite(cfg.lng)) {
+  const p = isFinite(cfg.lat) && isFinite(cfg.lng) ? periodFor(cfg, t, cursor) : null;
+  if (!p) {
     current = period = null;
-    $('luach').innerHTML = '<p class="luach-empty">לא ניתן לחשב לוח. בדקו את המיקום בהגדרות.</p>';
-    $('luachTpl').textContent = '';
+    renderMixOffer(null);
+    $('luach').innerHTML = '<p class="luach-empty">' + (isFinite(cfg.lat) && isFinite(cfg.lng)
+      ? 'אין לוח קרוב לתבנית "' + esc(t.name) + '".<button type="button" class="link" id="goTplSettings">לבחירת המועדים שבהם היא חלה ←</button>'
+      : 'לא ניתן לחשב לוח. בדקו את המיקום בהגדרות.') + '</p>';
+    $('todayOcc').disabled = true;
     return;
   }
   cursor = p.first; period = p;
   current = build(p);
   applyDesign($('luach'), current.tpl);
-  $('luachTpl').textContent = 'תבנית: ' + current.tpl.name;
+  renderMixOffer(p);
   if (current.design) {
     const l = current;
     $('luach').innerHTML = l.pages.map(v => '<img class="luach-img" alt="' + esc(v.title) + '">').join('');
@@ -122,12 +168,24 @@ function renderLuach() {
   } else {
     $('luach').innerHTML = luachHtml(current);
   }
-  const now = findPeriod(mode, todayIn(cfg.tz), cfg.il);
+  const now = periodFor(cfg, t, todayIn(cfg.tz));
   $('todayOcc').disabled = !!now && now.first === p.first;
 }
 
-$('prevOcc').onclick = () => { const o = period && stepPeriod(period, cfg.il, -1); if (o) { cursor = o.first; renderLuach(); } };
-$('nextOcc').onclick = () => { const o = period && stepPeriod(period, cfg.il, 1); if (o) { cursor = o.first; renderLuach(); } };
+/** הלוח הבא (dir=1) או הקודם (dir=-1) מאותה תבנית */
+function stepLuach(dir) {
+  if (!period) return;
+  const o = periodFor(cfg, boardTpl(), dir > 0 ? period.last + 1 : period.first - 1, dir, true);
+  if (o) { cursor = o.first; renderLuach(); }
+}
+$('luach').addEventListener('click', e => {
+  if (e.target.id !== 'goTplSettings') return;
+  sel = board;
+  renderTemplates();
+  showTab('settings');
+});
+$('prevOcc').onclick = () => stepLuach(-1);
+$('nextOcc').onclick = () => stepLuach(1);
 $('todayOcc').onclick = () => { cursor = null; renderLuach(); };
 
 async function copyText(text) {
@@ -250,8 +308,7 @@ const RULES_HINT = {
 function renderTemplates() {
   if (!cfg.templates.some(t => t.id === sel)) sel = cfg.templates[0].id;
   const t = selTpl();
-  $('tplList').innerHTML = cfg.templates.map(x => '<button type="button" class="chip" data-t="' + esc(x.id) + '" aria-pressed="' + (x === t) + '">' +
-    esc(x.name) + '</button>').join('') + '<button type="button" class="chip add" id="tplAdd">+ תבנית חדשה</button>';
+  tplChips($('tplList'), t.id, 'settings');
   const b = BUILTIN.find(x => x.id === t.id);
   if (b) $('tplInfo').innerHTML = '<p class="hint">' + esc(b.about) + ' תבנית שתוסיפו למועד מסוים גוברת עליה.</p>';
   else {
@@ -403,7 +460,7 @@ function renderMoadimHint() {
 $('tplList').addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b) return;
-  if (b.id === 'tplAdd') { openNewTemplate(); return; }
+  if (b.dataset.add) { openNewTemplate('settings'); return; }
   flush();
   sel = b.dataset.t;
   $('tplNew').hidden = true;
@@ -441,10 +498,14 @@ function fillNewFrom() {
   $('tplNewFrom').innerHTML = cfg.templates.filter(t => t.kind === kind)
     .map(t => '<option value="' + esc(t.id) + '">העתקה מ' + esc(t.name) + '</option>').join('') + '<option value="">בלי תפילות</option>';
 }
-function openNewTemplate() {
+/** טופס תבנית חדשה. הוא אחד, ועובר ללוח או להגדרות לפי המקום שממנו נפתח */
+let newTplHost = 'settings';
+function openNewTemplate(host) {
+  newTplHost = host;
+  (host === 'luach' ? $('mixOffer') : $('tplInfo')).before($('tplNew'));
   $('tplNew').hidden = false;
   $('tplNewName').value = '';
-  $('tplNewKind').value = 'holy';
+  $('tplNewKind').value = host === 'luach' ? boardTpl().kind : 'holy';
   fillNewFrom();
   $('tplNewName').focus();
 }
@@ -459,7 +520,10 @@ $('tplNewOk').onclick = () => {
   sel = t.id;
   $('tplNew').hidden = true;
   renderTemplates(); changed();
-  toast('התבנית נוצרה. בחרו מתי היא חלה');
+  if (newTplHost === 'luach') {
+    setBoard(t.id);
+    toast('התבנית נוצרה. בהגדרות בוחרים באילו מועדים היא חלה');
+  } else toast('התבנית נוצרה. בחרו מתי היא חלה');
 };
 
 function renderRules() {
@@ -597,9 +661,8 @@ function templateDone(result) {
     sel = t.id;
     fill();
     // מציגים את הלוח הקרוב שמשתמש בתבנית
-    if (mode !== t.kind) setMode(t.kind);
-    const p = nextPeriodFor(cfg, t, todayIn(cfg.tz));
-    cursor = p ? p.first : null;
+    const p = periodFor(cfg, t, todayIn(cfg.tz));
+    setBoard(t.id, p ? p.first : null);
     showTab('luach');
     toast('התבנית נשמרה');
   } else showTab('settings');
@@ -663,7 +726,7 @@ $('importFile').onchange = async () => {
 $('reset').onclick = () => {
   if (!confirm('למחוק את כל ההגדרות במכשיר הזה ולחזור לברירת המחדל?')) return;
   clearConfig();
-  cfg = normalize(DEFAULT_CONFIG); saved = false; cursor = null; sel = 'shabbat'; fill();
+  cfg = normalize(DEFAULT_CONFIG); saved = false; cursor = null; sel = 'shabbat'; board = 'shabbat'; fill();
   toast('ההגדרות אופסו');
 };
 
@@ -677,7 +740,8 @@ initCommunity({
   async getLuachFile() {
     if (!current || !period) return null;
     const { png } = await getFiles();
-    return { file: png, title: current.title, firstDate: toYmd(period.first), mode: period.mode === 'days' ? 'days' : 'holy' };
+    return { file: png, title: current.title, firstDate: toYmd(period.first),
+      mode: period.mode === 'days' ? 'days' : 'holy', kind: current.tpl.id };
   },
   onKiddush(map) {
     kiddush = map;

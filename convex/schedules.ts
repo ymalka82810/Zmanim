@@ -13,7 +13,9 @@ async function samePeriod(ctx: MutationCtx, file: Doc<"scheduleFiles">) {
     .query("scheduleFiles")
     .withIndex("by_synagogue_first", (q) => q.eq("synagogueId", file.synagogueId).eq("firstDate", file.firstDate))
     .collect();
-  return files.filter((f) => f.mode === file.mode && f._id !== file._id);
+  // לוחות ישנים נשמרו בלי kind, ואז סוג הלוח הוא הזהות
+  const key = (f: Doc<"scheduleFiles">) => f.kind ?? f.mode;
+  return files.filter((f) => key(f) === key(file) && f._id !== file._id);
 }
 
 async function deleteFile(ctx: MutationCtx, file: Doc<"scheduleFiles">) {
@@ -79,6 +81,7 @@ export const submit = mutation({
     title: v.string(),
     firstDate: v.string(),
     mode: modeValidator,
+    kind: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { userId } = await requireManager(ctx, args.synagogueId);
@@ -97,6 +100,7 @@ export const submit = mutation({
       title: args.title.trim().slice(0, 120),
       firstDate: args.firstDate,
       mode: args.mode,
+      kind: args.kind,
       status: "pending",
       submittedBy: userId,
       submittedAt: Date.now(),

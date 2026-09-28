@@ -38,17 +38,14 @@
       ברוכים הבאים! הלוח מחושב כרגע לפי הגדרות לדוגמה.
       <button type="button" class="link" id="goSettings">להגדרת בית הכנסת והתפילות ←</button>
     </div>
-    <div class="mode" role="group" aria-label="סוג הלוח">
-      <button type="button" id="modeHoly" aria-pressed="true">שבתות וחגים</button>
-      <button type="button" id="modeDays" aria-pressed="false">ימות השבוע</button>
-    </div>
+    <div class="tpl-list" id="luachTpls" aria-label="תבניות"></div>
+    <p class="hint mix-offer" id="mixOffer" hidden></p>
     <div class="nav-occ">
       <button type="button" id="prevOcc" aria-label="הלוח הקודם">› הקודם</button>
       <button type="button" id="todayOcc">הקרוב</button>
       <button type="button" id="nextOcc" aria-label="הלוח הבא">הבא ‹</button>
     </div>
     <article id="luach" class="luach" aria-live="polite"></article>
-    <p class="hint luach-tpl" id="luachTpl"></p>
     <div class="actions">
       <button type="button" class="primary" id="shareImg">שיתוף תמונה</button>
       <button type="button" id="sharePdf">שיתוף PDF</button>

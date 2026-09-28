@@ -123,6 +123,8 @@ export default defineSchema({
     title: v.string(),
     firstDate: v.string(),
     mode: v.union(v.literal("holy"), v.literal("days")),
+    // התבנית שהלוח נוצר בה. חג שחל בשבת יכול להישלח כשני לוחות נפרדים לאותו תאריך
+    kind: v.optional(v.string()),
     status: v.union(v.literal("pending"), v.literal("approved")),
     submittedBy: v.id("users"),
     submittedAt: v.number(),

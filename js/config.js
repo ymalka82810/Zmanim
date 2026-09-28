@@ -149,7 +149,8 @@ export const DEFAULT_CONFIG = {
   version: 3,
   shul: '', city: 'jerusalem', lat: 31.769, lng: 35.2163, tz: 'Asia/Jerusalem', il: true,
   candle: 40, havdalah: '8.5', notes: '',
-  templates: BUILTIN.map(builtinTemplate)
+  templates: BUILTIN.map(builtinTemplate),
+  merged: {}
 };
 
 /** תבנית חדשה של המשתמש. rules – זמני התפילות להתחלה */
@@ -192,6 +193,10 @@ export function normalize(c) {
     for (const [k] of SIZE_PARTS) t.sizes[k] = SIZES.indexOf(Number(sizes[k])) >= 0 ? Number(sizes[k]) : 100;
   }
   delete cfg.font;
+  // חג שצמוד לשבת שהגבאי בחר להציג בלוח אחד: היום הראשון של האירוע ← true
+  const merged = cfg.merged && typeof cfg.merged === 'object' ? cfg.merged : {};
+  cfg.merged = {};
+  for (const k in merged) if (merged[k] && /^\d+$/.test(k)) cfg.merged[k] = true;
   cfg.version = DEFAULT_CONFIG.version;
   cfg.lat = Number(cfg.lat); cfg.lng = Number(cfg.lng);
   cfg.candle = Number(cfg.candle) || 0;

@@ -74,7 +74,8 @@ async function submitCurrent(){
     const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: luach.file });
     if (!res.ok) throw new Error('upload');
     const { storageId } = await res.json();
-    const id = await client.mutation('schedules:submit', { synagogueId: sid, storageId, title: luach.title, firstDate: luach.firstDate, mode: luach.mode });
+    const id = await client.mutation('schedules:submit',
+      { synagogueId: sid, storageId, title: luach.title, firstDate: luach.firstDate, mode: luach.mode, kind: luach.kind });
     toast(id ? 'הלוח נשלח לאישור' : 'הקובץ לא תקין', !id);
   } catch (e) { toast(errText(e, 'השליחה נכשלה. נסו שוב.'), true); }
   finally { btn.disabled = false; }
@@ -118,7 +119,7 @@ async function load(){
   if (id !== sid || !unsubscribe) subscribe(id);
 }
 
-/** getLuachFile: מחזירה { file, title, firstDate, mode } של הלוח המוצג, או null */
+/** getLuachFile: מחזירה { file, title, firstDate, mode, kind } של הלוח המוצג, או null */
 export async function initCommunity(options){
   getLuachFile = options.getLuachFile;
   toast = options.toast;
