@@ -58,11 +58,14 @@ async function readPdf(file) {
     const str = fixVisualOrder(String(it.str || '').replace(/\s+/g, ' ').trim());
     if (!str) continue;
     const tx = pdfjs.Util.transform(vp.transform, it.transform);
-    const size = Math.hypot(tx[2], tx[3]);
+    // נטוי מ-Word בגופן שאין לו גרסה נטויה (כמו רוב הגופנים העבריים): האותיות מוטות במטריצה ולא בגופן
+    const italic = Math.abs(tx[1]) < Math.abs(tx[0]) * 0.05 && Math.abs(tx[2]) > Math.abs(tx[3]) * 0.1;
+    const size = italic ? Math.abs(tx[3]) : Math.hypot(tx[2], tx[3]);
     if (size < 4) continue;
     const w = it.width * scale;
     const baseline = tx[5];
-    items.push({ str, x: tx[4], w, baseline, size, y: baseline - size * 0.92, h: size * 1.2, rtl: it.dir === 'rtl' || /[א-ת]/.test(str), font: it.fontName });
+    items.push({ str, x: tx[4], w, baseline, size, y: baseline - size * 0.92, h: size * 1.2, rtl: it.dir === 'rtl' || /[א-ת]/.test(str), font: it.fontName,
+      ...(italic ? { italic } : {}) });
   }
   let fonts = {};
   try { fonts = await readFonts(pdfjs, page); } catch (e) { console.warn('לא ניתן לקרוא את הגופנים מהקובץ', e); }
@@ -134,7 +137,7 @@ async function readFonts(pdfjs, page) {
     if (!f || f.isType3Font) continue;
     const raw = String(f.name || '');
     const data = f.data && !f.missingFile && !f.disableFontFace ? toBase64(f.data) : null;
-    out[name] = { family: familyName(raw), ps: raw.replace(/^[A-Z]{6}\+/, ''), bold: !!f.bold || /bold|black|heavy/i.test(raw), italic: !!f.italic,
+    out[name] = { family: familyName(raw), ps: raw.replace(/^[A-Z]{6}\+/, ''), bold: !!f.bold || /bold|black|heavy/i.test(raw), italic: !!f.italic || /italic|oblique/i.test(raw),
       serif: f.fallbackName === 'serif', data, map: data ? maps[name] : null };
   }
   return out;
@@ -964,7 +967,7 @@ export function suggestSlots(tokens, cfg, day, period) {
   return slots;
 }
 
-const boxOf = t => ({ x: t.x, y: t.y, w: t.w, h: t.h, baseline: t.baseline, size: t.size, font: t.font });
+const boxOf = t => ({ x: t.x, y: t.y, w: t.w, h: t.h, baseline: t.baseline, size: t.size, font: t.font, ...(t.italic ? { italic: true } : {}) });
 const isFixedKind = k => ['title', 'parasha', 'parashaName', 'special', 'hebDate', 'gregDate', 'address'].includes(k);
 function fixedSlot(t, box) {
   if (t.kind === 'gregDate') return { box, kind: 'gregDate', old: t.str, fmt: gregFormat(t.str) };

@@ -5,7 +5,7 @@
 
 import { BASES, WHEN, WHEN_LABELS, ROUND, SIZES, DAY_APPLIES, appliesOnDay, prayerBases, designOf } from './config.js';
 import { readFile, tokenize, detectDate, detectHebDate, detectShulAddress, suggestSlots, textCandidates, ruleOptions, agreeRules, printedTimes, approxStart, guessOldDay } from './template-read.js';
-import { analyzeSlot, refineBox, templateCanvas, specialHost, slotText, wordLine } from './template-render.js';
+import { analyzeSlot, refineBox, inkLines, templateCanvas, specialHost, slotText, slotLook, wordLine } from './template-render.js';
 import { findOccasion, findPeriod, periodFor, buildLuach, buildDaysLuach, timesFor } from './luach.js';
 import { toDayNum, toYmd, todayIn, dow } from './dates.js';
 import { esc } from './render.js';
@@ -357,6 +357,73 @@ function stretchPrefix(s) {
   s.prefix = all.length ? all.join(' ') + ' ' : '';
 }
 
+/** "הקידוש נתרם ע"י", "קידוש:" – הטקסט הקבוע שלפני שם התורם, או null אם לא נמצא */
+function kiddushPrefix(text) {
+  const m = /^(.*?(?:נתרמ[הו]?|ע["״]י|על[\s-]ידי|בחסות|באדיבות)(?:\s+(?:ע["״]י|על[\s-]ידי))?)\s+\S/.exec(text) ||
+    /^([^:]*קידוש[^:]*:)\s*\S/.exec(text);
+  return m ? m[1].trim() + ' ' : null;
+}
+
+/** שתי תיבות טקסט של אותו קטע: באותה שורה זו ליד זו, או בשורות סמוכות זו מתחת לזו */
+function sameBlock(a, b) {
+  const size = Math.max(a.size || a.h * 0.72, b.size || b.h * 0.72);
+  if (Math.abs((a.size || a.h) - (b.size || b.h)) > size * 0.2) return false;
+  const dy = Math.abs(lineBase(a) - lineBase(b));
+  const gap = Math.max(a.x, b.x) - Math.min(a.x + a.w, b.x + b.w);
+  if (dy < size * 0.45) return gap < size * 1.5;
+  const aligned = Math.abs(a.x + a.w / 2 - (b.x + b.w / 2)) < size * 1.5 || Math.abs(a.x + a.w - b.x - b.w) < size || Math.abs(a.x - b.x) < size;
+  return dy < size * 1.8 && gap < 0 && aligned;
+}
+const lineBase = b => b.baseline ?? (b.y + b.h * 0.78);
+
+/**
+ * קידוש כמו בקובץ הישן: האזור מתרחב לשורות הסמוכות של אותו קטע (grow), מספר השורות, קו הבסיס
+ * והריווח ביניהן נלקחים מהקובץ, והטקסט שלפני שם התורם ("הקידוש נתרם ע"י") נשמר כטקסט לפני הקידוש.
+ * במסמך סרוק השורות נספרות לפי הפיקסלים שבאזור
+ */
+function fitKiddush(s, grow) {
+  // האזור מותאם מחדש לטקסט שבקובץ – גם המראה נמדד מחדש
+  delete s.style;
+  const taken = c => st.slots.some(o => (o !== s && covers(o.box, c.box)) || (o.labelBox && covers(o.labelBox, c.box)));
+  const parts = st.candidates.filter(c => covers(s.box, c.box) && !taken(c));
+  for (let added = grow && parts.length > 0; added;) {
+    added = false;
+    for (const c of st.candidates) {
+      if (parts.includes(c) || taken(c) || !parts.some(p => sameBlock(p.box, c.box))) continue;
+      parts.push(c); added = true;
+    }
+  }
+  let lines;
+  if (parts.length) {
+    lines = [];
+    for (const c of parts.sort((a, b) => lineBase(a.box) - lineBase(b.box))) {
+      const size = c.box.size || c.box.h * 0.72;
+      const ln = lines.find(l => Math.abs(l.baseline - lineBase(c.box)) < Math.max(l.size, size) * 0.45);
+      if (ln) ln.parts.push(c); else lines.push({ baseline: lineBase(c.box), size, parts: [c] });
+    }
+    const box = parts.reduce((b, c) => unionBox(b, c.box), parts[0].box);
+    s.box = { ...s.box, ...box };
+    // עברית: בכל שורה מימין לשמאל
+    const text = lines.map(l => l.parts.sort((a, b) => b.box.x - a.box.x).map(c => c.old).join(' ')).join(' ');
+    s.old = text;
+    const pre = kiddushPrefix(text);
+    if (pre) s.prefix = pre;
+  } else {
+    lines = inkLines(st.canvas, s.box).map(b => ({ size: (b.bottom - b.top + 1) * 0.95, baseline: b.top + (b.bottom - b.top + 1) * 0.8 }));
+    if (!lines.length) return;
+  }
+  const n = lines.length, was = s.srcLines;
+  s.srcLines = n;
+  // השורות נכתבות סביב קו הבסיס האמצעי
+  const size = lines.reduce((t, l) => t + l.size, 0) / n;
+  s.box = { ...s.box, size, baseline: lines.reduce((t, l) => t + l.baseline, 0) / n };
+  if (n < 2) { if (was > 1) s.wrap = false; return; }
+  const gap = (lines[n - 1].baseline - lines[0].baseline) / (n - 1);
+  const pct = gap / (size * 1.15) * 100;
+  Object.assign(s, { wrap: true, lineCount: n, lineHeightPct: SIZES.reduce((a, b) => Math.abs(b - pct) < Math.abs(a - pct) ? b : a) });
+  delete s.lines;
+}
+
 $('tplBoxes').addEventListener('click', e => {
   if (!st || st.drawing) return;
   const b = e.target.closest('.tb');
@@ -399,6 +466,7 @@ $('tplPage').addEventListener('pointerdown', e => {
     e.preventDefault();
     $('tplPage').setPointerCapture(e.pointerId);
     const s = st.slots[st.sel];
+    slotStyle(s);   // המראה נמדד לפני המתיחה, על הטקסט המקורי
     s.box = { ...s.box };   // אזור שנוצר מטקסט בדף חולק איתו את אותה תיבה
     if (!s.nameBox) { s.nameBox = { ...s.box }; s.autoPrefix = s.prefix || ''; }
     resize = { s, edge: h.dataset.edge };
@@ -434,6 +502,7 @@ $('tplPage').addEventListener('pointerup', () => {
     // קו הבסיס של הכתיבה נשאר, אלא אם האזור זז ממנו
     if (b.baseline != null && (b.baseline < b.y || b.baseline > b.y + b.h)) b.baseline = b.y + b.h * 0.78;
     if (s.kind === 'parasha' || s.kind === 'parashaName') stretchPrefix(s);
+    if (s.kind === 'kiddush') { fitKiddush(s, false); schedulePreviewRefresh(); }
     renderBoxes(); renderSlots();
     return;
   }
@@ -474,6 +543,8 @@ function slotFields(s) {
       '<div class="wide"><label>שם</label><input data-k="name" value="' + esc(s.name) + '" placeholder="למשל: קידוש"></div>' +
       (isDays() ? dayChecks(s)
         : '<div><label>מתי</label><select data-k="when">' + opts(WHEN_LABELS, s.when) + '</select></div>') +
+      '<div class="wide"><label>טקסט לפני הקידוש</label><input data-k="prefix" value="' + esc(s.prefix || '') +
+      '" placeholder="למשל: הקידוש נתרם ע&quot;י"></div>' +
       '<div class="wide"><label>נוסח</label><input data-k="offset" dir="rtl" value="' + esc(s.offset) + '" placeholder="{שם}{לרגל}"></div></div>' +
       '<p class="hint">הטקסט יתמלא לפי מי שאושר לקידוש בתאריך הזה (מלוח הקידושים של הקהילה). ' +
       'אפשר להשתמש ב-{שם} (שם התורם), ב-{סיבה} (לרגל מה נתרם) וב-{לרגל} (מוסיף "לרגל ..." רק אם יש סיבה). ' +
@@ -503,13 +574,17 @@ function ruleChoices(s) {
     '</div></div>';
 }
 
-/** גודל הטקסט וריווח השורות באזור, בנפרד מהאזורים האחרים */
+/** גודל הטקסט, הדגשה, נטייה וריווח השורות באזור, בנפרד מהאזורים האחרים */
 function sizeFields(s) {
   const sizeOpts = v => SIZES.map(n => '<option value="' + n + '"' + (n === (v || 100) ? ' selected' : '') + '>' + n + '%</option>').join('');
+  const look = lookOf(s);
+  const lookBtn = (k, text, label) => '<button type="button" class="chip look-' + k + '" data-look="' + k + '" aria-pressed="' + look[k] +
+    '" title="' + label + '" aria-label="' + label + '">' + text + '</button>';
   return '<div class="rgrid"><div><label>גודל הטקסט באזור</label><select data-k="sizePct">' + sizeOpts(s.sizePct) + '</select></div>' +
+    '<div><label>עיצוב הטקסט</label><div class="look-btns">' + lookBtn('bold', 'B', 'הדגשה') + lookBtn('italic', 'I', 'נטוי') + '</div></div>' +
     (s.wrap ? '<div><label>ריווח בין השורות</label><select data-k="lineHeightPct">' + sizeOpts(s.lineHeightPct) + '</select></div>' +
       '<div><label>מספר שורות</label><select data-k="lineCount">' +
-      [2, 3, 4].map(n => '<option value="' + n + '"' + (n === (s.lineCount || 2) ? ' selected' : '') + '>' + n + '</option>').join('') +
+      [2, 3, 4, 5, 6].map(n => '<option value="' + n + '"' + (n === (s.lineCount || 2) ? ' selected' : '') + '>' + n + '</option>').join('') +
       '</select></div>' : '') +
     '<div class="wide"><label class="check"><input type="checkbox" data-k="wrap"' + (s.wrap ? ' checked' : '') +
     '> לאפשר גלישה לכמה שורות אם הטקסט ארוך מדי</label></div>' +
@@ -617,6 +692,7 @@ $('tplSlots').addEventListener('input', e => {
     const when0 = isDays() ? 'd0' : 'כל יום';
     if (v === 'rule' && !s.base) { Object.assign(s, { when: s.when || when0, name: s.label || '', base: 'שקיעה', offset: '0', round: 'ללא' }); reinfer(s); }
     if (v === 'kiddush' && !s.name) Object.assign(s, { when: s.when || when0, name: s.label || 'קידוש', offset: s.offset || '{שם}{לרגל}' });
+    if (v === 'kiddush') { fitKiddush(s, true); schedulePreviewRefresh(); }
     if (v === 'zman' && !s.zman) Object.assign(s, { zman: 'sunset', when: s.when || when0 });
     if (v === 'gregDate' && !s.fmt) s.fmt = { sep: '/', year: 4, pad: false };
     if (v === 'text' && s.text == null) s.text = s.old || '';
@@ -658,6 +734,14 @@ $('tplSlots').addEventListener('input', e => {
   if (s.wrap) schedulePreviewRefresh();
 });
 $('tplSlots').addEventListener('click', async e => {
+  const lookBtn = e.target.closest('[data-look]');
+  if (lookBtn) {
+    const s = st.slots[+lookBtn.closest('.slot-ed').dataset.i], k = lookBtn.dataset.look;
+    s[k] = !lookOf(s)[k];
+    lookBtn.setAttribute('aria-pressed', String(s[k]));
+    schedulePreviewRefresh();
+    return;
+  }
   const word = e.target.closest('[data-word]');
   if (word) {
     const s = st.slots[+word.closest('.slot-ed').dataset.i], i = +word.dataset.word;
@@ -752,30 +836,55 @@ function builtSlots() {
   return st.slots.map(s => {
     const c = { box: s.box, kind: s.kind, old: s.old || '' };
     if (s.labelBox) Object.assign(c, { labelBox: s.labelBox, labelStyle: analyzeSlot(st.canvas, s.labelBox), ...(s.label ? { label: s.label } : {}) });
-    if ((s.kind === 'parasha' || s.kind === 'parashaName') && s.prefix && s.prefix.trim()) c.prefix = s.prefix.trim() + ' ';
+    if ((s.kind === 'parasha' || s.kind === 'parashaName' || s.kind === 'kiddush') && s.prefix && s.prefix.trim()) c.prefix = s.prefix.trim() + ' ';
     if (s.kind === 'rule' || s.kind === 'kiddush') Object.assign(c, { name: String(s.name).trim(), when: s.when, ...(s.days ? { days: s.days } : {}) });
     if (s.kind === 'zman') Object.assign(c, { zman: s.zman, when: s.when });
     if (s.kind === 'hebDate') Object.assign(c, { ascii: !!s.ascii, noYear: !!s.noYear, ...(s.hei ? { hei: true } : {}) });
     if (s.kind === 'gregDate') c.fmt = s.fmt;
     if (s.kind === 'text') c.text = String(s.text ?? '').trim();
     c.sizePct = s.sizePct || 100;
+    // הדגשה ונטייה נשמרות רק כשהגבאי בחר בהן. בלי בחירה – כמו בקובץ
+    if (s.bold != null) c.bold = s.bold;
+    if (s.italic != null) c.italic = s.italic;
     c.wrap = !!s.wrap;
     if (c.wrap) {
       c.lineHeightPct = s.lineHeightPct || 100;
       c.lineCount = s.lineCount || 2;
+      if (s.srcLines > 1) c.srcLines = s.srcLines;
       if (s.lines && s.lines.some(Boolean)) c.lines = s.lines;
     }
-    c.style = analyzeSlot(st.canvas, s.box);
+    c.style = slotStyle(s);
     return c;
   });
 }
 
-function buildTemplate(built = builtSlots()) {
-  const slots = built.filter(s => (s.kind !== 'rule' && s.kind !== 'kiddush') || s.name);
-  // רק הגופנים שבשימוש נשמרים. אזור שסומן ידנית נכתב בגופן הנפוץ בשעות
+/** מספר השימושים בכל גופן, והגופן הנפוץ בשעות – שבו נכתב אזור שסומן ידנית */
+function fontUse(slots) {
   const count = {};
   for (const s of slots) if (s.box.font && st.fonts[s.box.font]) count[s.box.font] = (count[s.box.font] || 0) + (s.kind === 'rule' || s.kind === 'kiddush' || s.kind === 'zman' ? 2 : 1);
-  const mainFont = Object.keys(count).sort((a, b) => count[b] - count[a])[0] || null;
+  return { count, mainFont: Object.keys(count).sort((a, b) => count[b] - count[a])[0] || null };
+}
+
+/** ההדגשה והנטייה שבהן האזור ייכתב, כמו בציור */
+function lookOf(s) {
+  const f = st.fonts[s.box.font] || st.fonts[fontUse(st.slots).mainFont];
+  return slotLook(s, f, slotStyle(s));
+}
+
+/**
+ * צבע הרקע, צבע הטקסט והעובי של אזור. בטקסט שזוהה בקובץ (box.size) הם נמדדים פעם אחת, על הטקסט המקורי:
+ * עובי הקו נמדד ביחס לגובה האזור, וכותרת שמותחים או מכווצים לא צריכה לאבד את ההדגשה או לקבל צבע אחר
+ */
+function slotStyle(s) {
+  if (!s.box.size) return analyzeSlot(st.canvas, s.box);
+  if (!s.style) s.style = analyzeSlot(st.canvas, s.box);
+  return s.style;
+}
+
+function buildTemplate(built = builtSlots()) {
+  const slots = built.filter(s => (s.kind !== 'rule' && s.kind !== 'kiddush') || s.name);
+  // רק הגופנים שבשימוש נשמרים
+  const { count, mainFont } = fontUse(slots);
   const fonts = Object.fromEntries(Object.keys(count).map(k => [k, st.fonts[k]]));
   return { enabled: true, name: st.name, day: st.day, image: st.canvas.toDataURL('image/jpeg', 0.88),
     slots, candidates: st.candidates, fonts, mainFont };

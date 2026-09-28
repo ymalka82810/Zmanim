@@ -97,6 +97,38 @@ export function refineBox(canvas, box) {
   return { ...box, x: left, w: right - left + 1, y: y0 + top - 2, h: bottom - top + 5 };
 }
 
+/**
+ * שורות הטקסט שבתוך האזור, לפי הפיקסלים (למסמך סרוק): [{ top, bottom }] מלמעלה למטה.
+ * ניקוד או קו דק שנפרדו משורה מצורפים אליה
+ */
+export function inkLines(canvas, box) {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const x0 = Math.max(0, Math.floor(box.x)), y0 = Math.max(0, Math.floor(box.y));
+  const x1 = Math.min(canvas.width, Math.ceil(box.x + box.w)), y1 = Math.min(canvas.height, Math.ceil(box.y + box.h));
+  if (x1 - x0 < 2 || y1 - y0 < 2) return [];
+  const W = x1 - x0, H = y1 - y0, data = ctx.getImageData(x0, y0, W, H).data;
+  const px = (x, y) => { const i = (y * W + x) * 4; return [data[i], data[i + 1], data[i + 2]]; };
+  const bg = median([...Array(W).keys()].flatMap(x => [px(x, 0), px(x, H - 1)]));
+  // שורה עם דיו: כמה פיקסלים כהים, ולא נקודה בודדת של רעש
+  const ink = y => { let n = 0; for (let x = 0; x < W; x++) if (dist(px(x, y), bg) > 70 && ++n > 2) return true; return false; };
+  const bands = [];
+  for (let y = 0, start = -1; y <= H; y++) {
+    const on = y < H && ink(y);
+    if (on && start < 0) start = y;
+    if (!on && start >= 0) { bands.push({ top: y0 + start, bottom: y0 + y - 1 }); start = -1; }
+  }
+  if (!bands.length) return [];
+  const tall = Math.max(...bands.map(b => b.bottom - b.top + 1));
+  const out = [];
+  for (const b of bands) {
+    const last = out[out.length - 1], h = b.bottom - b.top + 1;
+    // פס נמוך (ניקוד, קו) או צמוד לשורה שלפניו – חלק ממנה
+    if (last && (h < tall * 0.35 || b.top - last.bottom < tall * 0.15)) last.bottom = b.bottom;
+    else if (h >= tall * 0.35) out.push({ ...b });
+  }
+  return out;
+}
+
 /* ---------- ערכים ---------- */
 
 function gregText(day, fmt) {
@@ -108,7 +140,12 @@ function gregText(day, fmt) {
 /** הטקסט החדש לאזור, או null אם אין ערך */
 export function slotValue(slot, v) {
   switch (slot.kind) {
-    case 'rule': case 'kiddush': return v.rules[slot.when + '|' + slot.name] ?? null;
+    case 'rule': return v.rules[slot.when + '|' + slot.name] ?? null;
+    // הטקסט שלפני הקידוש ("הקידוש נתרם ע"י") נכתב רק כשיש קידוש מאושר
+    case 'kiddush': {
+      const t = v.rules[slot.when + '|' + slot.name];
+      return t == null ? null : (slot.prefix || '') + t;
+    }
     case 'zman': return (v.zmanim[slot.when] || {})[slot.zman] ?? null;
     case 'title': return v.title;
     case 'parasha': return (slot.prefix || '') + v.parasha;
@@ -176,14 +213,14 @@ function hash(str) {
 
 /**
  * טעינת גופן (base64) לדפדפן. מחזיר את שם המשפחה, או null אם הטעינה נכשלה.
- * weight – המשקל שהגופן רשום בו, כדי שהדפדפן לא יעבה שוב גופן שכבר מודגש
+ * weight, style – המשקל והסגנון שהגופן רשום בהם, כדי שהדפדפן לא יעבה או יטה שוב גופן שכבר מודגש או נטוי
  */
-async function loadFace(data, weight = 'normal') {
-  const family = 'tpl-' + hash(data) + (weight === 'normal' ? '' : '-' + weight);
+async function loadFace(data, weight = 'normal', style = 'normal') {
+  const family = 'tpl-' + hash(data) + (weight === 'normal' ? '' : '-' + weight) + (style === 'normal' ? '' : '-' + style);
   if (!faces.has(family)) {
     faces.set(family, (async () => {
       const bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0));
-      const face = new FontFace(family, bytes, { weight });
+      const face = new FontFace(family, bytes, { weight, style });
       await face.load();
       document.fonts.add(face);
       return true;
@@ -192,17 +229,35 @@ async function loadFace(data, weight = 'normal') {
   return (await faces.get(family)) ? family : null;
 }
 
-/** לכל גופן בתבנית: { family, map } לגופן מוטמע, או { css, bold } לגופן מערכת לפי השם */
+const isItalic = f => !!f.italic || /italic|oblique/i.test(f.ps || '');
+
+/**
+ * הדגשה ונטייה של אזור: מה שהגבאי בחר, ואם לא בחר – כמו בקובץ: לפי הגופן, עובי הקו בתמונה,
+ * או טקסט שהוטה בקובץ עצמו (box.italic)
+ */
+export function slotLook(slot, f, style) {
+  return { bold: slot.bold ?? !!((f && f.bold) || (style && style.bold)),
+    italic: slot.italic ?? !!((f && isItalic(f)) || (slot.box && slot.box.italic)) };
+}
+
+const cssFont = (look, size, css) => (look.italic ? 'italic ' : '') + (look.bold ? '700 ' : '400 ') + size + 'px ' + css;
+
+/**
+ * לכל גופן בתבנית: { family, map } לגופן מוטמע, או { css } לגופן מערכת לפי השם.
+ * plainCss – בלי הגופן המלא, לטקסט שהגבאי ביטל בו הדגשה או נטייה של הגופן שבקובץ
+ */
 async function templateFonts(tpl) {
   const out = {};
   for (const [k, f] of Object.entries(tpl.fonts || {})) {
-    const family = f.data && f.map ? await loadFace(f.data) : null;
+    const weight = f.bold ? '700' : '400', style = isItalic(f) ? 'italic' : 'normal';
+    const family = f.data && f.map ? await loadFace(f.data, weight, style) : null;
     // f.full – האותיות מהגופן המלא (מהמחשב של הגבאי או מקובץ שהעלה), לאותיות שחסרות בגופן המוטמע
-    const full = f.full ? await loadFace(f.full, f.bold ? '700' : '400') : null;
-    const css = (full ? '"' + full + '", ' : '') + fallbackCss(f);
-    out[k] = family ? { family, map: f.map, bold: f.bold, css } : { css, bold: f.bold };
-    // הקנבס לא מחכה לגופן רשת – טוענים מראש את האותיות העבריות של הגופן החלופי
-    await document.fonts.load((f.bold ? '700 ' : '400 ') + '20px ' + css, 'אבצץ').catch(() => {});
+    const full = f.full ? await loadFace(f.full, weight, style) : null;
+    const plainCss = fallbackCss(f), css = (full ? '"' + full + '", ' : '') + plainCss;
+    out[k] = { ...(family ? { family, map: f.map } : {}), bold: !!f.bold, italic: style === 'italic', css, plainCss };
+    // הקנבס לא מחכה לגופן רשת – טוענים מראש את האותיות העבריות של הגופן החלופי, בכל הדגשה ונטייה
+    await Promise.all([false, true].flatMap(bold => [false, true].map(italic =>
+      document.fonts.load(cssFont({ bold, italic }, 20, css), 'אבצץ').catch(() => {}))));
   }
   return out;
 }
@@ -225,7 +280,7 @@ function visualOrder(text) {
  * כותב טקסט במרכז (cx) בגופן מהקובץ. אות שאין בגופן נכתבת בגופן החלופי.
  * draw=false – רק מודד ומחזיר את הרוחב.
  */
-function embeddedText(ctx, text, f, size, cx, baseline, draw) {
+function embeddedText(ctx, text, f, look, size, cx, baseline, draw) {
   const segs = [];
   for (const ch of visualOrder(text)) {
     const emb = !/\s/.test(ch) && ch in f.map;
@@ -233,7 +288,8 @@ function embeddedText(ctx, text, f, size, cx, baseline, draw) {
     if (last && last.emb === emb) last.s += emb ? f.map[ch] : ch;
     else segs.push({ emb, s: emb ? f.map[ch] : ch });
   }
-  const fonts = { true: size + 'px "' + f.family + '"', false: (f.bold ? '700 ' : '400 ') + size + 'px ' + f.css };
+  // גופן רגיל שהגבאי הדגיש או הטה: הדפדפן מעבה או מטה אותו בעצמו
+  const fonts = { true: cssFont(look, size, '"' + f.family + '"'), false: cssFont(look, size, f.css) };
   // LRO … PDF – כופה סדר משמאל לימין על קטע בגופן החלופי, שכבר נמצא בסדר ויזואלי
   const str = sg => sg.emb ? sg.s : '\u202D' + sg.s + '\u202C';
   let w = 0;
@@ -300,7 +356,8 @@ export async function templateCanvas(tpl, values) {
     const b = s.box, st = s.style || { bg: '#fff', fg: '#000', bold: false };
     let size = (b.size || b.h * 0.72) * ((s.sizePct || 100) / 100);
     const cx = b.x + b.w / 2, baseline = b.baseline ?? (b.y + b.h * 0.78);
-    const writeAt = textWriter(ctx, fonts[b.font] || fonts[tpl.mainFont], st.bold, cx);
+    const f = fonts[b.font] || fonts[tpl.mainFont];
+    const writeAt = textWriter(ctx, f, slotLook(s, f, st), cx);
     // טקסט ארוך מהמקום: מקטינים עד 70%, ואם עדיין לא נכנס ומותר לגלוש – מחלקים לכמה שורות
     let w = writeAt(text, size, baseline, false);
     const room = Math.max(b.w * 1.15, b.w + size);
@@ -309,10 +366,18 @@ export async function templateCanvas(tpl, values) {
     const added = s.kind === host && values.special ? text.lastIndexOf(' – ') : -1;
     const count = s.lineCount || 2;
     const chosen = s.wrap ? chosenLines(text, s.lines, count) : null;
+    const widest = ls => Math.max(...ls.map(ln => writeAt(ln, size, baseline, false)));
+    // טקסט שתפס כמה שורות בקובץ הישן (srcLines): מחלקים לשורות בגודל המקורי, ומקטינים רק אם עדיין לא נכנס
+    const multi = s.wrap && s.srcLines > 1;
+    const split = w > room && multi && !chosen ? splitLines(text, str => writeAt(str, size, baseline, false), count) : null;
     if (w > room && chosen) {
-      size = Math.max(size * 0.7, size * room / w);
+      const cw = multi ? widest(chosen) : w;
+      if (!multi || cw > room) size = Math.max(size * 0.7, size * room / cw);
       lines = chosen;
-      w = Math.max(...lines.map(ln => writeAt(ln, size, baseline, false)));
+      w = widest(lines);
+    } else if (split && widest(split) <= room) {
+      lines = split;
+      w = widest(lines);
     } else if (w > room && added > 0) {
       lines = [text.slice(0, added), text.slice(added + 3)];
       const widest = () => Math.max(...lines.map(ln => writeAt(ln, size, baseline, false)));
@@ -340,12 +405,16 @@ export async function templateCanvas(tpl, values) {
   return canvas;
 }
 
-/** כותב טקסט ממורכז ב-cx בגופן f מהקובץ, או לפי שם הגופן אם הוא לא מוטמע. draw=false – רק מודד */
-function textWriter(ctx, f, bold, cx) {
-  if (f && f.family) return (str, sz, y, draw) => embeddedText(ctx, str, f, sz, cx, y, draw);
-  const css = f ? f.css : FALLBACK, b = f ? f.bold || bold : bold;
+/**
+ * כותב טקסט ממורכז ב-cx בגופן f מהקובץ, או לפי שם הגופן אם הוא לא מוטמע. draw=false – רק מודד.
+ * look – { bold, italic }. בגופן מודגש או נטוי אי אפשר לבטל את ההדגשה או הנטייה, ולכן אז כותבים בגופן לפי השם
+ */
+function textWriter(ctx, f, look, cx) {
+  const removed = f && ((f.bold && !look.bold) || (f.italic && !look.italic));
+  if (f && f.family && !removed) return (str, sz, y, draw) => embeddedText(ctx, str, f, look, sz, cx, y, draw);
+  const css = !f ? FALLBACK : removed ? f.plainCss : f.css;
   return (str, sz, y, draw) => {
-    ctx.font = (b ? '700 ' : '400 ') + sz + 'px ' + css;
+    ctx.font = cssFont(look, sz, css);
     if (draw) ctx.fillText(str, cx, y);
     return ctx.measureText(str).width;
   };
@@ -365,7 +434,8 @@ function redrawLabel(ctx, tpl, s, fonts, timeStyle) {
   const size = (lb.size || lb.h * 0.72) * (s.sizePct / 100);
   const baseline = lb.baseline ?? (lb.y + lb.h * 0.78);
   const f = fonts[lb.font] || fonts[tpl.mainFont];
-  const w = textWriter(ctx, f, st.bold, 0)(text, size, baseline, false);
+  const look = slotLook({ box: lb }, f, st);
+  const w = textWriter(ctx, f, look, 0)(text, size, baseline, false);
   const onRight = lb.x + lb.w / 2 > s.box.x + s.box.w / 2;
   const cx = onRight ? lb.x + w / 2 : lb.x + lb.w - w / 2;
   const left = Math.min(lb.x, cx - w / 2) - 2, right = Math.max(lb.x + lb.w, cx + w / 2) + 2;
@@ -373,5 +443,5 @@ function redrawLabel(ctx, tpl, s, fonts, timeStyle) {
   ctx.fillStyle = st.bg;
   ctx.fillRect(left, top, right - left, bottom - top);
   ctx.fillStyle = st.fg;
-  textWriter(ctx, f, st.bold, cx)(text, size, baseline, true);
+  textWriter(ctx, f, look, cx)(text, size, baseline, true);
 }
