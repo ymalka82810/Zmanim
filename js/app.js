@@ -846,9 +846,11 @@ $('rules').addEventListener('input', e => {
   }
   changed();
 });
-$('rules').addEventListener('click', e => {
+$('rules').addEventListener('click', async e => {
   const i = e.target.getAttribute('data-del');
   if (i === null) return;
+  const r = rules()[+i];
+  if (!await SiteDialog.confirm('למחוק את התפילה "' + (r.name || 'תפילה חדשה') + '"?', { ok: 'מחיקה', danger: true })) return;
   rules().splice(+i, 1); renderRules(); changed();
 });
 $('addRule').onclick = () => {

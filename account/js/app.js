@@ -188,6 +188,7 @@ async function inviteByEmail(form, synagogueId){
   } catch(e){ toast(errMsg(e)); btn.disabled = false; }
 }
 async function cancelInvitation(synagogueId, invitationId){
+  if (!await SiteDialog.confirm('לבטל את ההזמנה?', { ok: 'ביטול ההזמנה', cancel: 'השארת ההזמנה', danger: true, within: $('#sheet') })) return;
   try {
     await client.mutation('invitations:cancel', { invitationId });
     await loadManagerData(synagogueId);

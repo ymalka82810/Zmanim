@@ -239,7 +239,10 @@ const A = {
   addEvent: d => eventFormSheet(d.k, null),
   addEventAny: () => eventFormSheet('', null),
   editEvent: d => { const ev = S.events.find(x => x._id === d.id); if (ev) eventFormSheet(ev.dateKey, ev); },
-  delEvent: guard(async d => { await call('events:remove', { id: d.id }); toast('האירוע נמחק'); closeSheet(); }),
+  delEvent: guard(async d => {
+    if (!await SiteDialog.confirm('למחוק את האירוע?', { ok: 'מחיקה', danger: true })) return;
+    await call('events:remove', { id: d.id }); toast('האירוע נמחק'); closeSheet();
+  }),
   saveEvent: guard(async d => {
     const title = $('#evTitle').value, details = $('#evDetails').value;
     if (!title.trim()) return toast('נא למלא כותרת לאירוע');
