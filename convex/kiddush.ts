@@ -19,7 +19,56 @@ const DEFAULT_TERMS = {
 const NOTIFICATION_TTL_MS = 120 * 864e5;
 const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+// נוסח ההכרזה: שורה קבועה של הגבאי, "ע״י" + בעל הקידוש, ואז "לרגל / לזכות / לעילוי נשמת…" + שם
+const DEFAULT_KIDDUSH_HEADING = "קידוש לאחר התפילה";
+const DEFAULT_KIDDUSH_BY = "ע״י";
+const LIVING_SUFFIXES = ["שיחי׳", "שתחי׳", "שיחיו"];
+const MEMORIAL_SUFFIXES = ["ז״ל", "ע״ה"];
+const MEMORIAL_TYPE = "לעילוי נשמת";
+const OCCASION_TYPES = ["לרגל", "לזכות", "לרפואת", "להצלחת", MEMORIAL_TYPE];
+
 const clip = (s: string, max: number) => s.trim().slice(0, max);
+
+const announceArgs = {
+  sponsorName: v.string(),
+  sponsorSuffix: v.optional(v.string()),
+  occasion: v.string(),
+  occasionType: v.optional(v.string()),
+  occasionSuffix: v.optional(v.string()),
+};
+
+/** שדות ההכרזה מהטופס, אחרי בדיקה שהבחירות מהרשימות המותרות */
+function announceFields(args: { sponsorName: string; sponsorSuffix?: string; occasion: string; occasionType?: string; occasionSuffix?: string }) {
+  const sponsorName = clip(args.sponsorName, 60);
+  if (!sponsorName) {
+    throw new ConvexError("נא למלא את שם בעל הקידוש");
+  }
+  const sponsorSuffix = args.sponsorSuffix ?? "";
+  if (sponsorSuffix && !LIVING_SUFFIXES.includes(sponsorSuffix)) {
+    throw new ConvexError("בחירה לא תקינה אחרי השם");
+  }
+  const occasion = clip(args.occasion, 80);
+  const occasionType = occasion ? args.occasionType || "לרגל" : "";
+  if (occasionType && !OCCASION_TYPES.includes(occasionType)) {
+    throw new ConvexError("בחירה לא תקינה בשורת הסיבה");
+  }
+  const occasionSuffix = occasion ? args.occasionSuffix ?? "" : "";
+  const suffixes = occasionType === MEMORIAL_TYPE ? MEMORIAL_SUFFIXES : LIVING_SUFFIXES;
+  if (occasionSuffix && !suffixes.includes(occasionSuffix)) {
+    throw new ConvexError("בחירה לא תקינה אחרי השם בשורת הסיבה");
+  }
+  return { sponsorName, sponsorSuffix, occasion, occasionType, occasionSuffix };
+}
+
+const withSuffix = (name: string, suffix?: string) => (suffix ? name + " " + suffix : name);
+/** "משפחת לוי שיחיו" */
+function sponsorLine(b: Doc<"kiddushBookings">) {
+  return withSuffix(b.sponsorName, b.sponsorSuffix);
+}
+/** "לזכות בנם משה שיחי׳". רישום ישן בלי סוג: "לרגל …" */
+function occasionLine(b: Doc<"kiddushBookings">) {
+  return b.occasion ? (b.occasionType || "לרגל") + " " + withSuffix(b.occasion, b.occasionSuffix) : "";
+}
 
 function checkDateKey(dateKey: string) {
   if (!DATE_KEY_RE.test(dateKey)) {
@@ -98,7 +147,12 @@ export const board = query({
           manual: b.manual,
           mine,
           sponsorName: b.sponsorName,
+          sponsorSuffix: b.sponsorSuffix ?? "",
           occasion: b.occasion,
+          occasionType: b.occasionType || (b.occasion ? "לרגל" : ""),
+          occasionSuffix: b.occasionSuffix ?? "",
+          sponsorLine: sponsorLine(b),
+          occasionLine: occasionLine(b),
           blockLabel: b.blockLabel,
           termsVersion: b.termsVersion,
           phone: showPrivate ? b.phone : "",
@@ -135,7 +189,13 @@ export const board = query({
       .map((n) => ({ _id: n._id, text: n.text, at: n.at, read: n.readBy.includes(userId) }));
 
     return {
-      synagogue: { name: synagogue.name, city: synagogue.city, il: synagogue.il },
+      synagogue: {
+        name: synagogue.name,
+        city: synagogue.city,
+        il: synagogue.il,
+        kiddushHeading: synagogue.kiddushHeading ?? DEFAULT_KIDDUSH_HEADING,
+        kiddushBy: synagogue.kiddushBy ?? DEFAULT_KIDDUSH_BY,
+      },
       role: membership.role,
       myPhone: membership.phone ?? "",
       bookings,
@@ -150,18 +210,14 @@ export const register = mutation({
     synagogueId: v.id("synagogues"),
     dateKey: v.string(),
     label: v.string(),
-    sponsorName: v.string(),
-    occasion: v.string(),
+    ...announceArgs,
     phone: v.string(),
     note: v.string(),
   },
   handler: async (ctx, args) => {
     const { userId, membership } = await requireMember(ctx, args.synagogueId);
     await requireFreeDate(ctx, args.synagogueId, args.dateKey);
-    const sponsorName = clip(args.sponsorName, 60);
-    if (!sponsorName) {
-      throw new ConvexError("נא למלא שם שיוצג בלוח");
-    }
+    const fields = announceFields(args);
     const phone = clip(args.phone, 20);
     // גבאי או רב לא צריכים לאשר רישום של עצמם
     const selfApproved = isManager(membership.role);
@@ -172,8 +228,7 @@ export const register = mutation({
       ...(selfApproved ? { decidedBy: userId, decidedAt: Date.now() } : {}),
       userId,
       manual: false,
-      sponsorName,
-      occasion: clip(args.occasion, 80),
+      ...fields,
       phone,
       note: clip(args.note, 200),
       blockLabel: "",
@@ -184,10 +239,11 @@ export const register = mutation({
     if (phone && membership.phone !== phone) {
       await ctx.db.patch(membership._id, { phone });
     }
+    const sponsor = withSuffix(fields.sponsorName, fields.sponsorSuffix);
     await notify(ctx, args.synagogueId, userId, "managers", args.dateKey,
       selfApproved
-        ? `${await userName(ctx, userId)} רשם קידוש ב${clip(args.label, 80)}: ${sponsorName}`
-        : `בקשה חדשה לקידוש ב${clip(args.label, 80)}: ${sponsorName}`);
+        ? `${await userName(ctx, userId)} רשם קידוש ב${clip(args.label, 80)}: ${sponsor}`
+        : `בקשה חדשה לקידוש ב${clip(args.label, 80)}: ${sponsor}`);
     return { status: selfApproved ? "approved" : "pending" };
   },
 });
@@ -308,25 +364,19 @@ export const registerManual = mutation({
   args: {
     synagogueId: v.id("synagogues"),
     dateKey: v.string(),
-    sponsorName: v.string(),
-    occasion: v.string(),
+    ...announceArgs,
     phone: v.string(),
   },
   handler: async (ctx, args) => {
     const { userId } = await requireManager(ctx, args.synagogueId);
     await requireFreeDate(ctx, args.synagogueId, args.dateKey);
-    const sponsorName = clip(args.sponsorName, 60);
-    if (!sponsorName) {
-      throw new ConvexError("נא למלא שם שיוצג בלוח");
-    }
     await ctx.db.insert("kiddushBookings", {
       synagogueId: args.synagogueId,
       dateKey: args.dateKey,
       status: "approved",
       userId,
       manual: true,
-      sponsorName,
-      occasion: clip(args.occasion, 80),
+      ...announceFields(args),
       phone: clip(args.phone, 20),
       note: "",
       blockLabel: "",
@@ -378,6 +428,19 @@ export const restoreTerms = mutation({
       items: old.items,
       note: "שוחזר מגרסה " + old.version,
     });
+  },
+});
+
+/** נוסח ההכרזה על הקידוש: רק גבאי או רב משנים אותו */
+export const saveWording = mutation({
+  args: { synagogueId: v.id("synagogues"), kiddushHeading: v.string(), kiddushBy: v.string() },
+  handler: async (ctx, args) => {
+    await requireManager(ctx, args.synagogueId);
+    const kiddushHeading = clip(args.kiddushHeading, 80);
+    if (!kiddushHeading) {
+      throw new ConvexError("נא למלא את השורה הראשונה");
+    }
+    await ctx.db.patch(args.synagogueId, { kiddushHeading, kiddushBy: clip(args.kiddushBy, 30) });
   },
 });
 

@@ -148,9 +148,9 @@ function statusHTML(b, past){
   if (!b) return past ? '<span class="chip block">עבר</span>' : '<span class="chip free">פנוי</span>';
   if (b.status === 'blocked') return `<span class="chip block">${esc(b.blockLabel||'לא זמין')}</span>`;
   const mineTag = b.mine ? '<span class="mine-tag">הרישום שלי</span>' : '';
-  if (past) return `<span class="chip done">נעשה</span><span class="by">${esc(b.sponsorName)}</span>${mineTag}`;
-  const chip = b.status === 'approved' ? '<span class="chip appr">קידוש ע״י</span>' : '<span class="chip pend">ממתין לאישור</span>';
-  return `${chip}<span class="by">${esc(b.sponsorName)}</span>${mineTag}`;
+  if (past) return `<span class="chip done">נעשה</span><span class="by">${esc(b.sponsorLine)}</span>${mineTag}`;
+  const chip = b.status === 'approved' ? `<span class="chip appr">קידוש ${esc(syn().kiddushBy)}</span>` : '<span class="chip pend">ממתין לאישור</span>';
+  return `${chip}<span class="by">${esc(b.sponsorLine)}</span>${mineTag}`;
 }
 function calHTML(){
   const s = syn(), {start, end} = monthRange(S.anchor, S.mode), {t, alt} = monthTitles();
@@ -197,7 +197,7 @@ function mineHTML(){
     return `<div class="card">
       <div class="row" style="justify-content:space-between"><div><div class="meta">${esc(heFull(sl.hd))} | ${esc(gFull(sl.date))}</div><h3>${esc(slotTitle(sl))}</h3></div>
       ${b.status==='approved'?'<span class="chip appr">מאושר</span>':'<span class="chip pend">ממתין לאישור</span>'}</div>
-      <div class="small">בשם: ${esc(b.sponsorName)}${b.occasion?' | '+esc(b.occasion):''}</div>
+      <div class="small">${esc(syn().kiddushBy)} ${esc(b.sponsorLine)}${b.occasionLine?' | '+esc(b.occasionLine):''}</div>
       <div class="meta">אושרו הנחיות גרסה ${b.termsVersion||'—'}</div>
       ${outdated?`<div class="warn">ההנחיות עודכנו לגרסה ${ct.version}. יש לעיין ולאשר מחדש.</div>`:''}
       ${pkey(k) >= t0 ? `<div class="row" style="margin-top:10px">
@@ -234,7 +234,7 @@ function manageHTML(){
   const pendHTML = pend.length ? pend.map(b => {
     const k = b.dateKey, sl = slotFor(k, !!s.il);
     return `<div class="li"><div class="grow"><div class="t">${esc(slotTitle(sl))} <span class="meta">${esc(gShort(sl.date))}</span></div>
-      <div class="small">${esc(b.sponsorName)}${b.occasion?' | '+esc(b.occasion):''}</div>
+      <div class="small">${esc(b.sponsorLine)}${b.occasionLine?' | '+esc(b.occasionLine):''}</div>
       <div class="meta">נרשם: ${esc(b.registrant)}${b.phone?' | '+esc(b.phone):''}${pkey(k)<t0?' | התאריך עבר':''}</div></div>
       <div class="row"><button class="btn ok" data-act="approve" data-k="${k}">אישור</button><button class="btn danger" data-act="reject" data-k="${k}">דחייה</button></div></div>`;
   }).join('') : '<p class="muted">אין בקשות ממתינות.</p>';
@@ -242,7 +242,7 @@ function manageHTML(){
     <div class="card"><h3>רישום ידני או חסימת תאריך</h3><p class="small muted">לחיצה על שבת בלוח פותחת גם פעולות ניהול: רישום בשם משפחה, סימון "קידוש קהילתי" או חסימה.</p>
     <button class="btn sec" data-act="view" data-v="cal">ללוח</button></div>
     <div class="sechead"><h2>הגדרות</h2></div>
-    <div class="card"><div class="row"><button class="btn sec" data-act="editTerms">עריכת ההנחיות</button><a class="btn sec" href="${ACCOUNT_URL}">חברי הקהילה ופרטיה</a></div></div>`;
+    <div class="card"><div class="row"><button class="btn sec" data-act="editTerms">עריכת ההנחיות</button><button class="btn sec" data-act="editWording">נוסח ההכרזה על הקידוש</button><a class="btn sec" href="${ACCOUNT_URL}">חברי הקהילה ופרטיה</a></div></div>`;
 }
 
 /* ---------- Sheets ---------- */
@@ -257,8 +257,7 @@ function slotSheet(k){
   let html = sheetHead(slotTitle(sl), heFull(sl.hd)+' | '+gFull(sl.date));
   if (sl.subs.length) html += `<p class="small muted">${esc(sl.subs.join(', '))}</p>`;
   if (b && b.status !== 'blocked'){
-    html += `<dl class="kv"><dt>סטטוס</dt><dd>${b.status==='approved'?'מאושר':'ממתין לאישור'}</dd><dt>קידוש ע״י</dt><dd>${esc(b.sponsorName)}</dd>
-      ${b.occasion?`<dt>לרגל</dt><dd>${esc(b.occasion)}</dd>`:''}
+    html += announceView(b) + `<dl class="kv"><dt>סטטוס</dt><dd>${b.status==='approved'?'מאושר':'ממתין לאישור'}</dd>
       ${isManager()?`<dt>נרשם</dt><dd>${b.manual?'רישום ידני ע״י '+esc(b.registrant):esc(b.registrant)}</dd>`:''}
       ${b.phone?`<dt>טלפון</dt><dd dir="ltr" style="text-align:right">${esc(b.phone)}</dd>`:''}${b.note?`<dt>הערה</dt><dd>${esc(b.note)}</dd>`:''}</dl>`;
   } else if (b) html += `<p><span class="chip block">${esc(b.blockLabel||'לא זמין')}</span></p>`;
@@ -275,13 +274,45 @@ function slotSheet(k){
   if (acts.length) html += `<div class="row" style="margin-top:14px">${acts.join('')}</div>`;
   openSheet(html);
 }
+/* נוסח ההכרזה: שורה קבועה של הגבאי, "ע״י" + בעל הקידוש, ואז "לרגל / לזכות / לעילוי נשמת…" + שם.
+   הרשימות זהות לאלו שהשרת מקבל (convex/kiddush.ts) */
+const LIVING_SFX = ['שיחי׳','שתחי׳','שיחיו'], MEMORIAL_SFX = ['ז״ל','ע״ה'], MEMORIAL = 'לעילוי נשמת';
+const OCC_HINT = {'לרגל':'בר המצווה של בנם','לזכות':'בנם משה','לרפואת':'משה בן שרה','להצלחת':'בנם משה',[MEMORIAL]:'ר׳ משה בן יעקב'};
+const options = (list, sel, none) => (none ? `<option value="">${none}</option>` : '') + list.map(x => `<option${x===sel?' selected':''}>${esc(x)}</option>`).join('');
+function announceHTML(p){
+  const s = syn();
+  return `<div class="announce">
+    <div class="an-head">${esc(s.kiddushHeading)}</div>
+    <label class="f" for="${p}Sponsor">מי מביא את הקידוש</label>
+    <div class="an-line">${s.kiddushBy?`<span class="an-fixed">${esc(s.kiddushBy)}</span>`:''}<input type="text" id="${p}Sponsor" maxlength="60" placeholder="משפחת לוי">
+      <select id="${p}SponsorSfx" aria-label="תוספת אחרי השם">${options(LIVING_SFX, '', 'ללא')}</select></div>
+    <label class="f" for="${p}Occ">סיבת הקידוש (לא חובה)</label>
+    <div class="an-line"><select id="${p}OccType" data-announce="${p}" aria-label="סוג">${options(Object.keys(OCC_HINT), 'לרגל')}</select><input type="text" id="${p}Occ" maxlength="80" placeholder="${OCC_HINT['לרגל']}">
+      <select id="${p}OccSfx" aria-label="תוספת אחרי השם">${options(LIVING_SFX, '', 'ללא')}</select></div>
+  </div>`;
+}
+/** סוג הסיבה השתנה: לעילוי נשמת מקבל ז״ל / ע״ה, והשאר שיחי׳ / שתחי׳ / שיחיו */
+function announceTypeChanged(p){
+  const type = $('#'+p+'OccType').value, sfx = $('#'+p+'OccSfx');
+  sfx.innerHTML = options(type === MEMORIAL ? MEMORIAL_SFX : LIVING_SFX, '', 'ללא');
+  $('#'+p+'Occ').placeholder = OCC_HINT[type] || '';
+}
+const announceValues = p => ({
+  sponsorName: $('#'+p+'Sponsor').value, sponsorSuffix: $('#'+p+'SponsorSfx').value,
+  occasionType: $('#'+p+'OccType').value, occasion: $('#'+p+'Occ').value, occasionSuffix: $('#'+p+'OccSfx').value
+});
+function announceView(b){
+  const s = syn();
+  return `<div class="announce view"><div class="an-head">${esc(s.kiddushHeading)}</div>
+    <div>${s.kiddushBy?esc(s.kiddushBy)+' ':''}<b>${esc(b.sponsorLine)}</b></div>${b.occasionLine?`<div>${esc(b.occasionLine)}</div>`:''}</div>`;
+}
+
 function registerSheet(k){
   const sl = slotFor(k, !!syn().il);
   openSheet(sheetHead('הרשמה לקידוש', slotTitle(sl)+' | '+heFull(sl.hd)) + `
     <div class="steps"><span class="on" id="st1"></span><span id="st2"></span></div>
     <div id="step1">
-      <label class="f" for="fSponsor">שם שיוצג בלוח</label><input type="text" id="fSponsor" maxlength="60" placeholder="לדוגמה: משפחת לוי">
-      <label class="f" for="fOcc">לרגל (לא חובה)</label><input type="text" id="fOcc" maxlength="80" placeholder="בר מצווה, הולדת נכד, אזכרה…">
+      ${announceHTML('f')}
       <label class="f" for="fPhone">טלפון ליצירת קשר</label><input type="tel" id="fPhone" maxlength="20" dir="ltr" style="text-align:right" value="${esc(S.board.myPhone)}">
       <label class="f" for="fNote">הערה לגבאי (לא חובה)</label><input type="text" id="fNote" maxlength="200">
       <div class="row" style="margin-top:16px"><button class="btn" data-act="regNext">המשך להנחיות</button></div>
@@ -307,12 +338,20 @@ function editTermsSheet(){
     <p class="small muted">בעלי קידוש עתידיים יתבקשו לאשר את הגרסה החדשה.</p>
     <div class="row"><button class="btn" data-act="saveTerms">שמירת גרסה חדשה</button><button class="btn ghost" data-act="close">ביטול</button></div>`);
 }
+function wordingSheet(){
+  const s = syn();
+  openSheet(sheetHead('נוסח ההכרזה על הקידוש') + `
+    <label class="f" for="wHead">שורה ראשונה</label><input type="text" id="wHead" maxlength="80" value="${esc(s.kiddushHeading)}" placeholder="לדוגמה: קידוש והתוועדות לאחר התפילה">
+    <label class="f" for="wBy">לפני שם בעל הקידוש</label><input type="text" id="wBy" maxlength="30" value="${esc(s.kiddushBy)}" placeholder="ע״י">
+    <p class="small muted">שתי השורות מופיעות בטופס ההרשמה כטקסט קבוע. בעל הקידוש ממלא רק את השם ואת סיבת הקידוש.</p>
+    <div class="row"><button class="btn" data-act="saveWording">שמירה</button><button class="btn ghost" data-act="close">ביטול</button></div>`);
+}
 function reasonSheet(k, kind){
   const sl = slotFor(k, !!syn().il);
   const title = kind === 'block' ? 'חסימת תאריך' : kind === 'manual' ? 'רישום ידני' : 'דחייה או ביטול';
   let f = '';
   if (kind === 'block') f = `<label class="f" for="rText">מה יוצג בלוח</label><input type="text" id="rText" maxlength="40" value="קידוש קהילתי">`;
-  else if (kind === 'manual') f = `<label class="f" for="rText">שם שיוצג בלוח</label><input type="text" id="rText" maxlength="60" placeholder="משפחת…"><label class="f" for="rOcc">לרגל</label><input type="text" id="rOcc" maxlength="80"><label class="f" for="rPhone">טלפון</label><input type="tel" id="rPhone" dir="ltr" style="text-align:right" maxlength="20">`;
+  else if (kind === 'manual') f = `${announceHTML('r')}<label class="f" for="rPhone">טלפון</label><input type="tel" id="rPhone" dir="ltr" style="text-align:right" maxlength="20">`;
   else f = `<label class="f" for="rText">סיבה (תישלח לנרשם)</label><input type="text" id="rText" maxlength="160">`;
   openSheet(sheetHead(title, slotTitle(sl)+' | '+gFull(sl.date)) + f +
     `<div class="row" style="margin-top:16px"><button class="btn${kind==='reject'?' danger':''}" data-act="doReason" data-k="${k}" data-kind="${kind}">אישור</button><button class="btn ghost" data-act="close">ביטול</button></div>`);
@@ -366,14 +405,14 @@ const A = {
   ics: d => downloadIcs(d.k),
   register: d => registerSheet(d.k),
   regNext: () => {
-    if (!$('#fSponsor').value.trim()){ $('#fSponsor').focus(); return toast('נא למלא שם שיוצג בלוח'); }
+    if (!$('#fSponsor').value.trim()){ $('#fSponsor').focus(); return toast('נא למלא את שם בעל הקידוש'); }
     $('#step1').hidden = true; $('#step2').hidden = false; $('#st2').classList.add('on'); $('#sheet').scrollTop = 0;
   },
   regBack: () => { $('#step1').hidden = false; $('#step2').hidden = true; $('#st2').classList.remove('on'); },
   regSubmit: guard(async d => {
     if (!$('#fAgree').checked) return toast('יש לאשר את ההנחיות כדי להירשם');
     const res = await call('kiddush:register', { dateKey:d.k, label:slotLabel(d.k),
-      sponsorName:$('#fSponsor').value, occasion:$('#fOcc').value, phone:$('#fPhone').value, note:$('#fNote').value });
+      ...announceValues('f'), phone:$('#fPhone').value, note:$('#fNote').value });
     closeSheet(); toast(res?.status === 'approved' ? 'הקידוש נרשם ואושר' : 'הבקשה נשלחה לאישור');
   }),
   cancelMine: d => {
@@ -394,14 +433,18 @@ const A = {
   manual: d => reasonSheet(d.k, 'manual'),
   unblock: guard(async d => { await call('kiddush:unblock', { dateKey:d.k }); closeSheet(); toast('התאריך שוחרר'); }),
   doReason: guard(async d => {
-    const k = d.k, kind = d.kind, txt = $('#rText').value.trim();
-    if (kind === 'reject'){
-      await call('kiddush:reject', { dateKey:k, label:slotLabel(k), reason:txt });
+    const k = d.k, kind = d.kind;
+    if (kind === 'manual'){
+      if (!$('#rSponsor').value.trim()) return toast('נא למלא את שם בעל הקידוש');
+      await call('kiddush:registerManual', { dateKey:k, ...announceValues('r'), phone:$('#rPhone').value });
+      toast('נשמר');
+    } else if (kind === 'reject'){
+      await call('kiddush:reject', { dateKey:k, label:slotLabel(k), reason:$('#rText').value.trim() });
       toast('הרישום הוסר');
     } else {
+      const txt = $('#rText').value.trim();
       if (!txt) return toast('נא למלא את השדה');
-      if (kind === 'block') await call('kiddush:block', { dateKey:k, blockLabel:txt });
-      else await call('kiddush:registerManual', { dateKey:k, sponsorName:txt, occasion:$('#rOcc').value, phone:$('#rPhone').value });
+      await call('kiddush:block', { dateKey:k, blockLabel:txt });
       toast('נשמר');
     }
     closeSheet();
@@ -422,6 +465,11 @@ const A = {
     const v = await call('kiddush:saveTerms', { intro:$('#tIntro').value, items, note:$('#tNote').value });
     closeSheet(); toast('נשמרה גרסה '+v);
   }),
+  editWording: wordingSheet,
+  saveWording: guard(async () => {
+    await call('kiddush:saveWording', { kiddushHeading:$('#wHead').value, kiddushBy:$('#wBy').value });
+    closeSheet(); toast('הנוסח נשמר');
+  }),
   restoreTerms: guard(async d => {
     const v = await call('kiddush:restoreTerms', { version:Number(d.v) });
     closeSheet(); toast('גרסה '+d.v+' שוחזרה כגרסה '+v);
@@ -433,7 +481,8 @@ document.addEventListener('click', e => {
   if (t){ const f = A[t.dataset.act]; if (f){ e.preventDefault(); f(t.dataset, t); } return; }
   if (e.target === $('#sheetWrap')) closeSheet();
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#sheetWrap').hidden) closeSheet(); });
+document.addEventListener('change', e => { if (e.target.dataset.announce) announceTypeChanged(e.target.dataset.announce); });
+document.addEventListener('keydown',e => { if (e.key === 'Escape' && !$('#sheetWrap').hidden) closeSheet(); });
 
 boot();
 })();

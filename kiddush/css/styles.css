@@ -99,6 +99,15 @@ header.top{display:flex;align-items:center;gap:12px;padding:18px 0 8px}
 label.f{display:block;margin:12px 0 4px;font-weight:600;font-size:.92rem}
 input[type=text],input[type=tel],input[type=date],select,textarea{width:100%;border:1px solid var(--line);background:var(--surface2);border-radius:10px;padding:10px 12px}
 textarea{min-height:110px;resize:vertical;line-height:1.55}
+/* נוסח ההכרזה על הקידוש: שורה קבועה של הגבאי, ואחריה השורות שבעל הקידוש ממלא */
+.announce{border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:6px 0 4px}
+.announce .an-head{font-family:var(--serif);font-weight:700;font-size:1.15rem;text-align:center;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.an-line{display:flex;gap:8px;align-items:center}
+.an-line input{flex:1;min-width:0}
+.an-line select{width:auto;flex:none;padding-inline:8px}
+.an-fixed{flex:none;font-weight:700}
+.announce.view{text-align:center;margin:10px 0}
+.announce.view .an-head{margin-bottom:6px}
 .check{display:flex;gap:10px;align-items:flex-start;margin:14px 0;font-weight:600}
 .check input{width:20px;height:20px;margin-top:3px;accent-color:var(--wine);flex:none}
 .terms-list{list-style:none;padding:0;margin:10px 0}

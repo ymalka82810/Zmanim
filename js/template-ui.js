@@ -32,7 +32,9 @@ const baseOpts = s => {
 };
 let kiddush = null;   // dateKey ← קידוש מאושר, לתצוגה המקדימה (מ-app.js)
 export function setKiddush(map) { kiddush = map; }
-const SAMPLE_KIDDUSH = { sponsorName: 'משפחת ישראלי', occasion: 'בר מצווה' };
+const SAMPLE_KIDDUSH = { sponsorName: 'משפחת ישראלי שיחיו', occasion: 'לרגל בר המצווה של בנם', heading: 'קידוש לאחר התפילה', by: 'ע״י' };
+/** הנוסח שהגבאי קבע בלוח הקידושים: השורה הראשונה, "ע״י", בעל הקידוש והסיבה */
+const GABBAI_KIDDUSH_FMT = '{כותרת} {ע״י} {שם}{לרגל}';
 const oldMinutes = s => { const m = /^(\d{1,2}):(\d{2})$/.exec(s.old || ''); return m ? +m[1] * 60 + +m[2] : null; };
 /** ערך מוחלט (בדקות) של הפרש האזור, להצגה בשדה המספר */
 const offsetAbs = s => { const n = parseInt(s.offset, 10); return isNaN(n) ? '' : String(Math.abs(n)); };
@@ -548,10 +550,12 @@ function slotFields(s) {
         : '<div><label>מתי</label><select data-k="when">' + opts(WHEN_LABELS, s.when) + '</select></div>') +
       '<div class="wide"><label>טקסט לפני הקידוש</label><input data-k="prefix" value="' + esc(s.prefix || '') +
       '" placeholder="למשל: הקידוש נתרם ע&quot;י"></div>' +
-      '<div class="wide"><label>נוסח</label><input data-k="offset" dir="rtl" value="' + esc(s.offset) + '" placeholder="{שם}{לרגל}"></div></div>' +
+      '<div class="wide"><label>נוסח</label><input data-k="offset" dir="rtl" value="' + esc(s.offset) + '" placeholder="{שם}{לרגל}"></div>' +
+      '<div class="wide"><button type="button" data-kiddush-wording>לפי הנוסח שהגבאי קבע בלוח הקידושים</button></div></div>' +
       '<p class="hint">הטקסט יתמלא לפי מי שאושר לקידוש בתאריך הזה (מלוח הקידושים של הקהילה). ' +
-      'אפשר להשתמש ב-{שם} (שם התורם), ב-{סיבה} (לרגל מה נתרם) וב-{לרגל} (מוסיף "לרגל ..." רק אם יש סיבה). ' +
-      'בלי תאריך מאושר, האזור לא יתמלא. כשאין קידוש מאושר, התצוגה המקדימה כאן מציגה תורם לדוגמה ("משפחת ישראלי לרגל בר מצווה").</p>';
+      'אפשר להשתמש ב-{שם} (שם התורם, עם שיחי׳/שתחי׳/שיחיו), ב-{סיבה} ("לרגל…", "לזכות…", "לעילוי נשמת…") וב-{לרגל} (כמו {סיבה} עם רווח לפניה, רק אם יש סיבה), ' +
+      'וגם בנוסח שהגבאי קבע בלוח הקידושים: {כותרת} (השורה הראשונה, למשל "קידוש והתוועדות לאחר התפילה") ו-{ע״י}. ' +
+      'בלי תאריך מאושר, האזור לא יתמלא. כשאין קידוש מאושר, התצוגה המקדימה כאן מציגה תורם לדוגמה ("משפחת ישראלי שיחיו לרגל בר המצווה של בנם").</p>';
   }
   if (s.kind === 'parasha' || s.kind === 'parashaName') {
     return '<div class="rgrid"><div class="wide"><label>טקסט לפני הפרשה</label><input data-k="prefix" value="' + esc(s.prefix || '') +
@@ -739,6 +743,15 @@ $('tplSlots').addEventListener('input', e => {
   if (s.wrap || s.kind === 'kiddush') schedulePreviewRefresh();
 });
 $('tplSlots').addEventListener('click', async e => {
+  // הכותרת ו"ע״י" באים מלוח הקידושים, ולכן הטקסט שנקרא מהקובץ לפני הקידוש כבר לא נחוץ
+  const wordingBtn = e.target.closest('[data-kiddush-wording]');
+  if (wordingBtn) {
+    const s = st.slots[+wordingBtn.closest('.slot-ed').dataset.i];
+    Object.assign(s, { prefix: '', offset: GABBAI_KIDDUSH_FMT });
+    renderSlots();
+    schedulePreviewRefresh();
+    return;
+  }
   const lookBtn = e.target.closest('[data-look]');
   if (lookBtn) {
     const s = st.slots[+lookBtn.closest('.slot-ed').dataset.i], k = lookBtn.dataset.look;
@@ -902,7 +915,7 @@ async function renderTemplatePreview() {
   const today = todayIn(cfg.tz);
   const occ = periodFor(st.cfgAll, st.tpl, today) || findPeriod(st.tpl.kind, today, cfg.il);
   // בעורך רואים איך הקידוש ייראה גם בלי קידוש מאושר לתאריך – עם תורם לדוגמה. בלוח עצמו אין דוגמה
-  const kd = { get: k => (kiddush && kiddush.get(k)) || SAMPLE_KIDDUSH };
+  const kd = { get: k => (kiddush && kiddush.get(k)) || { ...SAMPLE_KIDDUSH, ...(kiddush && kiddush.wording) } };
   const values = occ.mode === 'days' ? buildDaysLuach(cfg, occ, kd).values : buildLuach(cfg, occ, kd).values;
   const canvas = await templateCanvas(tpl, values);
   const host = specialHost(tpl.slots);

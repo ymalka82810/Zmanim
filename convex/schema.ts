@@ -22,6 +22,9 @@ export default defineSchema({
     createdBy: v.id("users"),
     inviteCode: v.string(),
     createdAt: v.number(),
+    // נוסח ההכרזה על הקידוש, שהגבאי או הרב קובעים: השורה הראשונה, והמילים שלפני שם בעל הקידוש
+    kiddushHeading: v.optional(v.string()),
+    kiddushBy: v.optional(v.string()),
   }).index("by_invite", ["inviteCode"]),
 
   memberships: defineTable({
@@ -55,7 +58,10 @@ export default defineSchema({
     userId: v.id("users"),
     manual: v.boolean(),
     sponsorName: v.string(),
+    sponsorSuffix: v.optional(v.string()),
     occasion: v.string(),
+    occasionType: v.optional(v.string()),
+    occasionSuffix: v.optional(v.string()),
     phone: v.string(),
     note: v.string(),
     blockLabel: v.string(),

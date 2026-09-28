@@ -192,7 +192,7 @@ function toast(msg){ let t = document.querySelector('.toast'); if (!t){ t = docu
 function kiddushStatusLine(b, past){
   if (!b) return `<p class="small">${past ? 'עבר ללא קידוש' : 'פנוי לקידוש'}</p>`;
   if (b.status === 'blocked') return `<p><span class="chip block">${esc(b.blockLabel || 'לא זמין')}</span></p>`;
-  if (b.status === 'approved') return `<p><span class="chip appr">מאושר</span> ${esc(b.sponsorName)}${b.occasion ? ' · ' + esc(b.occasion) : ''}</p>`;
+  if (b.status === 'approved') return `<p><span class="chip appr">מאושר</span> ${esc(b.sponsorLine)}${b.occasionLine ? ' · ' + esc(b.occasionLine) : ''}</p>`;
   return `<p><span class="chip pend">ממתין לאישור</span></p>`;
 }
 function eventLine(e){
@@ -224,7 +224,7 @@ function eventFormSheet(k, existing){
 function kiddushChip(b, past){
   if (!b) return past ? '<span class="chip block">עבר</span>' : '<span class="chip free">אין קידוש</span>';
   if (b.status === 'blocked') return `<span class="chip block">${esc(b.blockLabel || 'לא זמין')}</span>`;
-  if (b.status === 'approved') return `<span class="chip appr">קידוש</span><span class="by">${esc(b.sponsorName)}${b.occasion ? ' · ' + esc(b.occasion) : ''}</span>`;
+  if (b.status === 'approved') return `<span class="chip appr">קידוש</span><span class="by">${esc(b.sponsorLine)}${b.occasionLine ? ' · ' + esc(b.occasionLine) : ''}</span>`;
   return isManager() ? '<span class="chip pend">ממתין לאישור</span>' : (past ? '<span class="chip block">עבר</span>' : '<span class="chip free">אין קידוש</span>');
 }
 

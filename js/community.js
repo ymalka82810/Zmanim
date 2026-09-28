@@ -95,8 +95,11 @@ function subscribe(id){
     if (manager) { $('communityRole').textContent = ROLE[role]; renderManager(); } else renderMember();
   }, e => { onManager(null); gate(esc(errText(e, 'לא ניתן לטעון את לוח הזמנים של הקהילה.')), `<a class="btn-link" href="${ACCOUNT_URL}">לחשבון שלי</a>`); });
   unsubscribeKiddush = Auth.client().onUpdate('kiddush:board', { synagogueId: id }, data => {
+    // נוסח הגבאי ("קידוש והתוועדות לאחר התפילה", "ע״י") – ל-{כותרת} ול-{ע״י} בתבנית
+    const wording = { heading: data.synagogue.kiddushHeading || '', by: data.synagogue.kiddushBy || '' };
     const map = new Map();
-    for (const b of data.bookings) if (b.status === 'approved') map.set(b.dateKey, { sponsorName: b.sponsorName, occasion: b.occasion });
+    map.wording = wording;
+    for (const b of data.bookings) if (b.status === 'approved') map.set(b.dateKey, { sponsorName: b.sponsorLine, occasion: b.occasionLine, ...wording });
     onKiddush(map);
   }, () => {});
 }
