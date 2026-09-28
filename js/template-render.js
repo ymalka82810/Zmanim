@@ -64,16 +64,23 @@ export function refineBox(canvas, box) {
   const x0 = Math.max(0, Math.floor(box.x)), x1 = Math.min(canvas.width, Math.ceil(box.x + box.w));
   const y0 = Math.max(0, Math.floor(box.baseline - box.size * 1.05)), y1 = Math.min(canvas.height, Math.ceil(box.baseline + box.size * 0.4));
   if (x1 - x0 < 2 || y1 - y0 < 2) return box;
-  const W = x1 - x0, H = y1 - y0, data = ctx.getImageData(x0, y0, W, H).data;
-  const px = (x, y) => { const i = (y * W + x) * 4; return [data[i], data[i + 1], data[i + 2]]; };
-  const bg = median([...Array(W).keys()].flatMap(x => [px(x, 0), px(x, H - 1)]));
-  const inkRow = y => { for (let x = 0; x < W; x++) if (dist(px(x, y), bg) > 70) return true; return false; };
+  // קוראים גם מעט מסביב לתיבה, כדי להשלים אות שנחתכה בקצה
+  const ext = Math.ceil(box.size * 0.6), xa = Math.max(0, x0 - ext), xb = Math.min(canvas.width, x1 + ext);
+  const DW = xb - xa, H = y1 - y0, data = ctx.getImageData(xa, y0, DW, H).data;
+  const px = (x, y) => { const i = (y * DW + x - xa) * 4; return [data[i], data[i + 1], data[i + 2]]; };
+  const bg = median([...Array(x1 - x0).keys()].flatMap(i => [px(x0 + i, 0), px(x0 + i, H - 1)]));
+  const inkRow = y => { for (let x = x0; x < x1; x++) if (dist(px(x, y), bg) > 70) return true; return false; };
   // מתחילים מאמצע האותיות ומתרחבים עד שורה ריקה
   let top = Math.min(H - 1, Math.max(0, Math.round(box.baseline - box.size * 0.35) - y0)), bottom = top;
   if (!inkRow(top)) return box;
   while (top > 0 && inkRow(top - 1)) top--;
   while (bottom < H - 1 && inkRow(bottom + 1)) bottom++;
-  return { ...box, y: y0 + top - 2, h: bottom - top + 5 };
+  // המיקום האופקי מוערך לפי רוחב תווים, ולפעמים חותך אות: מרחיבים עד עמודה ריקה
+  const inkCol = x => { for (let y = top; y <= bottom; y++) if (dist(px(x, y), bg) > 70) return true; return false; };
+  let left = x0, right = x1 - 1;
+  while (left > xa && inkCol(left)) left--;
+  while (right < xb - 1 && inkCol(right)) right++;
+  return { ...box, x: left, w: right - left + 1, y: y0 + top - 2, h: bottom - top + 5 };
 }
 
 /* ---------- ערכים ---------- */
