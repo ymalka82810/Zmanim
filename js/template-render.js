@@ -248,17 +248,39 @@ function embeddedText(ctx, text, f, size, cx, baseline, draw) {
   return w;
 }
 
-/** מחלקים טקסט לשתי שורות בנקודת הרווח שמאזנת הכי טוב בין רוחב שתי השורות */
-function splitTwoLines(text, measure) {
+/** מחלקים טקסט לעד n שורות בנקודות הרווח שבהן השורה הרחבה ביותר הכי צרה */
+function splitLines(text, measure, n) {
   const words = text.trim().split(/\s+/);
   if (words.length < 2) return null;
   let best = null, bestMax = Infinity;
-  for (let i = 1; i < words.length; i++) {
-    const a = words.slice(0, i).join(' '), b = words.slice(i).join(' ');
-    const max = Math.max(measure(a), measure(b));
-    if (max < bestMax) { bestMax = max; best = [a, b]; }
-  }
+  // כל החלוקות של המילים לשורות רצופות (עד n), מהשורה הראשונה והלאה
+  const walk = (from, acc) => {
+    if (from === words.length) {
+      if (acc.length < 2) return;
+      const max = Math.max(...acc.map(measure));
+      if (max < bestMax) { bestMax = max; best = acc; }
+      return;
+    }
+    if (acc.length === n) return;
+    for (let i = from + 1; i <= words.length; i++) walk(i, [...acc, words.slice(from, i).join(' ')]);
+  };
+  walk(0, []);
   return best;
+}
+
+/**
+ * החלוקה שהגבאי בחר: lines[i] – השורה (0 עד count-1) של המילה ה-i. מילים שאחרי סוף הרשימה
+ * (שם פרשה ארוך יותר מזה שבתצוגה) הולכות לשורה של המילה האחרונה.
+ */
+export function wordLine(lines, i, count = 2) {
+  return Math.min(lines && lines.length ? lines[Math.min(i, lines.length - 1)] || 0 : 0, count - 1);
+}
+/** השורות לפי הבחירה, בלי שורות ריקות. null כשהכל נשאר בשורה אחת */
+function chosenLines(text, lines, count) {
+  const out = Array.from({ length: count }, () => []);
+  text.trim().split(/\s+/).forEach((w, i) => out[wordLine(lines, i, count)].push(w));
+  const full = out.filter(a => a.length).map(a => a.join(' '));
+  return full.length > 1 ? full : null;
 }
 
 export async function templateCanvas(tpl, values) {
@@ -279,13 +301,19 @@ export async function templateCanvas(tpl, values) {
     let size = (b.size || b.h * 0.72) * ((s.sizePct || 100) / 100);
     const cx = b.x + b.w / 2, baseline = b.baseline ?? (b.y + b.h * 0.78);
     const writeAt = textWriter(ctx, fonts[b.font] || fonts[tpl.mainFont], st.bold, cx);
-    // טקסט ארוך מהמקום: מקטינים עד 70%, ואם עדיין לא נכנס ומותר לגלוש – מחלקים לשתי שורות
+    // טקסט ארוך מהמקום: מקטינים עד 70%, ואם עדיין לא נכנס ומותר לגלוש – מחלקים לכמה שורות
     let w = writeAt(text, size, baseline, false);
     const room = Math.max(b.w * 1.15, b.w + size);
     let lines = [text];
     // שם שבת מיוחדת שנוסף לכותרת ולא נכנס בשורה אחת יורד לשורה משלו, בגודל המקורי ככל האפשר
     const added = s.kind === host && values.special ? text.lastIndexOf(' – ') : -1;
-    if (w > room && added > 0) {
+    const count = s.lineCount || 2;
+    const chosen = s.wrap ? chosenLines(text, s.lines, count) : null;
+    if (w > room && chosen) {
+      size = Math.max(size * 0.7, size * room / w);
+      lines = chosen;
+      w = Math.max(...lines.map(ln => writeAt(ln, size, baseline, false)));
+    } else if (w > room && added > 0) {
       lines = [text.slice(0, added), text.slice(added + 3)];
       const widest = () => Math.max(...lines.map(ln => writeAt(ln, size, baseline, false)));
       w = widest();
@@ -294,12 +322,13 @@ export async function templateCanvas(tpl, values) {
       size = Math.max(size * 0.7, size * room / w);
       w = writeAt(text, size, baseline, false);
       if (s.wrap) {
-        const split = splitTwoLines(text, str => writeAt(str, size, baseline, false));
-        if (split) { lines = split; w = Math.max(writeAt(split[0], size, baseline, false), writeAt(split[1], size, baseline, false)); }
+        const split = splitLines(text, str => writeAt(str, size, baseline, false), count);
+        if (split) { lines = split; w = Math.max(...lines.map(ln => writeAt(ln, size, baseline, false))); }
       }
     }
-    const lineGap = lines.length > 1 ? size * 1.15 * ((s.lineHeightPct || 100) / 100) : 0;
-    const baselines = lines.length > 1 ? [baseline - lineGap / 2, baseline + lineGap / 2] : [baseline];
+    // השורות ממורכזות סביב קו הבסיס המקורי
+    const lineGap = size * 1.15 * ((s.lineHeightPct || 100) / 100);
+    const baselines = lines.map((ln, i) => baseline + (i - (lines.length - 1) / 2) * lineGap);
     const left = Math.min(b.x, cx - w / 2) - 2, right = Math.max(b.x + b.w, cx + w / 2) + 2;
     const top = Math.min(b.y, baselines[0] - size) - 1, bottom = Math.max(b.y + b.h, baselines[baselines.length - 1] + size * 0.3) + 1;
     ctx.fillStyle = st.bg;

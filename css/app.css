@@ -103,12 +103,12 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .luach { font-family: var(--f-body, inherit); color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 16px; padding: 22px 24px 26px; box-shadow: var(--sh-lg); position: relative; overflow: hidden; }
 .luach .stripe { height: 4px; background: linear-gradient(90deg, var(--blue), var(--blue-2)); margin-bottom: 4px; border-radius: 2px; }
 .luach .stripe.s { height: 2px; background: var(--gold); opacity: .8; }
-.l-shul { text-align: center; font-size: 1rem; font-weight: 700; color: var(--blue); margin-top: 16px; letter-spacing: .3px; }
-.l-title { text-align: center; font-family: var(--f-title, "Frank Ruhl Libre", Georgia, serif); font-weight: 900; font-size: calc(2.1rem * var(--s-title, 1)); margin: 6px 0; line-height: 1.2; }
-.l-dates { text-align: center; font-size: .92rem; color: var(--muted); margin-bottom: 8px; position: relative; padding-bottom: 10px; }
+.l-shul { text-align: center; font-size: 1rem; font-weight: 700; color: var(--blue); margin-top: calc(16px * var(--fit-gap, 1)); letter-spacing: .3px; }
+.l-title { text-align: center; font-family: var(--f-title, "Frank Ruhl Libre", Georgia, serif); font-weight: 900; font-size: calc(2.1rem * var(--s-title, 1)); margin: calc(6px * var(--fit-gap, 1)) 0; line-height: 1.2; }
+.l-dates { text-align: center; font-size: .92rem; color: var(--muted); margin-bottom: calc(8px * var(--fit-gap, 1)); position: relative; padding-bottom: calc(10px * var(--fit-gap, 1)); }
 .l-dates::after { content: ""; position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); width: 46px; height: 2px; background: var(--gold); border-radius: 2px; }
-.l-sec { width: 100%; border-collapse: collapse; margin-top: 20px; }
-.l-sec th, .l-sec td { padding: 8px 3px; border-bottom: 1px solid var(--soft); text-align: right; }
+.l-sec { width: 100%; border-collapse: collapse; margin-top: calc(20px * var(--fit-gap, 1)); }
+.l-sec th, .l-sec td { padding: calc(8px * var(--fit-gap, 1)) 3px; border-bottom: 1px solid var(--soft); text-align: right; }
 .l-sec th { font-size: 1.1rem; border-bottom: 2px solid var(--blue); font-family: var(--f-title, "Frank Ruhl Libre", Georgia, serif); }
 .l-sec td { font-size: calc(1em * var(--s-name, 1)); }
 .l-sec tr:last-child td { border-bottom: none; }
@@ -118,17 +118,17 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .l-sec td.z { font-size: calc(.8rem * var(--s-zman, 1)); color: var(--muted); border: none; }
 .l-sec td.z > span { display: inline-block; margin-left: 14px; }
 /* לוח ימי חול: עמודה לכל יום */
-.l-grid-wrap { overflow-x: auto; margin-top: 20px; }
+.l-grid-wrap { overflow-x: auto; margin-top: calc(20px * var(--fit-gap, 1)); }
 .l-grid { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-.l-grid th, .l-grid td { padding: 8px 4px; border-bottom: 1px solid var(--soft); text-align: center; }
+.l-grid th, .l-grid td { padding: calc(8px * var(--fit-gap, 1)) 4px; border-bottom: 1px solid var(--soft); text-align: center; }
 .l-grid tbody th { text-align: right; font-weight: 400; font-size: calc(1em * var(--s-name, 1)); }
 .l-grid thead th { border-bottom: 2px solid var(--blue); font-size: 1rem; vertical-align: top; font-family: var(--f-title, "Frank Ruhl Libre", Georgia, serif); }
 .l-grid thead small { display: block; font-weight: 400; font-size: .78rem; color: var(--muted); }
 .l-grid thead small.sp { color: var(--gold); font-weight: 700; }
 .l-grid td { font-weight: 700; font-size: calc(1em * var(--s-time, 1)); color: var(--blue); }
 .l-grid tr.z th, .l-grid tr.z td { font-size: calc(.8rem * var(--s-zman, 1)); color: var(--muted); border: none; padding: 2px 4px; font-weight: 400; }
-.l-grid tr.z.first th, .l-grid tr.z.first td { padding-top: 12px; }
-.l-notes { margin-top: 20px; padding: 12px 14px; background: var(--note); border-radius: 10px; font-size: .95rem; white-space: pre-line; }
+.l-grid tr.z.first th, .l-grid tr.z.first td { padding-top: calc(12px * var(--fit-gap, 1)); }
+.l-notes { margin-top: calc(20px * var(--fit-gap, 1)); padding: calc(12px * var(--fit-gap, 1)) 14px; background: var(--note); border-radius: 10px; font-size: .95rem; white-space: pre-line; }
 .luach-empty { text-align: center; color: var(--muted); }
 
 .lp { position: relative; }
@@ -145,7 +145,11 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
   main.wrap { max-width: none; padding: 0; }
   .luach { border: none; box-shadow: none; padding: 0; font-size: 18px; border-radius: 0; }
   .l-title { font-size: calc(2.4rem * var(--s-title, 1)); }
-  .l-sec { break-inside: avoid; }
+  /* לוח בשני עמודים נשבר בין השורות, ולא משאירים כותרת של קטע לבד בתחתית העמוד */
+  .l-sec tr, .l-grid tr { break-inside: avoid; }
+  .l-sec tr:first-child { break-after: avoid; }
+  /* לוח שבעמוד האחרון שלו עד חצי עמוד: הרווחים והגדלים מוקטנים לפי fitPrint ב-app.js */
+  .luach.fit { zoom: var(--fit-zoom, 1); width: calc(182mm / var(--fit-zoom, 1)); }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 
@@ -157,6 +161,10 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .rule-opts { display: flex; flex-wrap: wrap; gap: 6px; }
 .rule-opts .chip { padding: 5px 12px; font-weight: 400; }
 .rule-opts small { opacity: .75; }
+.wrap-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 44px; padding: 6px 8px; margin-bottom: 6px;
+  border: 1px solid var(--line); border-radius: 8px; }
+.wrap-line .chip { padding: 5px 12px; font-weight: 400; }
+.wrap-no { font-size: .85rem; opacity: .7; margin-inline-end: 4px; }
 .tpl-status { margin: 0 0 6px; font-weight: 600; color: var(--ok); }
 .tpl-occ { align-self: end; margin: 0 0 8px; }
 .tpl-fontfill { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0 12px; }
@@ -200,7 +208,13 @@ button[aria-pressed="true"] { background: linear-gradient(135deg, var(--blue), v
   #view-template { display: none !important; }
   .luach:has(.luach-img) { padding: 0; }
   .lp + .lp { margin-top: 0; break-before: page; }
+  /* תמונה מקובץ שבעמוד האחרון שלה עד חצי עמוד מוקטנת כולה, באותו יחס, לעמוד אחד פחות (fitPrint ב-app.js) */
+  .lp.fit { break-inside: avoid; }
+  .lp.fit .luach-img { width: auto; max-width: 100%; max-height: var(--fit-h, 268mm); margin: 0 auto; border-radius: 0; }
 }
+/* מדידת הלוח ברוחב ובגודל של ההדפסה (A4 בלי השוליים), לפני ההדפסה */
+.luach.fit-measure { zoom: var(--fit-zoom, 1); width: calc(182mm / var(--fit-zoom, 1)); max-width: none; border: none; box-shadow: none; padding: 0; font-size: 18px; border-radius: 0; }
+.luach.fit-measure .l-title { font-size: calc(2.4rem * var(--s-title, 1)); }
 
 /* קהילה */
 .gate { text-align: center; padding: 32px 18px; }

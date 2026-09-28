@@ -5,7 +5,7 @@
 
 import { BASES, WHEN, WHEN_LABELS, ROUND, SIZES, DAY_APPLIES, appliesOnDay, prayerBases, designOf } from './config.js';
 import { readFile, tokenize, detectDate, detectHebDate, detectShulAddress, suggestSlots, textCandidates, ruleOptions, agreeRules, printedTimes, approxStart, guessOldDay } from './template-read.js';
-import { analyzeSlot, refineBox, templateCanvas, specialHost } from './template-render.js';
+import { analyzeSlot, refineBox, templateCanvas, specialHost, slotText, wordLine } from './template-render.js';
 import { findOccasion, findPeriod, periodFor, buildLuach, buildDaysLuach, timesFor } from './luach.js';
 import { toDayNum, toYmd, todayIn, dow } from './dates.js';
 import { esc } from './render.js';
@@ -51,6 +51,7 @@ const dayOpts = () => DOW_LABELS.map((n, i) => ['d' + i, isChol() ? 'יום ' + 
  */
 let st = null;
 const openSlots = new WeakSet();   // אזורים שהשורה שלהם פתוחה לעריכה
+let slotTexts = new WeakMap();     // הטקסט שנכתב בכל אזור בתצוגה האחרונה – למילים שבתיבות השורות
 
 /** העמודה (יום) של מפתח d0…d5 בלוח הישן. בלי תאריך: יום בשבוע לפי המפתח */
 function colOf(key) {
@@ -506,9 +507,27 @@ function ruleChoices(s) {
 function sizeFields(s) {
   const sizeOpts = v => SIZES.map(n => '<option value="' + n + '"' + (n === (v || 100) ? ' selected' : '') + '>' + n + '%</option>').join('');
   return '<div class="rgrid"><div><label>גודל הטקסט באזור</label><select data-k="sizePct">' + sizeOpts(s.sizePct) + '</select></div>' +
-    (s.wrap ? '<div><label>ריווח בין השורות</label><select data-k="lineHeightPct">' + sizeOpts(s.lineHeightPct) + '</select></div>' : '') +
+    (s.wrap ? '<div><label>ריווח בין השורות</label><select data-k="lineHeightPct">' + sizeOpts(s.lineHeightPct) + '</select></div>' +
+      '<div><label>מספר שורות</label><select data-k="lineCount">' +
+      [2, 3, 4].map(n => '<option value="' + n + '"' + (n === (s.lineCount || 2) ? ' selected' : '') + '>' + n + '</option>').join('') +
+      '</select></div>' : '') +
     '<div class="wide"><label class="check"><input type="checkbox" data-k="wrap"' + (s.wrap ? ' checked' : '') +
-    '> לאפשר גלישה לשתי שורות אם הטקסט ארוך מדי</label></div></div>';
+    '> לאפשר גלישה לכמה שורות אם הטקסט ארוך מדי</label></div>' +
+    (s.wrap ? '<div class="wide wrap-lines">' + wrapLines(s) + '</div>' : '') + '</div>';
+}
+
+/**
+ * תיבה לכל שורה, עם המילים של הטקסט שבתצוגה. לחיצה על מילה מעבירה אותה לשורה הבאה,
+ * ומהשורה האחרונה – חזרה לראשונה. כל עוד כל המילים בשורה הראשונה, החלוקה נקבעת לפי האורך.
+ */
+function wrapLines(s) {
+  const text = slotTexts.get(s);
+  if (!text || !text.trim()) return '<p class="hint">המילים יופיעו כאן אחרי שהתצוגה תתעדכן.</p>';
+  const words = text.trim().split(/\s+/), count = s.lineCount || 2;
+  const box = n => '<div class="wrap-line"><span class="wrap-no">שורה ' + (n + 1) + '</span>' +
+    words.map((w, i) => wordLine(s.lines, i, count) === n ? '<button type="button" class="chip" data-word="' + i + '">' + esc(w) + '</button>' : '').join('') + '</div>';
+  return Array.from({ length: count }, (x, n) => box(n)).join('') + '<p class="hint">לחצו על מילה כדי להעביר אותה לשורה הבאה' +
+    (words.some((w, i) => wordLine(s.lines, i, count)) ? '' : ' (כל עוד כל המילים בשורה הראשונה, הטקסט מתחלק לפי האורך)') + '.</p>';
 }
 
 /**
@@ -604,7 +623,8 @@ $('tplSlots').addEventListener('input', e => {
     focusSlot(+ed.dataset.i); return;
   }
   if (k === 'sizePct' || k === 'lineHeightPct') { s[k] = Number(v); schedulePreviewRefresh(); return; }
-  if (k === 'wrap') { s.wrap = e.target.checked; renderSlots(); return; }
+  if (k === 'lineCount') { s.lineCount = Number(v); ed.querySelector('.wrap-lines').innerHTML = wrapLines(s); schedulePreviewRefresh(); return; }
+  if (k === 'wrap') { s.wrap = e.target.checked; renderSlots(); schedulePreviewRefresh(); return; }
   if (k === 'day') {
     const keys = [...ed.querySelectorAll('input[data-k="day"]:checked')].map(x => x.value);
     // לפחות יום אחד
@@ -619,6 +639,12 @@ $('tplSlots').addEventListener('input', e => {
     const abs = k === 'offsetAbs' ? v.replace(/[^0-9]/g, '') : offsetAbs(s);
     const dir = k === 'offsetDir' ? v : offsetDir(s);
     s.offset = abs === '' ? '' : String(dir === 'לפני' ? -Math.abs(+abs) : +abs);
+    // המשתמש קבע הפרש בעצמו – הצעות הכללים כבר לא רלוונטיות. מסירים רק אותן, בלי לרנדר מחדש, כדי לא לאבד את המיקוד בשדה
+    if (s.options) {
+      delete s.options;
+      const chips = ed.querySelector('.rule-opts');
+      if (chips) chips.parentElement.remove();
+    }
   } else s[k] = v;
   if (k === 'when' && s.kind === 'rule') { reinfer(s); renderSlots(); return; }
   if (k === 'base') {
@@ -628,8 +654,22 @@ $('tplSlots').addEventListener('input', e => {
   }
   ed.querySelector('.rule-name').textContent = slotLabel(s);
   ed.querySelector('.rule-sum').textContent = slotSum(s);
+  // הטקסט השתנה – המילים בתיבות השורות מתעדכנות עם התצוגה
+  if (s.wrap) schedulePreviewRefresh();
 });
 $('tplSlots').addEventListener('click', async e => {
+  const word = e.target.closest('[data-word]');
+  if (word) {
+    const s = st.slots[+word.closest('.slot-ed').dataset.i], i = +word.dataset.word;
+    const n = slotTexts.get(s).trim().split(/\s+/).length;
+    const count = s.lineCount || 2;
+    const lines = Array.from({ length: n }, (x, j) => wordLine(s.lines, j, count));
+    lines[i] = (lines[i] + 1) % count;
+    s.lines = lines;
+    word.closest('.wrap-lines').innerHTML = wrapLines(s);
+    schedulePreviewRefresh();
+    return;
+  }
   const opt = e.target.closest('[data-opt]');
   if (opt) {
     const s = st.slots[+opt.closest('.slot-ed').dataset.i];
@@ -707,8 +747,9 @@ export function mergeRules(rules, fromTpl, replace, kind) {
   return out;
 }
 
-function buildTemplate() {
-  const slots = st.slots.map(s => {
+/** האזורים כפי שנשמרים בתבנית, באותו סדר כמו st.slots (לפני סינון תפילות בלי שם) */
+function builtSlots() {
+  return st.slots.map(s => {
     const c = { box: s.box, kind: s.kind, old: s.old || '' };
     if (s.labelBox) Object.assign(c, { labelBox: s.labelBox, labelStyle: analyzeSlot(st.canvas, s.labelBox), ...(s.label ? { label: s.label } : {}) });
     if ((s.kind === 'parasha' || s.kind === 'parashaName') && s.prefix && s.prefix.trim()) c.prefix = s.prefix.trim() + ' ';
@@ -719,10 +760,18 @@ function buildTemplate() {
     if (s.kind === 'text') c.text = String(s.text ?? '').trim();
     c.sizePct = s.sizePct || 100;
     c.wrap = !!s.wrap;
-    if (c.wrap) c.lineHeightPct = s.lineHeightPct || 100;
+    if (c.wrap) {
+      c.lineHeightPct = s.lineHeightPct || 100;
+      c.lineCount = s.lineCount || 2;
+      if (s.lines && s.lines.some(Boolean)) c.lines = s.lines;
+    }
     c.style = analyzeSlot(st.canvas, s.box);
     return c;
-  }).filter(s => (s.kind !== 'rule' && s.kind !== 'kiddush') || s.name);
+  });
+}
+
+function buildTemplate(built = builtSlots()) {
+  const slots = built.filter(s => (s.kind !== 'rule' && s.kind !== 'kiddush') || s.name);
   // רק הגופנים שבשימוש נשמרים. אזור שסומן ידנית נכתב בגופן הנפוץ בשעות
   const count = {};
   for (const s of slots) if (s.box.font && st.fonts[s.box.font]) count[s.box.font] = (count[s.box.font] || 0) + (s.kind === 'rule' || s.kind === 'kiddush' || s.kind === 'zman' ? 2 : 1);
@@ -733,12 +782,19 @@ function buildTemplate() {
 }
 
 async function renderTemplatePreview() {
-  const tpl = buildTemplate();
+  const built = builtSlots(), tpl = buildTemplate(built);
   const cfg = { ...st.cfg, rules: mergeRules(st.cfg.rules, slotRules(), $('tplRules').checked, st.tpl.kind) };
   const today = todayIn(cfg.tz);
   const occ = periodFor(st.cfgAll, st.tpl, today) || findPeriod(st.tpl.kind, today, cfg.il);
   const values = occ.mode === 'days' ? buildDaysLuach(cfg, occ, kiddush).values : buildLuach(cfg, occ, kiddush).values;
   const canvas = await templateCanvas(tpl, values);
+  const host = specialHost(tpl.slots);
+  slotTexts = new WeakMap(st.slots.map((s, i) => [s, slotText(built[i], values, host) ?? '']));
+  // המילים בתיבות השורות לפי הטקסט החדש, בלי לבנות מחדש את כל הרשימה
+  for (const el of $('tplSlots').querySelectorAll('.wrap-lines')) {
+    const s = st.slots[+el.closest('.slot-ed').dataset.i];
+    if (s) el.innerHTML = wrapLines(s);
+  }
   $('tplPreviewTitle').textContent = 'תצוגה מקדימה – ' + occ.title;
   $('tplPreviewImg').src = canvas.toDataURL('image/png');
   return canvas;

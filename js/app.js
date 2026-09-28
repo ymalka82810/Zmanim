@@ -288,6 +288,83 @@ $('print').onclick = () => {
   document.title = prev;
 };
 
+/**
+ * התאמת הלוח לעמודי A4 בהדפסה, בכל מספר של עמודים. לוח שבעמוד האחרון שלו יש עד חצי עמוד נדחס לעמוד אחד פחות:
+ * קודם מצמצמים את הרווחים (עד 40% מהרגיל), ואם עדיין לא נכנס – מקטינים את כל הלוח, טקסט ורווחים, באותו יחס,
+ * כך שהיחס בין הגדלים של השורות נשמר. יותר מחצי עמוד בעמוד האחרון – מדפיסים כרגיל.
+ * בעיצוב מקובץ – אותו כלל לתמונה של כל יום בנפרד.
+ */
+const PAGE_H = 268 * 96 / 25.4;   // גובה הדף בלי השוליים, בפיקסלים
+const PAGE_W = 182 * 96 / 25.4;
+
+/**
+ * החלוקה של הלוח לעמודים כמו בהדפסה: שוברים רק בין יחידות שלמות (שורה בטבלה, כותרת, הודעה),
+ * כותרת של קטע נשארת עם השורה הראשונה שלו, וכותרת טבלת ימי החול חוזרת בראש כל עמוד.
+ * מחזיר את מספר העמודים ואת החלק (0–1) של העמוד האחרון שבשימוש.
+ */
+function paginate(el) {
+  const units = [];
+  const unit = (a, b, repeat = 0) => {
+    const r1 = a.getBoundingClientRect(), r2 = b.getBoundingClientRect();
+    if (r2.bottom > r1.top) units.push({ top: r1.top, bottom: r2.bottom, repeat });
+  };
+  for (const c of el.children) {
+    const rows = c.matches('.l-sec, .l-grid-wrap') ? [...c.querySelectorAll('tbody tr')] : [];
+    if (rows.length < 2) { unit(c, c); continue; }
+    const thead = c.querySelector('thead');
+    // הכותרת (שורת הכותרת של הקטע, או ה-thead) יחד עם השורה הראשונה
+    const repeat = thead ? thead.getBoundingClientRect().height : 0;
+    unit(thead || rows[0], thead ? rows[0] : rows[1]);
+    rows.slice(thead ? 1 : 2).forEach(tr => unit(tr, tr, repeat));
+  }
+  const top = el.getBoundingClientRect().top;
+  let start = top, extra = 0, pages = 1, end = top;
+  for (const u of units) {
+    if (u.bottom - start + extra > PAGE_H && u.top > start) { pages++; start = u.top; extra = u.repeat; }
+    // יחידה ארוכה מעמוד שלם נשברת באמצע
+    while (u.bottom - start + extra > PAGE_H) { pages++; start += PAGE_H - extra; extra = 0; }
+    end = u.bottom;
+  }
+  return { pages, last: (end - start + extra) / PAGE_H };
+}
+
+function fitPrint() {
+  const el = $('luach');
+  unfitPrint();
+  if (!current || !el.offsetParent) return;
+  if (current.design) {
+    for (const lp of el.querySelectorAll('.lp')) {
+      const img = lp.querySelector('img');
+      if (!img.naturalWidth) continue;
+      const pages = PAGE_W * img.naturalHeight / img.naturalWidth / PAGE_H, n = Math.ceil(pages - 1e-6);
+      if (n > 1 && pages - (n - 1) <= 0.5) { lp.classList.add('fit'); lp.style.setProperty('--fit-h', (n - 1) * 268 + 'mm'); }
+    }
+    return;
+  }
+  el.classList.add('fit-measure');
+  const first = paginate(el), target = first.pages - 1;
+  if (!target || first.last > 0.5) { el.classList.remove('fit-measure'); return; }
+  const fits = () => paginate(el).pages <= target;
+  for (let gap = 0.9; !fits() && gap >= 0.4; gap = Math.round((gap - 0.1) * 10) / 10) el.style.setProperty('--fit-gap', String(gap));
+  // הקווים נשארים ברוחב פיקסל שלם גם בהקטנה, והשבירה היא רק בין שורות, ולכן מודדים שוב אחרי כל הקטנה עד שהלוח נכנס
+  for (let zoom = 1, i = 0; i < 30; i++) {
+    const p = paginate(el);
+    if (p.pages <= target) break;
+    zoom = Math.floor(zoom * Math.min(0.99, target / (p.pages - 1 + p.last)) * 1000) / 1000;
+    el.style.setProperty('--fit-zoom', String(zoom));
+  }
+  el.classList.replace('fit-measure', 'fit');
+}
+function unfitPrint() {
+  const el = $('luach');
+  el.classList.remove('fit', 'fit-measure');
+  el.style.removeProperty('--fit-gap');
+  el.style.removeProperty('--fit-zoom');
+  el.querySelectorAll('.lp.fit').forEach(lp => { lp.classList.remove('fit'); lp.style.removeProperty('--fit-h'); });
+}
+window.addEventListener('beforeprint', fitPrint);
+window.addEventListener('afterprint', unfitPrint);
+
 /* ---------- הגדרות ---------- */
 
 $('city').innerHTML = CITIES.map(c => '<option value="' + c[0] + '">' + esc(c[1]) + '</option>').join('') +

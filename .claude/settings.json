@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --check js/template-ui.js)",
+      "Bash(node --check js/template-render.js)",
+      "Bash(npm test *)"
+    ]
+  }
+}
