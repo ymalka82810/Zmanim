@@ -235,17 +235,17 @@ async function setRole(synagogueId, userId, role){
   const myRole = S.detail ? S.detail.role : null;
   const name = current ? (current.name || current.email || 'החבר') : 'החבר';
   if (isSelf && isSoleInRole(previousRole)){
-    await SiteDialog.alert(soleInRoleMessage(previousRole, 'שינוי התפקיד'));
+    await SiteDialog.alert(soleInRoleMessage(previousRole, 'שינוי התפקיד'), { within: $('#sheet') });
     render(); return;
   }
   const transferRabbi = role === 'rabbi' && !isSelf && myRole === 'rabbi';
   if (transferRabbi){
-    if (!await SiteDialog.confirm(`להעביר את תפקיד הרב ל${name}? אתה תישאר בקהילה כגבאי.`)){ render(); return; }
+    if (!await SiteDialog.confirm(`להעביר את תפקיד הרב ל${name}? אתה תישאר בקהילה כגבאי.`, { within: $('#sheet') })){ render(); return; }
   } else if (isSelf && isManager(previousRole) && !isManager(role)){
     const warn = 'שים לב: לאחר שתרד לחבר קהילה לא תוכל להחזיר לעצמך את התפקיד. רק גבאי או רב אחר בקהילה יוכלו להחזיר לך אותו. בטוח שרוצה להמשיך?';
-    if (!await SiteDialog.confirm(warn, { ok: 'המשך', danger: true })){ render(); return; }
+    if (!await SiteDialog.confirm(warn, { ok: 'המשך', danger: true, within: $('#sheet') })){ render(); return; }
   } else if (isManager(role)){
-    if (!await SiteDialog.confirm(`לתת ל${name} תפקיד ${ROLE[role]}?`)){ render(); return; }
+    if (!await SiteDialog.confirm(`לתת ל${name} תפקיד ${ROLE[role]}?`, { within: $('#sheet') })){ render(); return; }
   }
   try {
     await client.mutation('members:setRole', { synagogueId, userId, role });
@@ -255,7 +255,7 @@ async function setRole(synagogueId, userId, role){
   } catch(e){ toast(errMsg(e)); render(); }
 }
 async function removeMember(synagogueId, userId){
-  if (!await SiteDialog.confirm('להסיר את החבר מהקהילה?', { ok: 'הסרה', danger: true })) return;
+  if (!await SiteDialog.confirm('להסיר את החבר מהקהילה?', { ok: 'הסרה', danger: true, within: $('#sheet') })) return;
   try {
     await client.mutation('members:remove', { synagogueId, userId });
     await loadManagerData(synagogueId);
@@ -264,10 +264,10 @@ async function removeMember(synagogueId, userId){
 }
 async function leaveSynagogue(id){
   const myRole = S.detail ? S.detail.role : null;
-  if (isSoleInRole(myRole)) return SiteDialog.alert(soleInRoleMessage(myRole, 'עזיבת הקהילה'));
+  if (isSoleInRole(myRole)) return SiteDialog.alert(soleInRoleMessage(myRole, 'עזיבת הקהילה'), { within: $('#sheet') });
   const synName = S.detail ? S.detail.name : 'הקהילה';
   const msg = `האם אתה בטוח שברצונך לעזוב את ${synName}?\nלא תראה יותר את הלוחות, הקידושים והקופה של הקהילה. כדי לחזור תצטרך הזמנה חדשה.`;
-  if (!await SiteDialog.confirm(msg, { ok: 'עזיבה', cancel: 'הישארות בקהילה', danger: true })) return;
+  if (!await SiteDialog.confirm(msg, { ok: 'עזיבה', cancel: 'הישארות בקהילה', danger: true, within: $('#sheet') })) return;
   try {
     await client.mutation('members:leave', { synagogueId: id });
     closeSheet();
