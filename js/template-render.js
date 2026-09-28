@@ -120,6 +120,8 @@ export function slotValue(slot, v) {
     case 'hebDate': {
       let s = hebDateString(v.hebDay);
       if (slot.noYear) s = s.split(' ').slice(0, -1).join(' ');
+      // "ה'תשפ"ז" כמו בקובץ הישן
+      else if (slot.hei) s = s.replace(/ (\S+)$/, ' ה׳$1');
       return slot.ascii ? s.replace(/״/g, '"').replace(/׳/g, "'") : s;
     }
     case 'gregDate': return gregText(v.firstDay, slot.fmt || { sep: '/', year: 4, pad: false });

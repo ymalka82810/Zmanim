@@ -4,7 +4,7 @@
  */
 
 import { BASES, WHEN, WHEN_LABELS, ROUND, SIZES, DAY_APPLIES, appliesOnDay, prayerBases, designOf } from './config.js';
-import { readFile, tokenize, detectDate, detectShulAddress, suggestSlots, textCandidates, inferRule, guessOldDay } from './template-read.js';
+import { readFile, tokenize, detectDate, detectHebDate, detectShulAddress, suggestSlots, textCandidates, inferRule, guessOldDay } from './template-read.js';
 import { analyzeSlot, refineBox, templateCanvas, specialHost } from './template-render.js';
 import { findOccasion, findPeriod, periodFor, buildLuach, buildDaysLuach, timesFor } from './luach.js';
 import { toDayNum, toYmd, todayIn, dow } from './dates.js';
@@ -78,14 +78,15 @@ export async function editFromFile(file, cfgAll, tpl, onDone, onStatus) {
   const fit = x => ({ ...x, box: refineBox(canvas, x.box), ...(x.labelBox ? { labelBox: refineBox(canvas, x.labelBox) } : {}) });
   st = { canvas, W: canvas.width, H: canvas.height, cfg, cfgAll, tpl, name: file.name, onDone, fonts,
     candidates: textCandidates(tokens).map(fit), scanned: !items.length, detected: detectShulAddress(tokens) };
-  setDay(detectDate(tokens));
+  setDay(detectDate(tokens, docDayNum));
   // לוח ימי חול בלי תאריך בקובץ: מזהים את הימים לפי שבוע כללי (ראשון–שישי), והשעות נשמרות כשעה קבועה עד שבוחרים תאריך
   const week = { mode: 'days', days: [0, 1, 2, 3, 4, 5].map(i => colOf('d' + i)) };
   let slots = suggestSlots(tokens, cfg, st.day, st.period || (isDays() ? week : null));
-  // אין תאריך מפורש בקובץ: מנסים לנחש אותו לפי שם הפרשה והזמנים שכבר זוהו
+  // אין תאריך מפורש בקובץ: מנסים לנחש אותו לפי שם הפרשה, התאריך העברי בלי שנה והזמנים שכבר זוהו
   if (st.day == null && !isDays()) {
     const nameSlot = slots.find(s => s.kind === 'parasha' || s.kind === 'parashaName');
-    const guessed = nameSlot ? guessOldDay(nameSlot.old, slots, cfg, docDayNum) : null;
+    const heb = detectHebDate(tokens);
+    const guessed = nameSlot || heb ? guessOldDay(nameSlot ? nameSlot.old : '', slots, cfg, docDayNum, heb) : null;
     if (guessed != null) {
       setDay(guessed);
       slots = suggestSlots(tokens, cfg, st.day, st.period);
@@ -651,7 +652,7 @@ function buildTemplate() {
     if ((s.kind === 'parasha' || s.kind === 'parashaName') && s.prefix && s.prefix.trim()) c.prefix = s.prefix.trim() + ' ';
     if (s.kind === 'rule' || s.kind === 'kiddush') Object.assign(c, { name: String(s.name).trim(), when: s.when, ...(s.days ? { days: s.days } : {}) });
     if (s.kind === 'zman') Object.assign(c, { zman: s.zman, when: s.when });
-    if (s.kind === 'hebDate') Object.assign(c, { ascii: !!s.ascii, noYear: !!s.noYear });
+    if (s.kind === 'hebDate') Object.assign(c, { ascii: !!s.ascii, noYear: !!s.noYear, ...(s.hei ? { hei: true } : {}) });
     if (s.kind === 'gregDate') c.fmt = s.fmt;
     if (s.kind === 'text') c.text = String(s.text ?? '').trim();
     c.sizePct = s.sizePct || 100;

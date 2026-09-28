@@ -5,7 +5,7 @@
  */
 
 import { hm, toDayNum, DAY_MS } from './dates.js';
-import { PARSHIYOT, fromHebrew, TISHREI, CHESHVAN, KISLEV, TEVET, SHVAT, ADAR, ADAR2, NISAN, IYYAR, SIVAN, TAMUZ, AV, ELUL } from './hebrew.js';
+import { PARSHIYOT, fromHebrew, toHebrew, isLeap, TISHREI, CHESHVAN, KISLEV, TEVET, SHVAT, ADAR, ADAR2, NISAN, IYYAR, SIVAN, TAMUZ, AV, ELUL } from './hebrew.js';
 import { timesFor, applyOffset, findOccasion } from './luach.js';
 
 const PDFJS = new URL('../vendor/pdfjs/', import.meta.url).href;   // pdf.js 6.3.289, רישיון Apache 2.0
@@ -205,7 +205,8 @@ async function ocrImage(bmp, k, onStatus) {
   };
   const [hebLines, engLines] = await Promise.all([pass('heb', 0), pass('eng', 1)]);
 
-  const clean = w => String(w.text || '').replace(/\s+/g, ' ').trim();
+  // מירכאות "חכמות" שהזיהוי מחזיר לפעמים (כ”ג, ה’) הופכות לגרשיים רגילים, כדי שהתאריך העברי ייקרא
+  const clean = w => String(w.text || '').replace(/[”“„]|''/g, '"').replace(/[’‘`´]/g, "'").replace(/\s+/g, ' ').trim();
   const isNum = s => /\d/.test(s) && /^[\d:.\/\-–()]+$/.test(s);
   const item = (str, b, baseline, size) => ({ str, x: b.x0 * k, w: (b.x1 - b.x0) * k, baseline: baseline * k, size: size * k,
     y: (baseline - size * 0.92) * k, h: size * 1.2 * k, rtl: /[א-ת]/.test(str) });
@@ -302,10 +303,12 @@ function fixVisualOrder(s) {
 const TIME_RE = /(?<![\d:./])(\d{1,2}):(\d{2})(?![\d:])/g;
 const GREG_RE = /(?<!\d)(\d{1,2})([./-])(\d{1,2})\2(\d{4}|\d{2})(?!\d)/;
 const HEB_MONTHS = [['מרחשון', CHESHVAN], ['חשוון', CHESHVAN], ['חשון', CHESHVAN], ['תשרי', TISHREI], ['כסליו', KISLEV], ['כסלו', KISLEV],
-  ['טבת', TEVET], ['שבט', SHVAT], ['אדר ב', ADAR2], ['אדר א', ADAR], ['אדר', ADAR], ['ניסן', NISAN], ['אייר', IYYAR],
-  ['סיוון', SIVAN], ['סיון', SIVAN], ['תמוז', TAMUZ], ['אלול', ELUL], ['אב', AV]];
-// אחרי שם החודש לא באה אות, כדי ש"רח' אברהם" לא ייקרא "ח' אב"
-const HEB_DATE_RE = new RegExp('(?:^|\\s)([א-ת]{1,2}["\'״׳]?[א-ת]?)\\s+(?:ב|ל)?(' + HEB_MONTHS.map(m => m[0]).join('|') + ')[\'׳]?(?![א-ת])(?:\\s+([א-ת]{0,3}["״][א-ת]))?');
+  ['טבת', TEVET], ['שבט', SHVAT], ['אדר שני', ADAR2], ['אדר ראשון', ADAR], ['אדר ב', ADAR2], ['אדר א', ADAR], ['אדר', ADAR],
+  ['ניסן', NISAN], ['אייר', IYYAR], ['סיוון', SIVAN], ['סיון', SIVAN], ['תמוז', TAMUZ], ['אלול', ELUL], ['אב', AV]];
+// אחרי שם החודש לא באה אות, כדי ש"רח' אברהם" לא ייקרא "ח' אב".
+// השנה: "תשפ"ו", "ה'תשפ"ו" או בלי גרשיים ("תשפו"). קבוצה 3 – ה' שלפני השנה, קבוצה 4 – השנה
+const HEB_DATE_RE = new RegExp('(?:^|\\s)([א-ת]{1,2}["\'״׳]?[א-ת]?)\\s+(?:ב|ל)?(' + HEB_MONTHS.map(m => m[0]).join('|') +
+  ')[\'׳]?(?![א-ת])(?:\\s*[,.]?\\s+(ה[\'׳]?\\s*)?(ת[א-ת]{0,2}["״]?[א-ת])(?![א-ת]))?');
 const isGregDate = s => { const m = GREG_RE.exec(s); return !!m && +m[1] >= 1 && +m[1] <= 31 && +m[3] >= 1 && +m[3] <= 12; };
 const isHebDate = s => { const m = HEB_DATE_RE.exec(s); if (!m) return false; const d = gemValue(m[1]); return d >= 1 && d <= 30; };
 // "רח' הרצל 3", "רחוב…", "שד' ירושלים", "כתובת: …"
@@ -486,8 +489,46 @@ const gemValue = s => [...s.replace(/["'״׳]/g, '')].reduce((a, c) => a + ({
   'נ': 50, 'ן': 50, 'ס': 60, 'ע': 70, 'פ': 80, 'ף': 80, 'צ': 90, 'ץ': 90, 'ק': 100, 'ר': 200, 'ש': 300, 'ת': 400
 }[c] || 0), 0);
 
-/** מנסה למצוא בקובץ את תאריך הלוח. מחזיר dayNum או null */
-export function detectDate(tokens) {
+/** תאריך עברי ← dayNum. "אדר ב'" בשנה פשוטה הוא אדר */
+const hebDay = (y, m, d) => fromHebrew(y, m === ADAR2 && !isLeap(y) ? ADAR : m, d);
+
+/**
+ * התאריך העברי שבקובץ: { d, m, y } (y=null כשאין שנה), או null. מחפשים באזור תאריך עברי,
+ * ואם אין – בשורות שלמות, כי לפעמים היום, החודש והשנה שמורים בפריטים נפרדים ("כ"ג", "אלול", "תשפ"ו").
+ * תאריך עם שנה עדיף על תאריך בלי שנה.
+ */
+export function detectHebDate(tokens) {
+  const strs = [...tokens.filter(t => t.kind === 'hebDate').map(t => t.str), ...textLines(tokens).map(l => l.str)];
+  let noYear = null;
+  for (const s of strs) {
+    const m = HEB_DATE_RE.exec(s);
+    const d = m && gemValue(m[1]);
+    if (!m || d < 1 || d > 30) continue;
+    const month = HEB_MONTHS.find(x => x[0] === m[2])[1];
+    const y = m[4] ? 5000 + gemValue(m[4]) : null;
+    if (y >= 5700 && y <= 5999) return { d, m: month, y };
+    noYear = noYear || { d, m: month, y: null };
+  }
+  return noYear;
+}
+
+/** הימים שבהם חל תאריך עברי בלי שנה, בטווח השנים שבו מחפשים לוחות ישנים */
+function hebCandidates(h) {
+  const today = Math.floor(Date.now() / DAY_MS), y0 = toHebrew(today).y;
+  const out = [];
+  for (let y = y0 - 13; y <= y0 + 1; y++) {
+    const d = hebDay(y, h.m, h.d);
+    // ל' בחודש של 29 יום אינו קיים באותה שנה
+    if (toHebrew(d).d === h.d && d >= today - 365 * 12 && d <= today + 120) out.push(d);
+  }
+  return out;
+}
+
+/**
+ * מנסה למצוא בקובץ את תאריך הלוח: תאריך לועזי, או תאריך עברי עם שנה. תאריך עברי בלי שנה
+ * נקבע לפי תאריך היצירה של הקובץ (docDayNum), אם הוא קרוב אליו. מחזיר dayNum או null
+ */
+export function detectDate(tokens, docDayNum) {
   for (const t of tokens) {
     const m = t.kind === 'gregDate' && GREG_RE.exec(t.str);
     if (m) {
@@ -496,13 +537,12 @@ export function detectDate(tokens) {
       if (isFinite(d)) return d;
     }
   }
-  for (const t of tokens) {
-    const m = t.kind === 'hebDate' && HEB_DATE_RE.exec(t.str);
-    if (m && m[3]) {
-      const month = HEB_MONTHS.find(x => x[0] === m[2])[1];
-      const day = gemValue(m[1]), year = 5000 + gemValue(m[3]);
-      if (day >= 1 && day <= 30) return fromHebrew(year, month, day);
-    }
+  const h = detectHebDate(tokens);
+  if (!h) return null;
+  if (h.y) return hebDay(h.y, h.m, h.d);
+  if (docDayNum != null) {
+    const near = hebCandidates(h).filter(d => d - docDayNum >= -7 && d - docDayNum <= 45);
+    if (near.length === 1) return near[0];
   }
   return null;
 }
@@ -529,18 +569,27 @@ const dayForWhen = (occ, when) => when === 'כניסה' ? occ.erev : when === '�
  * שבהן חלה אותה פרשה, ובוחרים לפי ההתאמה הטובה ביותר בין הזמנים בקובץ לזמנים המחושבים
  * לאותה שבת. אם אין התאמה מספיק ברורה – לפי הקִרבה לתאריך היצירה של הקובץ (docDayNum),
  * רק אם הפער סביר (לוח נכתב בדרך כלל זמן קצר לפני השבת, לא חודשים לפני).
+ * heb – תאריך עברי בלי שנה מהקובץ ({ d, m }), אם יש: מצמצם את השבתות לאלה שחלות בו
+ * (או שערב השבת חל בו), וגם בלי שם פרשה אפשר לנחש לפיו.
  */
-export function guessOldDay(name, slots, cfg, docDayNum) {
+export function guessOldDay(name, slots, cfg, docDayNum, heb) {
   const target = canonicalParasha(name);
-  if (!target) return null;
+  if (!target && !heb) return null;
   const today = Math.floor(Date.now() / DAY_MS);
   const from = today - 365 * 12, to = today + 120;
-  const occs = [];
-  for (let d = from; d <= to;) {
+  let occs = [];
+  for (let d = from; target && d <= to;) {
     const occ = findOccasion(d, cfg.il, 1);
     if (!occ || occ.first > to) break;
     if (occ.days.some(x => x.parasha === target)) occs.push(occ);
     d = occ.last + 1;
+  }
+  if (heb) {
+    const cands = hebCandidates(heb);
+    const inHeb = occ => cands.some(c => c >= occ.erev && c <= occ.last);
+    // פרשה ותאריך שלא מתאימים זה לזה (אחד מהם נקרא לא נכון): נשארים עם הפרשה
+    if (target) { const f = occs.filter(inHeb); if (f.length) occs = f; }
+    else for (const c of cands) { const occ = findOccasion(c, cfg.il, 1); if (occ && inHeb(occ)) occs.push(occ); }
   }
   if (!occs.length) return null;
   if (occs.length === 1) return occs[0].first;
@@ -774,7 +823,14 @@ const isFixedKind = k => ['title', 'parasha', 'parashaName', 'special', 'hebDate
 function fixedSlot(t, box) {
   if (t.kind === 'gregDate') return { box, kind: 'gregDate', old: t.str, fmt: gregFormat(t.str) };
   if (t.kind === 'address') return { box, kind: 'address', old: t.str };
-  return { box, kind: t.kind, old: t.str, ...(t.prefix ? { prefix: t.prefix } : {}), ascii: /["']/.test(t.str) && !/[״׳]/.test(t.str), noYear: t.kind === 'hebDate' && !HEB_DATE_RE.exec(t.str)[3] };
+  return { box, kind: t.kind, old: t.str, ...(t.prefix ? { prefix: t.prefix } : {}), ascii: /["']/.test(t.str) && !/[״׳]/.test(t.str),
+    ...(t.kind === 'hebDate' ? hebDateFmt(t.str) : { noYear: false }) };
+}
+
+/** צורת התאריך העברי בקובץ הישן: בלי שנה, או עם ה' לפני השנה ("ה'תשפ"ו") */
+function hebDateFmt(str) {
+  const m = HEB_DATE_RE.exec(str);
+  return { noYear: !m[4], hei: !!(m[4] && m[3]) };
 }
 
 /** כמו suggestSlots, ללוח של ימי חול: היום נקבע לפי שם היום בשורה או בכותרת שמעל */
