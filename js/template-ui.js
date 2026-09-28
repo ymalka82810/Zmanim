@@ -73,7 +73,7 @@ export async function editFromFile(file, cfgAll, tpl, onDone) {
   const { canvas, items, fonts } = await readFile(file);
   const tokens = tokenize(items);
   const cfg = { ...cfgAll, rules: tpl.rules };
-  const fit = x => ({ ...x, box: refineBox(canvas, x.box) });
+  const fit = x => ({ ...x, box: refineBox(canvas, x.box), ...(x.labelBox ? { labelBox: refineBox(canvas, x.labelBox) } : {}) });
   st = { canvas, W: canvas.width, H: canvas.height, cfg, cfgAll, tpl, name: file.name, onDone, fonts,
     candidates: textCandidates(tokens).map(fit), scanned: !items.length };
   setDay(detectDate(tokens));
@@ -180,11 +180,16 @@ function slotRanks() {
 function renderBoxes() {
   const ranks = slotRanks();
   let h = '';
+  const same = (a, b) => a && a.x === b.x && a.y === b.y;
   st.candidates.forEach((c, i) => {
-    if (st.slots.some(s => s.box.x === c.box.x && s.box.y === c.box.y)) return;
+    if (st.slots.some(s => same(s.box, c.box) || same(s.labelBox, c.box))) return;
     h += '<button type="button" class="tb cand" data-c="' + i + '" style="' + boxStyle(c.box) + '" title="' + esc(c.old) + '" aria-label="הוספת אזור: ' + esc(c.old) + '"></button>';
   });
   st.slots.forEach((s, i) => {
+    // השם שליד השעה – מסומן יחד עם האזור, כדי שיהיה ברור לאיזו שעה הוא שייך
+    if (s.labelBox && (s.kind === 'rule' || s.kind === 'zman')) {
+      h += '<button type="button" class="tb lab" data-s="' + i + '" style="' + boxStyle(s.labelBox) + '" title="השם של אזור ' + ranks[i] + '" aria-label="השם של אזור ' + ranks[i] + '"></button>';
+    }
     h += '<button type="button" class="tb slot" data-s="' + i + '" style="' + boxStyle(s.box) + '" aria-label="אזור ' + ranks[i] + '"><span>' + ranks[i] + '</span></button>';
   });
   $('tplBoxes').innerHTML = h;
@@ -423,6 +428,7 @@ export function mergeRules(rules, fromTpl, replace, kind) {
 function buildTemplate() {
   const slots = st.slots.map(s => {
     const c = { box: s.box, kind: s.kind, old: s.old || '' };
+    if (s.labelBox) c.labelBox = s.labelBox;
     if (s.kind === 'rule') Object.assign(c, { name: String(s.name).trim(), when: s.when });
     if (s.kind === 'zman') Object.assign(c, { zman: s.zman, when: s.when });
     if (s.kind === 'hebDate') Object.assign(c, { ascii: !!s.ascii, noYear: !!s.noYear });

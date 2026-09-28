@@ -72,7 +72,7 @@ async function readPdf(file) {
  * כדי שהשעה והתווית שלה יזוהו בשלמותן.
  */
 export function joinFragments(items) {
-  const kindOf = it => /^[\d:.]+$/.test(it.str) ? 'num' : /^[א-ת"'״׳,.()\s]+$/.test(it.str) && /[א-ת]/.test(it.str) ? 'heb' : null;
+  const kindOf = it => /^[\d:.]+$/.test(it.str) ? 'num' : /^[א-ת"'״׳,.()\s\-–־]+$/.test(it.str) && /[א-ת]/.test(it.str) ? 'heb' : null;
   const list = items.map((it, i) => ({ ...it, i, k: kindOf(it) }));
   const joinable = list.filter(it => it.k).sort((a, b) => a.baseline - b.baseline || a.x - b.x);
   const runs = [];
@@ -83,7 +83,7 @@ export function joinFragments(items) {
       Math.abs(it.size - run.size) < run.size * 0.1 && gap > -run.size * 0.3 && gap < run.size * (it.k === 'num' ? 0.15 : 0.5);
     if (touches) {
       // עברית: הפריט השמאלי בא אחרי הקודם בטקסט. רווח רק כשיש רווח גם בדף
-      const sp = it.k === 'heb' && gap > run.size * 0.15 ? ' ' : '';
+      const sp = it.k === 'heb' && gap > run.size * 0.15 && !/[-–־]$/.test(it.str) && !/^[-–־]/.test(run.str) ? ' ' : '';
       run.str = it.k === 'heb' ? it.str + sp + run.str : run.str + it.str;
       run.w = it.x + it.w - run.x; run.i = Math.min(run.i, it.i);
       continue;
@@ -196,15 +196,22 @@ export function tokenize(items) {
     if (!it) continue;
     const matches = [...it.str.matchAll(TIME_RE)];
     if (!matches.length) { pushText(tokens, it); continue; }
-    let rest = it.str;
+    // הטקסט שבין השעות ("הדלקת נרות 18:24 | שקיעה 19:04") – כל קטע עם התיבה שלו, כדי שכל שעה תמצא את התווית שלידה
+    const segs = [];
+    let last = 0;
     for (const m of matches) {
       tokens.push({ ...it, ...subBox(it, m.index, m[0]), str: m[0], kind: 'time', minutes: +m[1] * 60 + +m[2] });
-      rest = rest.replace(m[0], ' ');
+      segs.push([last, it.str.slice(last, m.index)]);
+      last = m.index + m[0].length;
     }
-    rest = rest.replace(/[\s|:–-]+/g, ' ').trim();
-    if (rest && /[א-תA-Za-z]/.test(rest)) tokens.push({ ...it, str: rest, kind: classifyText(rest), partOf: true });
+    segs.push([last, it.str.slice(last)]);
+    for (const [at, s] of segs) {
+      const lead = /^[\s|:–-]*/.exec(s)[0].length;
+      const txt = s.replace(/^[\s|:–-]+|[\s|:–-]+$/g, '');
+      if (txt && /[א-תA-Za-z]/.test(txt)) tokens.push({ ...it, ...subBox(it, at + lead, txt), str: txt, kind: classifyText(txt), partOf: true });
+    }
   }
-  return tokens;
+  return joinParashaPairs(tokens);
 }
 
 /** המיקום המשוער של קטע טקסט בתוך פריט, לפי רוחב התווים */
@@ -216,17 +223,49 @@ function subBox(it, index, s) {
   return { x: it.rtl ? it.x + it.w * (1 - before) - w : it.x + it.w * before, w };
 }
 
-const NAMES = [...PARSHIYOT].sort((a, b) => b.length - a.length).join('|');
-const PARASHA_RE = new RegExp('פרשת\\s+(?:' + NAMES + ')(?:\\s*[-–]\\s*(?:' + NAMES + '))?');
+/** שם פרשה בכתיב חסר או מלא: "נצבים" מתאים גם ל"ניצבים", "חוקת" ל"חקת" */
+const spellings = name => [...name].map((c, i) => c === ' ' ? '\\s+' : i > 0 && /[יו]/.test(c) ? '' : c + '[יו]*').join('');
+const NAMES = '(?:' + [...PARSHIYOT].sort((a, b) => b.length - a.length).map(spellings).join('|') + ')(?![א-ת])';
+const PAIR = NAMES + '(?:\\s*[-–־]\\s*' + NAMES + ')?';
+const PARASHA_RE = new RegExp('פרשת\\s+' + PAIR);
+// "לשבת ניצבים-וילך", "שבת קודש וירא" – בלי המילה "פרשת". האזור הוא שם הפרשה בלבד
+const NAME_RE = new RegExp('(?:^|[^א-ת])ל?שבת\\s+(?:קודש\\s+)?(' + PAIR + ')');
+// המקף בקצה הפריט כבר הוסר ב-trimSeparators
+const PAIR_TAIL_RE = new RegExp('^[-–־]?\\s*' + NAMES + '\\s*[-–־]?$');
 
-/** טקסט רגיל; אם יש בו "פרשת …" באמצע שורה (למשל "זמני תפילות – פרשת וירא"), הפרשה הופכת לאזור נפרד */
+/** טקסט רגיל; אם יש בו פרשה באמצע שורה (למשל "זמני תפילות – פרשת וירא"), הפרשה הופכת לאזור נפרד */
 function pushText(tokens, it) {
   const kind = classifyText(it.str);
-  const m = kind === 'text' && PARASHA_RE.exec(it.str);
+  let m = kind === 'text' && PARASHA_RE.exec(it.str), pk = 'parasha', at, s;
+  if (m) { at = m.index; s = m[0]; }
+  else if (kind === 'text' && (m = NAME_RE.exec(it.str))) { pk = 'parashaName'; s = m[1]; at = m.index + m[0].length - s.length; }
   if (!m) { tokens.push({ ...it, kind }); return; }
-  tokens.push({ ...it, ...subBox(it, m.index, m[0]), str: m[0], kind: 'parasha' });
-  const rest = (it.str.slice(0, m.index) + ' ' + it.str.slice(m.index + m[0].length)).replace(/[\s|–-]+/g, ' ').trim();
-  if (/[א-ת]/.test(rest)) tokens.push({ ...it, str: rest, kind: 'text', partOf: true });
+  tokens.push({ ...it, ...subBox(it, at, s), str: s, kind: pk });
+  const rest = (it.str.slice(0, at) + ' ' + it.str.slice(at + s.length)).replace(/[\s|–-]+/g, ' ').trim();
+  if (/[א-ת]/.test(rest)) tokens.push({ ...it, ...restBox(it, at, s), str: rest, kind: 'text', partOf: true });
+}
+
+/** התיבה של מה שנשאר בפריט אחרי שהוצא ממנו קטע – הצד הגדול יותר */
+function restBox(it, at, s) {
+  const before = it.str.slice(0, at), after = it.str.slice(at + s.length);
+  return before.trim().length >= after.trim().length ? subBox(it, 0, before) : subBox(it, at + s.length, after);
+}
+
+/** פרשות מחוברות שנשמרו בשני פריטים ("…ניצבים" ו"-וילך"): מחברים לאזור אחד */
+function joinParashaPairs(tokens) {
+  const drop = new Set();
+  for (const p of tokens) {
+    if (p.kind !== 'parasha' && p.kind !== 'parashaName') continue;
+    if (new RegExp('[-–־]\\s*' + NAMES + '$').test(p.str)) continue;
+    const tail = tokens.find(t => t.kind === 'text' && !drop.has(t) && PAIR_TAIL_RE.test(t.str) && sameLine(t, p) &&
+      Math.abs(p.x - (t.x + t.w)) < p.size * 1.5 && Math.abs(t.x - p.x) > 1);
+    if (!tail) continue;
+    p.str = p.str + '-' + tail.str.replace(/^[-–־\s]+|[-–־\s]+$/g, '');
+    const x = Math.min(p.x, tail.x);
+    p.w = Math.max(p.x + p.w, tail.x + tail.w) - x; p.x = x;
+    drop.add(tail);
+  }
+  return tokens.filter(t => !drop.has(t));
 }
 
 /** מסיר מפרידים (| • – ,) מקצות הפריט ומקטין את התיבה בהתאם */
@@ -392,15 +431,12 @@ export function suggestSlots(tokens, cfg, day, period) {
   const tDay = day != null ? timesFor(cfg, day) : null;
 
   for (const t of tokens) {
-    const box = { x: t.x, y: t.y, w: t.w, h: t.h, baseline: t.baseline, size: t.size, font: t.font };
-    if (t.kind === 'title' || t.kind === 'parasha' || t.kind === 'hebDate') {
-      slots.push({ box, kind: t.kind, old: t.str, ascii: /["']/.test(t.str) && !/[״׳]/.test(t.str), noYear: t.kind === 'hebDate' && !HEB_DATE_RE.exec(t.str)[3] });
-      continue;
-    }
-    if (t.kind === 'gregDate') { slots.push({ box, kind: 'gregDate', old: t.str, fmt: gregFormat(t.str) }); continue; }
+    const box = boxOf(t);
+    if (isFixedKind(t.kind)) { slots.push(fixedSlot(t, box)); continue; }
     if (t.kind !== 'time') continue;
 
     const lab = labelFor(t, texts);
+    const labelBox = lab ? boxOf(lab) : null;
     const heads = headersAbove(t, texts);
     const rowLabel = lab ? lab.str : '';
     let label = rowLabel;
@@ -423,29 +459,33 @@ export function suggestSlots(tokens, cfg, day, period) {
     const zm = !PRAYER_WORDS.test(label) && ZMAN_WORDS.find(z => z[0].test(label));
     const name = label.replace(/[:\-–|]+$/g, '').trim();
     if (zm) {
-      slots.push({ box, kind: 'zman', zman: zm[1], when: zm[2] || when, old: t.str, label: name });
+      slots.push({ box, labelBox, kind: 'zman', zman: zm[1], when: zm[2] || when, old: t.str, label: name });
     } else {
       const rule = tDay ? inferRule(t.minutes, when, when === 'כניסה' ? tErev : tDay, cfg.tz, label)
         : { base: 'שעה קבועה', offset: t.str, round: 'ללא' };
-      slots.push({ box, kind: 'rule', when, name: name || 'תפילה', old: t.str, label: name, ...rule });
+      slots.push({ box, labelBox, kind: 'rule', when, name: name || 'תפילה', old: t.str, label: name, ...rule });
     }
   }
   return slots;
+}
+
+const boxOf = t => ({ x: t.x, y: t.y, w: t.w, h: t.h, baseline: t.baseline, size: t.size, font: t.font });
+const isFixedKind = k => k === 'title' || k === 'parasha' || k === 'parashaName' || k === 'hebDate' || k === 'gregDate';
+function fixedSlot(t, box) {
+  if (t.kind === 'gregDate') return { box, kind: 'gregDate', old: t.str, fmt: gregFormat(t.str) };
+  return { box, kind: t.kind, old: t.str, ascii: /["']/.test(t.str) && !/[״׳]/.test(t.str), noYear: t.kind === 'hebDate' && !HEB_DATE_RE.exec(t.str)[3] };
 }
 
 /** כמו suggestSlots, ללוח של ימי חול: היום נקבע לפי שם היום בשורה או בכותרת שמעל */
 function suggestDaySlots(tokens, texts, cfg, period) {
   const slots = [];
   for (const t of tokens) {
-    const box = { x: t.x, y: t.y, w: t.w, h: t.h, baseline: t.baseline, size: t.size, font: t.font };
-    if (t.kind === 'title' || t.kind === 'parasha' || t.kind === 'hebDate') {
-      slots.push({ box, kind: t.kind, old: t.str, ascii: /["']/.test(t.str) && !/[״׳]/.test(t.str), noYear: t.kind === 'hebDate' && !HEB_DATE_RE.exec(t.str)[3] });
-      continue;
-    }
-    if (t.kind === 'gregDate') { slots.push({ box, kind: 'gregDate', old: t.str, fmt: gregFormat(t.str) }); continue; }
+    const box = boxOf(t);
+    if (isFixedKind(t.kind)) { slots.push(fixedSlot(t, box)); continue; }
     if (t.kind !== 'time') continue;
 
     const lab = labelFor(t, texts), heads = headersAbove(t, texts);
+    const labelBox = lab ? boxOf(lab) : null;
     let label = lab ? lab.str : '';
     // בטבלה שבה השורה היא היום – שם התפילה בכותרת שמעל
     if ((!label || dowOf(label) != null) && heads.length) {
@@ -460,10 +500,10 @@ function suggestDaySlots(tokens, texts, cfg, period) {
     const col = period.days.find(x => x.dow === w) || period.days[0];
     const zm = !PRAYER_WORDS.test(label) && ZMAN_WORDS.find(z => z[0].test(label));
     const name = label.replace(/[:\-–|]+$/g, '').trim();
-    if (zm) slots.push({ box, kind: 'zman', zman: zm[1], when: col.key, old: t.str, label: name });
+    if (zm) slots.push({ box, labelBox, kind: 'zman', zman: zm[1], when: col.key, old: t.str, label: name });
     else {
       const rule = inferRule(t.minutes, 'כל יום', timesFor(cfg, col.day), cfg.tz, label);
-      slots.push({ box, kind: 'rule', when: col.key, name: name || 'תפילה', old: t.str, label: name, ...rule });
+      slots.push({ box, labelBox, kind: 'rule', when: col.key, name: name || 'תפילה', old: t.str, label: name, ...rule });
     }
   }
   return slots;
@@ -471,7 +511,5 @@ function suggestDaySlots(tokens, texts, cfg, period) {
 
 /** טקסטים שאינם שעות ואינם מזוהים – אפשר ללחוץ עליהם ולהפוך אותם לאזור */
 export function textCandidates(tokens) {
-  return tokens.filter(t => t.kind === 'text').map(t => ({
-    box: { x: t.x, y: t.y, w: t.w, h: t.h, baseline: t.baseline, size: t.size, font: t.font }, old: t.str
-  }));
+  return tokens.filter(t => t.kind === 'text').map(t => ({ box: boxOf(t), old: t.str }));
 }

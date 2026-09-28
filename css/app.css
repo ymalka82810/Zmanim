@@ -192,6 +192,7 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .tb.cand:hover { background: rgba(44, 74, 124, .15); }
 .tb.slot { border: 2px solid var(--blue); background: rgba(44, 74, 124, .12); }
 .tb.slot span { position: absolute; top: -9px; right: -9px; background: var(--blue); color: var(--on-accent); font-size: 11px; line-height: 16px; min-width: 16px; border-radius: 8px; padding: 0 3px; }
+.tb.lab { border: 1px solid var(--blue); background: rgba(44, 74, 124, .05); }
 .tb.drag { pointer-events: none; }
 .tpl-page.drawing .tb { pointer-events: none; }
 .slot-ed.sel { border-color: var(--blue); box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 25%, transparent); }
