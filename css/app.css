@@ -96,7 +96,7 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 
 .nav-occ { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
 .nav-occ button { border-color: var(--line); }
-.actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 16px; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 16px 0; }
 .actions.left { justify-content: flex-start; }
 
 /* הלוח עצמו – נראה כמו דף מודפס, איכותי ומהודר */
