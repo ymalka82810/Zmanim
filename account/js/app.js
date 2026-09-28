@@ -111,7 +111,7 @@ async function acceptInvitation(id){
   } catch(e){ toast(errMsg(e)); }
 }
 async function declineInvitation(id){
-  if (!confirm('לדחות את ההזמנה?')) return;
+  if (!await SiteDialog.confirm('לדחות את ההזמנה?', { ok: 'דחייה', danger: true })) return;
   try {
     await client.mutation('invitations:decline', { invitationId: id });
     await refreshInvitations();
@@ -216,26 +216,46 @@ async function shareInvite(code, name){
   else copyInvite(code);
 }
 
+/* הרב היחיד או הגבאי היחיד לא יכול לעזוב או לרדת מתפקידו לפני שמינה מישהו אחר במקומו. */
+function isSoleInRole(role){
+  return isManager(role) && (S.members || []).filter(m => m.role === role).length <= 1;
+}
+function soleInRoleMessage(role, action){
+  const hint = role === 'rabbi'
+    ? 'אפשר להעביר את התפקיד על ידי בחירת "רב" ליד אחד החברים ברשימה.'
+    : 'אפשר למנות גבאי נוסף ברשימת החברים.';
+  return `אתה ה${ROLE[role]} היחיד בקהילה, ולכן צריך למנות ${ROLE[role]} אחר במקומך לפני ${action}. ${hint}`;
+}
+
 async function setRole(synagogueId, userId, role){
   const current = (S.members || []).find(m => m.userId === userId);
   const previousRole = current ? current.role : null;
   if (previousRole === role) return;
   const isSelf = S.me && S.me.userId === userId;
-  if (isSelf && isManager(previousRole) && !isManager(role)){
+  const myRole = S.detail ? S.detail.role : null;
+  const name = current ? (current.name || current.email || 'החבר') : 'החבר';
+  if (isSelf && isSoleInRole(previousRole)){
+    await SiteDialog.alert(soleInRoleMessage(previousRole, 'שינוי התפקיד'));
+    render(); return;
+  }
+  const transferRabbi = role === 'rabbi' && !isSelf && myRole === 'rabbi';
+  if (transferRabbi){
+    if (!await SiteDialog.confirm(`להעביר את תפקיד הרב ל${name}? אתה תישאר בקהילה כגבאי.`)){ render(); return; }
+  } else if (isSelf && isManager(previousRole) && !isManager(role)){
     const warn = 'שים לב: לאחר שתרד לחבר קהילה לא תוכל להחזיר לעצמך את התפקיד. רק גבאי או רב אחר בקהילה יוכלו להחזיר לך אותו. בטוח שרוצה להמשיך?';
-    if (!confirm(warn)){ render(); return; }
+    if (!await SiteDialog.confirm(warn, { ok: 'המשך', danger: true })){ render(); return; }
   } else if (isManager(role)){
-    const name = current ? (current.name || current.email || 'החבר') : 'החבר';
-    if (!confirm(`לתת ל${name} תפקיד ${ROLE[role]}?`)){ render(); return; }
+    if (!await SiteDialog.confirm(`לתת ל${name} תפקיד ${ROLE[role]}?`)){ render(); return; }
   }
   try {
     await client.mutation('members:setRole', { synagogueId, userId, role });
+    if (transferRabbi){ await refreshSynagogues(); refreshDetail(synagogueId); }
     await loadManagerData(synagogueId);
     render();
   } catch(e){ toast(errMsg(e)); render(); }
 }
 async function removeMember(synagogueId, userId){
-  if (!confirm('להסיר את החבר מהקהילה?')) return;
+  if (!await SiteDialog.confirm('להסיר את החבר מהקהילה?', { ok: 'הסרה', danger: true })) return;
   try {
     await client.mutation('members:remove', { synagogueId, userId });
     await loadManagerData(synagogueId);
@@ -243,7 +263,11 @@ async function removeMember(synagogueId, userId){
   } catch(e){ toast(errMsg(e)); }
 }
 async function leaveSynagogue(id){
-  if (!confirm('לעזוב את הקהילה?')) return;
+  const myRole = S.detail ? S.detail.role : null;
+  if (isSoleInRole(myRole)) return SiteDialog.alert(soleInRoleMessage(myRole, 'עזיבת הקהילה'));
+  const synName = S.detail ? S.detail.name : 'הקהילה';
+  const msg = `האם אתה בטוח שברצונך לעזוב את ${synName}?\nלא תראה יותר את הלוחות, הקידושים והקופה של הקהילה. כדי לחזור תצטרך הזמנה חדשה.`;
+  if (!await SiteDialog.confirm(msg, { ok: 'עזיבה', cancel: 'הישארות בקהילה', danger: true })) return;
   try {
     await client.mutation('members:leave', { synagogueId: id });
     closeSheet();
@@ -422,7 +446,8 @@ function renderPending(pending){
 
 function renderMembers(members){
   if (!members.length) return '<p class="muted">אין חברים עדיין.</p>';
-  const hasRabbi = members.some(m => m.role === 'rabbi');
+  // הרב יכול לבחור "רב" ליד חבר אחר כדי להעביר אליו את התפקיד.
+  const hasRabbi = members.some(m => m.role === 'rabbi') && !(S.detail && S.detail.role === 'rabbi');
   return members.map(m => `
     <div class="member-row">
       ${m.image ? `<img src="${esc(m.image)}" alt="">` : ''}

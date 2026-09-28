@@ -50,6 +50,14 @@ export async function countManagers(ctx: QueryCtx, synagogueId: Id<"synagogues">
   return memberships.filter((m) => isManager(m.role)).length;
 }
 
+export async function countRole(ctx: QueryCtx, synagogueId: Id<"synagogues">, role: Role) {
+  const memberships = await ctx.db
+    .query("memberships")
+    .withIndex("by_synagogue", (q) => q.eq("synagogueId", synagogueId))
+    .collect();
+  return memberships.filter((m) => m.role === role).length;
+}
+
 /** יכול להיות רב אחד בלבד בקהילה. */
 export async function assertRabbiAvailable(
   ctx: QueryCtx,

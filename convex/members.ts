@@ -5,9 +5,11 @@ import type { MutationCtx } from "./_generated/server";
 import {
   assertRabbiAvailable,
   countManagers,
+  countRole,
   getMembership,
   isManager,
   requireManager,
+  type Role,
   requireUser,
   roleValidator,
 } from "./roles";
@@ -42,6 +44,15 @@ async function assertNotLastManager(ctx: MutationCtx, synagogueId: Id<"synagogue
   }
 }
 
+/** הרב היחיד או הגבאי היחיד לא יכול לוותר על תפקידו לפני שמינה מישהו אחר במקומו. */
+async function assertNotSoleInRole(ctx: MutationCtx, synagogueId: Id<"synagogues">, role: Role, action: string) {
+  if (!isManager(role) || (await countRole(ctx, synagogueId, role)) > 1) {
+    return;
+  }
+  const label = role === "rabbi" ? "רב" : "גבאי";
+  throw new Error(`אתה ה${label} היחיד בקהילה. יש למנות ${label} אחר במקומך לפני ${action}`);
+}
+
 export const setRole = mutation({
   args: {
     synagogueId: v.id("synagogues"),
@@ -49,12 +60,24 @@ export const setRole = mutation({
     role: roleValidator,
   },
   handler: async (ctx, args) => {
-    await requireManager(ctx, args.synagogueId);
+    const { userId: callerId, membership: callerMembership } = await requireManager(ctx, args.synagogueId);
     const membership = await getMembership(ctx, args.synagogueId, args.userId);
     if (membership === null) {
       throw new Error("החבר לא נמצא בקהילה");
     }
-    if (isManager(membership.role) && !isManager(args.role)) {
+    if (membership.role === args.role) {
+      return;
+    }
+    const isSelf = args.userId === callerId;
+    // הרב ממנה רב אחר במקומו: התפקיד עובר, והרב הקודם נשאר גבאי.
+    if (args.role === "rabbi" && !isSelf && callerMembership.role === "rabbi") {
+      await ctx.db.patch(membership._id, { role: "rabbi" });
+      await ctx.db.patch(callerMembership._id, { role: "gabbai" });
+      return;
+    }
+    if (isSelf) {
+      await assertNotSoleInRole(ctx, args.synagogueId, membership.role, "שינוי התפקיד");
+    } else if (isManager(membership.role) && !isManager(args.role)) {
       await assertNotLastManager(ctx, args.synagogueId, "צריך להישאר לפחות גבאי או רב אחד");
     }
     if (args.role === "rabbi") {
@@ -90,9 +113,7 @@ export const leave = mutation({
     if (membership === null) {
       return;
     }
-    if (isManager(membership.role)) {
-      await assertNotLastManager(ctx, args.synagogueId, "הגבאי או הרב האחרון לא יכול לעזוב את הקהילה");
-    }
+    await assertNotSoleInRole(ctx, args.synagogueId, membership.role, "עזיבת הקהילה");
     await ctx.db.delete(membership._id);
   },
 });
