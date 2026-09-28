@@ -194,12 +194,11 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .tb.slot span { position: absolute; top: -9px; right: -9px; background: var(--blue); color: var(--on-accent); font-size: 11px; line-height: 16px; min-width: 16px; border-radius: 8px; padding: 0 3px; }
 .tb.drag { pointer-events: none; }
 .tpl-page.drawing .tb { pointer-events: none; }
-.slot-ed { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 10px; background: var(--panel); }
 .slot-ed.sel { border-color: var(--blue); box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 25%, transparent); }
+.slot-ed > summary { align-items: center; }
+.slot-ed .num { background: var(--blue); color: var(--on-accent); border-radius: 10px; min-width: 22px; text-align: center; font-size: .85rem; }
 .slot-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
 .slot-top select { width: auto; flex: 1 1 160px; font-weight: 700; }
-.slot-top .num { background: var(--blue); color: var(--on-accent); border-radius: 10px; min-width: 22px; text-align: center; font-size: .85rem; }
-.slot-top .old { font-size: .85rem; color: var(--muted); }
 .slot-top .del { border-color: transparent; color: var(--danger); padding: 4px 8px; margin-inline-start: auto; box-shadow: none; }
 .slot-ed .rgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .slot-ed .rgrid .wide { grid-column: 1 / -1; }

@@ -13,6 +13,7 @@ import { esc } from './render.js';
 const $ = id => document.getElementById(id);
 const KINDS = [['text', 'טקסט שכותבים כאן'], ['rule', 'תפילה או שיעור'], ['zman', 'זמן היום'], ['title', 'כותרת (שבת פרשת…)'], ['parasha', 'פרשת…'],
   ['parashaName', 'שם הפרשה בלבד'], ['hebDate', 'תאריך עברי'], ['gregDate', 'תאריך לועזי']];
+const KIND_LABEL = Object.fromEntries(KINDS);
 const BASE_LABELS = Object.keys(BASES);
 const ZMANIM = BASE_LABELS.filter(l => BASES[l] !== 'fixed' && BASES[l] !== 'kiddush');
 const isKiddush = s => BASES[s.base] === 'kiddush';
@@ -47,6 +48,7 @@ const dayOpts = () => DOW_LABELS.map((n, i) => ['d' + i, isChol() ? 'יום ' + 
  * st.cfg הוא ההגדרות עם זמני התפילות של התבנית.
  */
 let st = null;
+const openSlots = new WeakSet();   // אזורים שהשורה שלהם פתוחה לעריכה
 
 /** העמודה (יום) של מפתח d0…d5 בלוח הישן. בלי תאריך: יום בשבוע לפי המפתח */
 function colOf(key) {
@@ -177,10 +179,14 @@ $('tplBoxes').addEventListener('click', e => {
   if (b.dataset.s != null) { focusSlot(+b.dataset.s); return; }
   const c = st.candidates[+b.dataset.c];
   st.slots.push({ box: c.box, kind: 'text', text: c.old, old: c.old });
-  renderBoxes(); renderSlots(); focusSlot(st.slots.length - 1);
+  renderBoxes(); focusSlot(st.slots.length - 1);
 });
 
 function focusSlot(i) {
+  const s = st.slots[i];
+  if (!s) return;
+  openSlots.add(s);
+  renderSlots();
   const ed = document.querySelector('.slot-ed[data-i="' + i + '"]');
   if (!ed) return;
   document.querySelectorAll('.slot-ed.sel').forEach(x => x.classList.remove('sel'));
@@ -223,7 +229,7 @@ $('tplPage').addEventListener('pointerup', () => {
   st.drawing = false;
   $('tplDraw').setAttribute('aria-pressed', 'false');
   $('tplPage').classList.remove('drawing');
-  renderBoxes(); renderSlots(); focusSlot(st.slots.length - 1);
+  renderBoxes(); focusSlot(st.slots.length - 1);
 });
 
 /* ---------- רשימת האזורים ---------- */
@@ -255,18 +261,51 @@ function slotFields(s) {
   return '';
 }
 
+/** תרגום "מתי" למילה בעברית: בלוח ימי חול s.when הוא מפתח (d0…d5) */
+function whenLabel(w) {
+  if (!isDays()) return w;
+  const hit = dayOpts().find(([k]) => k === w);
+  return hit ? hit[1] : w;
+}
+
+/** הכותרת לשורה הסגורה: שם התפילה, או סוג האזור לשאר הסוגים */
+const slotLabel = s => s.kind === 'rule' ? (s.name || 'תפילה חדשה') : (KIND_LABEL[s.kind] || s.kind);
+
+/** תקציר לשורה הסגורה: מתי ולפי מה, ומה היה בקובץ הישן */
+function slotSum(s) {
+  const parts = [];
+  if (s.kind === 'rule') {
+    const fixed = s.base === 'שעה קבועה', kd = isKiddush(s);
+    const n = parseInt(s.offset, 10) || 0;
+    const at = fixed ? 'בשעה ' + (s.offset || '') : kd ? s.base
+      : n ? Math.abs(n) + ' דק׳ ' + (n < 0 ? 'לפני ' : 'אחרי ') + s.base : s.base;
+    parts.push(whenLabel(s.when), at);
+  } else if (s.kind === 'zman') {
+    parts.push(zmanLabel(s.zman), whenLabel(s.when));
+  } else if (s.kind === 'text' && s.text) {
+    parts.push(s.text);
+  }
+  if (s.old) parts.push('בקובץ: ' + s.old + (s.label && s.kind !== 'rule' ? ' (' + s.label + ')' : ''));
+  return parts.filter(Boolean).join(' · ');
+}
+
 function renderSlots() {
   if (!st.slots.length) {
     $('tplSlots').innerHTML = '<p class="hint">לא זוהו אזורים. ' + (st.scanned ? 'לחצו "סימון אזור" וגררו על כל שעה בדף.' : '') + '</p>';
     return;
   }
   $('tplSlots').innerHTML = st.slots.map((s, i) =>
-    '<div class="slot-ed" data-i="' + i + '"><div class="slot-top"><span class="num">' + (i + 1) + '</span>' +
-    '<select data-k="kind" aria-label="מה יופיע באזור ' + (i + 1) + '">' + opts(KINDS, s.kind) + '</select>' +
-    (s.old ? '<span class="old">בקובץ: <b>' + esc(s.old) + '</b>' + (s.label && s.kind !== 'rule' ? ' (' + esc(s.label) + ')' : '') + '</span>' : '') +
-    '<button type="button" class="del" data-del="' + i + '">הסרה</button></div>' + slotFields(s) + '</div>'
+    '<details class="rule slot-ed" data-i="' + i + '"' + (openSlots.has(s) ? ' open' : '') + '>' +
+    '<summary><span class="num">' + (i + 1) + '</span><b class="rule-name">' + esc(slotLabel(s)) + '</b>' +
+    '<span class="rule-sum">' + esc(slotSum(s)) + '</span></summary>' +
+    '<div class="slot-top"><select data-k="kind" aria-label="מה יופיע באזור ' + (i + 1) + '">' + opts(KINDS, s.kind) + '</select>' +
+    '<button type="button" class="del" data-del="' + i + '">הסרה</button></div>' + slotFields(s) + '</details>'
   ).join('');
 }
+$('tplSlots').addEventListener('toggle', e => {
+  const s = st.slots[+e.target.getAttribute('data-i')];
+  if (s) e.target.open ? openSlots.add(s) : openSlots.delete(s);
+}, true);
 
 $('tplSlots').addEventListener('input', e => {
   const ed = e.target.closest('.slot-ed'), k = e.target.dataset.k;
@@ -279,7 +318,7 @@ $('tplSlots').addEventListener('input', e => {
     if (v === 'zman' && !s.zman) Object.assign(s, { zman: 'sunset', when: s.when || when0 });
     if (v === 'gregDate' && !s.fmt) s.fmt = { sep: '/', year: 4, pad: false };
     if (v === 'text' && s.text == null) s.text = s.old || '';
-    renderSlots(); focusSlot(+ed.dataset.i); return;
+    focusSlot(+ed.dataset.i); return;
   }
   if (k === 'zman') s.zman = zmanKey(v);
   else if (k === 'offsetAbs' || k === 'offsetDir') {
@@ -287,18 +326,21 @@ $('tplSlots').addEventListener('input', e => {
     const dir = k === 'offsetDir' ? v : offsetDir(s);
     s.offset = abs === '' ? '' : String(dir === 'לפני' ? -Math.abs(+abs) : +abs);
   } else s[k] = v;
-  if (k === 'when' && s.kind === 'rule') { reinfer(s); renderSlots(); }
+  if (k === 'when' && s.kind === 'rule') { reinfer(s); renderSlots(); return; }
   if (k === 'base') {
     const kd = isKiddush(s);
     if (v === 'שעה קבועה' && s.offset.indexOf(':') < 0) s.offset = s.old && s.old.includes(':') ? s.old : '08:00';
     if (kd && /^-?\d+$/.test(s.offset)) s.offset = '';
     if (!kd && v !== 'שעה קבועה' && s.offset.indexOf(':') >= 0) s.offset = '0';
-    renderSlots();
+    renderSlots(); return;
   }
+  ed.querySelector('.rule-name').textContent = slotLabel(s);
+  ed.querySelector('.rule-sum').textContent = slotSum(s);
 });
-$('tplSlots').addEventListener('click', e => {
+$('tplSlots').addEventListener('click', async e => {
   const i = e.target.dataset.del;
   if (i == null) return;
+  if (!await SiteDialog.confirm('להסיר את האזור מהתבנית?', { ok: 'הסרה', danger: true })) return;
   st.slots.splice(+i, 1);
   renderBoxes(); renderSlots();
 });
@@ -397,4 +439,7 @@ $('tplSave').onclick = () => {
   if (bad) { focusSlot(st.slots.indexOf(bad)); SiteDialog.alert('יש אזור של תפילה בלי שם. כתבו שם או הסירו את האזור.'); return; }
   close({ tpl: st.tpl, template: buildTemplate(), rules: slotRules(), replace: $('tplRules').checked });
 };
-$('tplCancel').onclick = () => close(null);
+$('tplCancel').onclick = async () => {
+  if (!await SiteDialog.confirm('לבטל את עיצוב התבנית? השינויים לא יישמרו.', { ok: 'ביטול העיצוב', cancel: 'המשך עריכה', danger: true })) return;
+  close(null);
+};
