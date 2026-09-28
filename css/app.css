@@ -5,6 +5,8 @@
   --sh-sm: 0 1px 2px rgba(32, 34, 46, .08); --sh-md: 0 6px 20px rgba(32, 40, 61, .1); --sh-lg: 0 14px 34px rgba(24, 32, 54, .16);
   color-scheme: light;
 }
+/* hidden גובר על display שמוגדר במחלקה (למשל .tabs), כדי שהלשוניות לא יופיעו לחבר קהילה */
+[hidden] { display: none !important; }
 /* מצב לילה – רק במסך; בהדפסה הלוח תמיד בצבעי יום */
 @media screen {
   :root[data-theme="dark"] {
