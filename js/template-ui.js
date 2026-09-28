@@ -12,7 +12,7 @@ import { esc } from './render.js';
 
 const $ = id => document.getElementById(id);
 const KINDS = [['text', 'טקסט שכותבים כאן'], ['rule', 'תפילה או שיעור'], ['kiddush', 'קידוש (מלוח הקידושים)'], ['zman', 'זמן היום'], ['title', 'כותרת (שבת פרשת…)'], ['parasha', 'פרשת…'],
-  ['parashaName', 'שם הפרשה בלבד'], ['hebDate', 'תאריך עברי'], ['gregDate', 'תאריך לועזי'], ['address', 'כתובת בית הכנסת']];
+  ['parashaName', 'שם הפרשה בלבד'], ['special', 'שבת מיוחדת (נחמו, זכור…) – רק כשיש'], ['hebDate', 'תאריך עברי'], ['gregDate', 'תאריך לועזי'], ['address', 'כתובת בית הכנסת']];
 const KIND_LABEL = Object.fromEntries(KINDS);
 const BASE_LABELS = Object.keys(BASES);
 const ZMANIM = BASE_LABELS.filter(l => BASES[l] !== 'fixed' && BASES[l] !== 'kiddush');
@@ -70,8 +70,8 @@ function setDay(d) {
 /* ---------- פתיחה ---------- */
 
 /** פתיחת העורך מקובץ חדש, לתבנית tpl */
-export async function editFromFile(file, cfgAll, tpl, onDone) {
-  const { canvas, items, fonts, docDayNum } = await readFile(file);
+export async function editFromFile(file, cfgAll, tpl, onDone, onStatus) {
+  const { canvas, items, fonts, docDayNum } = await readFile(file, onStatus);
   const tokens = tokenize(items);
   const cfg = { ...cfgAll, rules: tpl.rules };
   const fit = x => ({ ...x, box: refineBox(canvas, x.box), ...(x.labelBox ? { labelBox: refineBox(canvas, x.labelBox) } : {}) });

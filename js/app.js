@@ -792,7 +792,7 @@ $('tplFile').onchange = async () => {
   if (!f) return;
   toast('קורא את הקובץ…');
   try {
-    await editFromFile(f, cfg, selTpl(), templateDone);
+    await editFromFile(f, cfg, selTpl(), templateDone, toast);
     showTab('template');
   } catch (e) {
     console.error(e);

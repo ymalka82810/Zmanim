@@ -6,7 +6,7 @@ import { dow, hm, gDate, toYmd } from './dates.js';
 import { yomTov, cholHamoed, parasha, hebDateString, toHebrew, fromHebrew, gematria, monthName, TISHREI } from './hebrew.js';
 import { zmanim, roundZman } from './zmanim.js';
 import { BASES, DAY_APPLIES, appliesOnDay, isBuiltin } from './config.js';
-import { isMoed, specialDay } from './moadim.js';
+import { isMoed, specialDay, specialShabbat } from './moadim.js';
 
 const MIN = 60000;
 
@@ -27,7 +27,8 @@ export function findOccasion(from, il, dir = 1) {
   const days = [];
   for (let x = first; x <= last; x++) {
     const shabbat = dow(x) === 6;
-    days.push({ day: x, shabbat, chag: yomTov(x, il), chol: shabbat ? cholHamoed(x, il) : null, parasha: shabbat ? parasha(x, il) : null });
+    days.push({ day: x, shabbat, chag: yomTov(x, il), chol: shabbat ? cholHamoed(x, il) : null, parasha: shabbat ? parasha(x, il) : null,
+      special: specialShabbat(x, il) });
   }
 
   return { mode: 'holy', id: first, erev: first - 1, first, last, days, title: holyTitle(days) };
@@ -39,6 +40,8 @@ function holyTitle(days) {
   days.forEach(x => { if (x.chag && names.indexOf(x.chag) < 0) names.push(x.chag); });
   if (names.length) return names.join(' ו') + (days.some(x => x.shabbat) ? ' ושבת' : '');
   if (days[0].chol) return 'שבת חול המועד ' + days[0].chol;
+  // שבת שחלה בחג ומוצגת בלוח נפרד – אין לה פרשה, והיא נקראת על שם החג ("שבת סוכות")
+  if (!days[0].parasha && days[0].holiday) return 'שבת ' + days[0].holiday;
   return days[0].parasha ? 'שבת פרשת ' + days[0].parasha : 'שבת';
 }
 
@@ -103,7 +106,7 @@ export function occasionParts(occ, merged) {
   const mixed = isMixed(occ);
   if (!mixed || (merged && merged[occ.id])) return [{ ...occ, mixed, occId: occ.id }];
   const chag = occ.days.filter(d => d.chag);
-  const shabbat = occ.days.filter(d => d.shabbat).map(d => ({ ...d, chag: null }));
+  const shabbat = occ.days.filter(d => d.shabbat).map(d => ({ ...d, chag: null, holiday: d.chag }));
   // לשבת יש לוח משלה, ולכן הכותרת של לוח החג היא שם החג בלבד ("סוכות", ולא "סוכות ושבת")
   return [[chag, holyTitle(chag.map(d => ({ ...d, shabbat: false })))], [shabbat, holyTitle(shabbat)]]
     .sort((a, b) => a[0][0].day - b[0][0].day).map(([days, title]) => partOf(days, occ, title));
@@ -268,7 +271,7 @@ export function buildLuach(cfg, occ, kiddush) {
 
   occ.days.forEach((d, i) => {
     const t = times(d.day);
-    const label = d.chag || (d.chol ? 'שבת חול המועד' : occ.days.length > 1 ? 'שבת' : 'יום השבת');
+    const label = d.chag || (d.chol ? 'שבת חול המועד' : d.special || (occ.days.length > 1 ? 'שבת' : 'יום השבת'));
     const z = [['סו"ז ק"ש מג"א', t.sofZmanShmaMGA], ['סו"ז ק"ש גר"א', t.sofZmanShma], ['שקיעה', t.sunset]];
     if (i < occ.days.length - 1) z.push(['הדלקת נרות', t.candles]);
     sections.push({ title: label, date: gDate(d.day), rows: rowsFor(cfg, 'כל יום', d, t, kiddush), zmanim: zlist(z) });
@@ -290,6 +293,8 @@ export function buildLuach(cfg, occ, kiddush) {
   addRows('כל יום', sections[1].rows);
   addRows('יציאה', sections[sections.length - 1].rows);
 
+  // שבת בלי פרשה (חג או חול המועד): שם המועד במקום שם הפרשה, כדי ש"לשבת …" לא ייצא "לשבת שבת"
+  const noParasha = first.chag || first.holiday || (first.chol ? 'חול המועד ' + first.chol : occ.title);
   return {
     shul: String(cfg.shul || '').trim(),
     title: occ.title,
@@ -301,8 +306,10 @@ export function buildLuach(cfg, occ, kiddush) {
       zmanim: { 'כניסה': texts(te), 'כל יום': texts(t1), 'יציאה': texts(tl) },
       rules,
       title: occ.title,
-      parasha: first.parasha ? 'פרשת ' + first.parasha : (first.chag || occ.title),
-      parashaName: first.parasha || first.chag || occ.title,
+      parasha: first.parasha ? 'פרשת ' + first.parasha : noParasha,
+      parashaName: first.parasha || noParasha,
+      // בשבת בלי שם מיוחד – ריק, כדי ש"שבת נחמו" מהלוח הישן לא יופיע בה
+      special: occ.days.map(d => d.special).find(Boolean) || '',
       hebDay: first.day,
       firstDay: first.day,
       multiDay: occ.days.length > 1
@@ -364,6 +371,7 @@ export function buildDaysLuach(cfg, p, kiddush) {
   Object.assign(values, {
     address: String(cfg.address || '').trim(),
     title: p.title, parasha: shabbat ? 'פרשת ' + shabbat : p.title, parashaName: shabbat || p.title,
+    special: p.kind === 'week' ? specialShabbat(first.day - first.dow + 6, cfg.il) : '',
     hebDay: first.day, firstDay: first.day, multiDay: false
   });
 

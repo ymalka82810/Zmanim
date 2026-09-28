@@ -1,7 +1,7 @@
 /**
  * קריאת לוח ישן (PDF או תמונה) כתבנית: ציור העמוד, חילוץ הטקסט עם המיקומים,
  * זיהוי שעות, תאריכים ופרשה, והסקת הכללים (למשל "מנחה = שקיעה פחות 40").
- * ספריית pdf.js נטענת רק כשמעלים קובץ PDF.
+ * ספריית pdf.js נטענת רק כשמעלים קובץ PDF, ו-Tesseract.js (זיהוי טקסט בתמונה) רק כשמעלים תמונה.
  */
 
 import { hm, toDayNum, DAY_MS } from './dates.js';
@@ -23,15 +23,19 @@ function loadPdfjs() {
   return pdfjsPromise;
 }
 
+// Tesseract.js 7.0.0 (רישיון Apache 2.0) ומודל העברית נטענים מהרשת בפעם הראשונה, והמודל נשמר בדפדפן
+const TESSERACT = 'https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.esm.min.js';
+const OCR_W = 2400;   // רוחב התמונה לזיהוי: בתמונה קטנה הזיהוי גרוע, ובגדולה מדי הוא איטי
+
 /* ---------- קריאת הקובץ ---------- */
 
 /**
  * מחזיר { canvas, items } – העמוד הראשון כתמונה, ופריטי הטקסט עם תיבות בפיקסלים.
  * לתמונה או ל-PDF סרוק items ריק.
  */
-export async function readFile(file) {
+export async function readFile(file, onStatus = () => {}) {
   const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
-  return isPdf ? readPdf(file) : readImage(file);
+  return isPdf ? readPdf(file) : readImage(file, onStatus);
 }
 
 async function readPdf(file) {
@@ -148,7 +152,7 @@ function familyName(raw) {
   return /\s/.test(n) ? n : n.replace(/([a-z])([A-Z])/g, '$1 $2');
 }
 
-async function readImage(file) {
+async function readImage(file, onStatus) {
   const bmp = await createImageBitmap(file);
   const scale = Math.min(1, PAGE_W / bmp.width);
   const canvas = document.createElement('canvas');
@@ -157,7 +161,91 @@ async function readImage(file) {
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
   const docDayNum = file.lastModified ? Math.floor(file.lastModified / DAY_MS) : null;
-  return { canvas, items: [], fonts: {}, docDayNum };
+  // בלי חיבור לרשת או כשהזיהוי נכשל: התמונה עדיין נפתחת, ומסמנים אזורים ידנית
+  let items = [];
+  try { items = joinFragments(await ocrImage(bmp, canvas.width / OCR_W, onStatus)); }
+  catch (e) { console.warn('לא ניתן לזהות טקסט בתמונה', e); }
+  bmp.close();
+  return { canvas, items, fonts: {}, docDayNum };
+}
+
+/**
+ * זיהוי הטקסט בתמונה (OCR). מחזיר פריטים באותה צורה כמו ב-PDF – מילה לכל פריט,
+ * ו-joinFragments מחבר מילים סמוכות. k: היחס בין התמונה שנשלחת לזיהוי לבין התבנית.
+ * מודל העברית קורא שעות גרוע ("16:42" נקרא "12"), ומודל האנגלית משבש עברית – לכן יש שני מעברים:
+ * מהעברי לוקחים את המילים, ומהאנגלי את המספרים והשעות.
+ */
+async function ocrImage(bmp, k, onStatus) {
+  const src = document.createElement('canvas');
+  src.width = OCR_W; src.height = Math.round(bmp.height * OCR_W / bmp.width);
+  const ctx = src.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, src.width, src.height);
+  ctx.drawImage(bmp, 0, 0, src.width, src.height);
+
+  onStatus('טוען את זיהוי הטקסט…');
+  const { createWorker, PSM } = (await import(TESSERACT)).default;
+  const progress = [0, 0];
+  const pass = async (lang, i) => {
+    const worker = await createWorker(lang, 1, {
+      logger: m => {
+        if (m.status !== 'recognizing text') return;
+        progress[i] = m.progress;
+        onStatus('מזהה טקסט בתמונה… ' + Math.round((progress[0] + progress[1]) * 50) + '%');
+      },
+    });
+    try {
+      // טקסט מפוזר: בלוח יש טבלאות ותוויות בודדות, לא פסקאות
+      await worker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT });
+      const { data } = await worker.recognize(src, {}, { blocks: true });
+      return (data.blocks || []).flatMap(b => b.paragraphs.flatMap(p => p.lines));
+    } finally {
+      await worker.terminate();
+    }
+  };
+  const [hebLines, engLines] = await Promise.all([pass('heb', 0), pass('eng', 1)]);
+
+  const clean = w => String(w.text || '').replace(/\s+/g, ' ').trim();
+  const isNum = s => /\d/.test(s) && /^[\d:.\/\-–()]+$/.test(s);
+  const item = (str, b, baseline, size) => ({ str, x: b.x0 * k, w: (b.x1 - b.x0) * k, baseline: baseline * k, size: size * k,
+    y: (baseline - size * 0.92) * k, h: size * 1.2 * k, rtl: /[א-ת]/.test(str) });
+
+  // ספרות: הגובה שלהן הוא בערך 0.72 מגודל הגופן, והן יושבות על קו הבסיס
+  const nums = [];
+  for (const line of engLines) for (const w of line.words) {
+    const str = clean(w);
+    if (w.confidence >= 40 && isNum(str)) nums.push(item(str, w.bbox, w.bbox.y1, (w.bbox.y1 - w.bbox.y0) / 0.72));
+  }
+  const overlapsNum = b => nums.some(n => {
+    const ix = Math.min(b.x1 * k, n.x + n.w) - Math.max(b.x0 * k, n.x), iy = Math.min(b.y1 * k, n.baseline) - Math.max(b.y0 * k, n.baseline - n.size * 0.72);
+    return ix > 0 && iy > 0 && ix * iy > (b.x1 - b.x0) * (b.y1 - b.y0) * k * k * 0.3;
+  });
+
+  const items = [];
+  for (const line of hebLines) {
+    const words = line.words.map(w => ({ w, str: clean(w) }))
+      .filter(({ w, str }) => w.confidence >= 40 && /[א-תA-Za-z]/.test(str) && !/\d/.test(str) && !overlapsNum(w.bbox));
+    if (!words.length) continue;
+    // גודל הגופן לפי המילה הנמוכה בשורה: רוב האותיות בעברית בלי עולים ויורדים, בגובה של כ-0.55 מהגופן
+    const size = Math.min(...words.map(({ w }) => w.bbox.y1 - w.bbox.y0)) / 0.55;
+    // מילים סמוכות באותה שורה הן ביטוי אחד ("מנחה ערב שבת"). הרווחים בזיהוי גדולים יותר מאשר ב-PDF
+    const phrases = [];
+    for (const { w, str } of words) {
+      const prev = phrases[phrases.length - 1];
+      if (prev && /[א-ת]/.test(str) && /[א-ת]/.test(prev.str) && Math.abs(prev.b.x0 - w.bbox.x1) < size * 0.8) {
+        prev.str += ' ' + str;
+        prev.b = { x0: Math.min(prev.b.x0, w.bbox.x0), x1: Math.max(prev.b.x1, w.bbox.x1) };
+      } else phrases.push({ str, b: { x0: w.bbox.x0, x1: w.bbox.x1 } });
+    }
+    const lb = line.baseline;
+    for (const { str, b } of phrases) {
+      // קו הבסיס של השורה, בנקודת האמצע של הביטוי (השורה יכולה להיות מעט עקומה בצילום)
+      const cx = (b.x0 + b.x1) / 2;
+      const baseline = lb.x1 !== lb.x0 ? lb.y0 + (lb.y1 - lb.y0) * (cx - lb.x0) / (lb.x1 - lb.x0) : line.bbox.y1;
+      items.push(item(str, b, baseline, size));
+    }
+  }
+  // סדר קריאה: מלמעלה למטה ומימין לשמאל
+  return items.concat(nums).sort((a, b) => a.baseline - b.baseline || b.x - a.x);
 }
 
 /** תאריך יצירה/עדכון מהמטא-דאטה של PDF ("D:20260504153000+03'00'") */
@@ -274,8 +362,24 @@ const PREFIX_RE = /^ל?שבת(?:\s+קודש)?$/;
 // המקף בקצה הפריט כבר הוסר ב-trimSeparators
 const PAIR_TAIL_RE = new RegExp('^[-–־]?\\s*' + NAMES + '\\s*[-–־]?$');
 
+// "שבת נחמו", "לשבת זכור", "פרשת שקלים" – שם של שבת מיוחדת, שמופיע רק בשבתות שיש להן שם כזה
+const SPECIALS = 'שובה|שירה|שקלים|זכור|פרה|החודש|הגדול|חזון|נחמו';
+const SPECIAL_RE = new RegExp('(?:^|[^א-ת])((?:ל?שבת|פרשת)\\s+(?:' + SPECIALS + '))(?![א-ת])');
+const SPECIAL_WORD_RE = new RegExp('^(?:' + SPECIALS + ')$');
+
 /** טקסט רגיל; אם יש בו פרשה באמצע שורה (למשל "זמני תפילות – פרשת וירא"), הפרשה הופכת לאזור נפרד */
 function pushText(tokens, it) {
+  // שבת מיוחדת הופכת לאזור נפרד, ומה שמשני צדדיה (למשל "שבת פרשת ואתחנן") נבדק בנפרד
+  const sp = SPECIAL_RE.exec(it.str);
+  if (sp) {
+    const s = sp[1], at = sp.index + sp[0].length - s.length;
+    tokens.push({ ...it, ...subBox(it, at, s), str: s, kind: 'special' });
+    for (const [i, part] of [[0, it.str.slice(0, at)], [at + s.length, it.str.slice(at + s.length)]]) {
+      const rest = /[א-ת]/.test(part) && trimSeparators({ ...it, ...subBox(it, i, part), str: part });
+      if (rest) pushText(tokens, { ...rest, partOf: true });
+    }
+    return;
+  }
   const kind = classifyText(it.str);
   let m = kind === 'text' && PARASHA_RE.exec(it.str), pk = 'parasha', at, s, prefix;
   if (m) { at = m.index; s = m[0]; }
@@ -309,6 +413,13 @@ function joinParashaPairs(tokens) {
     const pre = tokens.find(x => x.kind === 'text' && !drop.has(x) && PREFIX_RE.test(x.str) && sameLine(x, t) &&
       x.x > t.x && x.x - (t.x + t.w) < t.size * 1.5);
     if (pre) { t.kind = 'parashaName'; t.prefix = pre.str.replace(/\s+/g, ' ') + ' '; t.str = pre.str + ' ' + t.str; absorb(t, pre); }
+  }
+  // "נחמו" בודד ש"שבת" לפניו בפריט נפרד
+  for (const t of tokens) {
+    if (t.kind !== 'text' || drop.has(t) || !SPECIAL_WORD_RE.test(t.str)) continue;
+    const pre = tokens.find(x => x.kind === 'text' && !drop.has(x) && /^(?:ל?שבת|פרשת)$/.test(x.str) && sameLine(x, t) &&
+      x.x > t.x && x.x - (t.x + t.w) < t.size * 1.5);
+    if (pre) { t.kind = 'special'; t.str = pre.str + ' ' + t.str; absorb(t, pre); }
   }
   for (const p of tokens) {
     if (p.kind !== 'parasha' && p.kind !== 'parashaName') continue;
@@ -615,7 +726,7 @@ export function suggestSlots(tokens, cfg, day, period) {
 }
 
 const boxOf = t => ({ x: t.x, y: t.y, w: t.w, h: t.h, baseline: t.baseline, size: t.size, font: t.font });
-const isFixedKind = k => ['title', 'parasha', 'parashaName', 'hebDate', 'gregDate', 'address'].includes(k);
+const isFixedKind = k => ['title', 'parasha', 'parashaName', 'special', 'hebDate', 'gregDate', 'address'].includes(k);
 function fixedSlot(t, box) {
   if (t.kind === 'gregDate') return { box, kind: 'gregDate', old: t.str, fmt: gregFormat(t.str) };
   if (t.kind === 'address') return { box, kind: 'address', old: t.str };

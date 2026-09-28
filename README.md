@@ -70,6 +70,7 @@ npm start          # האתר ב-http://localhost:8080
 | `js/template-render.js` | ציור לוח חדש על גבי התבנית |
 | `js/template-ui.js` | עורך התבנית |
 | `vendor/pdfjs/` | [pdf.js](https://github.com/mozilla/pdf.js) 6.3.289 לקריאת PDF (רישיון Apache 2.0). נטען רק כשמעלים קובץ |
+| (רשת) | [Tesseract.js](https://github.com/naptha/tesseract.js) 7.0.0 לזיהוי טקסט בתמונה (רישיון Apache 2.0). נטען מ-jsDelivr רק כשמעלים תמונה; מודל העברית נשמר בדפדפן |
 | `kiddush/` | לוח קידושים |
 | `gabbai/` | קופת בית הכנסת |
 | `community-calendar/` | יומן קהילה ואירועים חופשיים |

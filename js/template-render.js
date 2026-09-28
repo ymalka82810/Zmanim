@@ -99,6 +99,8 @@ export function slotValue(slot, v) {
     case 'title': return v.title;
     case 'parasha': return (slot.prefix || '') + v.parasha;
     case 'parashaName': return (slot.prefix || '') + v.parashaName;
+    // בשבת בלי שם מיוחד האזור נמחק (נכתב טקסט ריק על הרקע)
+    case 'special': return v.special || '';
     // בלי כתובת בהגדרות – הכתובת מהקובץ נשארת כמו שהיא
     case 'address': return v.address || null;
     case 'hebDate': {

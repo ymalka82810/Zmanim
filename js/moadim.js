@@ -3,7 +3,7 @@
  * סוג "holy" חל על לוח שבת/חג, וסוג "days" על לוח ימות השבוע או חול המועד.
  */
 
-import { toHebrew, fromHebrew, isLeap, yomTov, cholHamoed, TISHREI, KISLEV, TEVET, ADAR, ADAR2, NISAN, TAMUZ, AV } from './hebrew.js';
+import { toHebrew, fromHebrew, isLeap, yomTov, cholHamoed, parasha, TISHREI, KISLEV, TEVET, ADAR, ADAR2, NISAN, TAMUZ, AV } from './hebrew.js';
 import { dow } from './dates.js';
 
 /** [מזהה, שם, סוג, קבוצה] */
@@ -68,6 +68,25 @@ export function isMoed(id, d, il) {
     case 'rch': return isRoshChodesh(h);
     default: return false;
   }
+}
+
+/** "שבת נחמו", "שבת זכור" וכו' – השם המיוחד של השבת d, או '' כשאין לה שם כזה */
+export function specialShabbat(d, il) {
+  if (dow(d) !== 6) return '';
+  const h = toHebrew(d), y = h.y, range = (from, to) => d >= from && d <= to;
+  const rcAdar = fromHebrew(y, adar(y), 1), rcNisan = fromHebrew(y, NISAN, 1);
+  const purim = fromHebrew(y, adar(y), 14), pesach = fromHebrew(y, NISAN, 15), av9 = fromHebrew(y, AV, 9);
+  if (h.m === TISHREI && h.d >= 3 && h.d <= 9) return 'שבת שובה';
+  if (parasha(d, il) === 'בשלח') return 'שבת שירה';
+  if (range(rcAdar - 6, rcAdar)) return 'שבת שקלים';
+  if (range(purim - 7, purim - 1)) return 'שבת זכור';
+  // פרה: השבת שלפני שבת החודש
+  if (range(rcNisan - 13, rcNisan - 7)) return 'שבת פרה';
+  if (range(rcNisan - 6, rcNisan)) return 'שבת החודש';
+  if (range(pesach - 7, pesach - 1)) return 'שבת הגדול';
+  if (range(av9 - 6, av9)) return 'שבת חזון';
+  if (range(av9 + 1, av9 + 7)) return 'שבת נחמו';
+  return '';
 }
 
 /** שם מיוחד ליום חול (לכותרת העמודה בלוח השבועי), או '' */
