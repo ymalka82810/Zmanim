@@ -28,7 +28,9 @@ function gate(text, button){
   if (b) b.onclick = () => Auth.signInWithGoogle(location.href).catch(() => toast('ההתחברות נכשלה', true));
 }
 
-const fileImg = f => f.url ? `<a href="${esc(f.url)}" target="_blank" rel="noopener"><img class="luach-img" src="${esc(f.url)}" alt="${esc(f.title)}" loading="lazy"></a>` : '';
+// באפליקציית Capacitor window.open/target="_blank" לא נתמך ב-WebView; ניווט רגיל נפתח אוטומטית בדפדפן החיצוני.
+const isNativeApp = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+const fileImg = f => f.url ? `<a href="${esc(f.url)}"${isNativeApp() ? '' : ' target="_blank" rel="noopener"'}><img class="luach-img" src="${esc(f.url)}" alt="${esc(f.title)}" loading="lazy"></a>` : '';
 
 function renderMember(){
   const list = files.filter(f => f.status === 'approved');
