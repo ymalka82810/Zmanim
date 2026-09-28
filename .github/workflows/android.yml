@@ -1,0 +1,73 @@
+name: Build Android APK
+
+# הרצה ידנית מלשונית Actions עם "Run workflow".
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v4
+
+      # אסור לייצר כאן מפתח חדש: מפתח אחר = אי אפשר להתקין מעל הגרסה הקודמת.
+      - name: Restore the signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "::error::Missing ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD secrets."
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/zmanim-release.p12"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/zmanim-release.p12" >> "$GITHUB_ENV"
+
+      - run: npm ci
+      - run: npm run app:sync
+
+      # versionCode עולה בכל הרצה, כך שכל APK חדש מותקן כעדכון ושומר את נתוני האפליקציה.
+      - run: chmod +x android/gradlew
+      - run: ./gradlew assembleRelease
+        working-directory: android
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+
+      - name: Verify the APK signature
+        env:
+          EXPECTED: 7e2c2a82cb7ef3965bf384a114911d2646b6cb9b9789640d49f2258261fe005a
+        run: |
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          actual=$("$apksigner" verify --print-certs "$apk" | sed -n 's/.*SHA-256 digest: *//p' | head -1)
+          echo "expected $EXPECTED"
+          echo "actual   $actual"
+          [ "$EXPECTED" = "$actual" ] || { echo "::error::APK is not signed with the Zmanim release key."; exit 1; }
+          mv "$apk" "zmanim-1.0.${{ github.run_number }}.apk"
+          {
+            echo "### APK 1.0.${{ github.run_number }}"
+            echo ""
+            echo "Signed with the permanent key: installs over any earlier build, no uninstall."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zmanim-apk-${{ github.run_number }}
+          path: zmanim-1.0.${{ github.run_number }}.apk
+          if-no-files-found: error
