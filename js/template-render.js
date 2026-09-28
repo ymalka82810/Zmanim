@@ -292,8 +292,13 @@ function embeddedText(ctx, text, f, look, size, cx, baseline, draw) {
   const fonts = { true: cssFont(look, size, '"' + f.family + '"'), false: cssFont(look, size, f.css) };
   // LRO … PDF – כופה סדר משמאל לימין על קטע בגופן החלופי, שכבר נמצא בסדר ויזואלי
   const str = sg => sg.emb ? sg.s : '\u202D' + sg.s + '\u202C';
-  let w = 0;
-  for (const sg of segs) { ctx.font = fonts[sg.emb]; sg.w = ctx.measureText(str(sg)).width; w += sg.w; }
+  let w = 0, asc = 0, desc = 0;
+  for (const sg of segs) {
+    ctx.font = fonts[sg.emb];
+    const m = ctx.measureText(str(sg));
+    sg.w = m.width; w += sg.w;
+    asc = Math.max(asc, m.actualBoundingBoxAscent ?? size * 0.75); desc = Math.max(desc, m.actualBoundingBoxDescent ?? size * 0.25);
+  }
   if (draw) {
     ctx.save();
     ctx.direction = 'ltr'; ctx.textAlign = 'left';
@@ -301,7 +306,7 @@ function embeddedText(ctx, text, f, look, size, cx, baseline, draw) {
     for (const sg of segs) { ctx.font = fonts[sg.emb]; ctx.fillText(str(sg), x, baseline); x += sg.w; }
     ctx.restore();
   }
-  return w;
+  return { w, asc, desc };
 }
 
 /** מחלקים טקסט לעד n שורות בנקודות הרווח שבהן השורה הרחבה ביותר הכי צרה */
@@ -348,6 +353,10 @@ export async function templateCanvas(tpl, values) {
   ctx.direction = 'rtl';
   ctx.textAlign = 'center';
   const fonts = await templateFonts(tpl);
+  // התמונה המקורית, לבדיקת המקום הפנוי מעל ומתחת לכל אזור (הקנבס עצמו משתנה תוך כדי הכתיבה)
+  const src = document.createElement('canvas');
+  src.width = canvas.width; src.height = canvas.height;
+  src.getContext('2d', { willReadFrequently: true }).drawImage(img, 0, 0);
 
   const host = specialHost(tpl.slots);
   for (const s of tpl.slots) {
@@ -355,6 +364,7 @@ export async function templateCanvas(tpl, values) {
     if (text == null) continue;
     const b = s.box, st = s.style || { bg: '#fff', fg: '#000', bold: false };
     let size = (b.size || b.h * 0.72) * ((s.sizePct || 100) / 100);
+    const minSize = size * 0.6;
     const cx = b.x + b.w / 2, baseline = b.baseline ?? (b.y + b.h * 0.78);
     const f = fonts[b.font] || fonts[tpl.mainFont];
     const writeAt = textWriter(ctx, f, slotLook(s, f, st), cx);
@@ -391,11 +401,35 @@ export async function templateCanvas(tpl, values) {
         if (split) { lines = split; w = Math.max(...lines.map(ln => writeAt(ln, size, baseline, false))); }
       }
     }
-    // השורות ממורכזות סביב קו הבסיס המקורי
-    const lineGap = size * 1.15 * ((s.lineHeightPct || 100) / 100);
-    const baselines = lines.map((ln, i) => baseline + (i - (lines.length - 1) / 2) * lineGap);
+    // השורות ממורכזות סביב קו הבסיס המקורי. המרווח ביניהן – לפחות כך ששורה לא תעלה על השורה שמעליה,
+    // וכל הטקסט צריך להיכנס במקום הפנוי בין השורה שמעל האזור לשורה שמתחתיו
+    const n = lines.length, pct = s.wrap ? (s.lineHeightPct || 100) / 100 : 1;
+    const layout = sz => {
+      const ink = lines.map(ln => writeAt.ink(ln, sz));
+      const need = n > 1 ? Math.max(...ink.slice(1).map((m, i) => ink[i].desc + m.asc)) + sz * 0.08 : 0;
+      return { ink, need, gap: Math.max(sz * 1.15 * pct, need), height: g => (n - 1) * g + ink[0].asc + ink[n - 1].desc };
+    };
+    let L = layout(size), lineGap = L.gap;
+    const space = verticalRoom(src, b, Math.min(b.x, cx - w / 2), Math.max(b.x + b.w, cx + w / 2), sideBoxes(tpl, s), st.bg, size * (n + 1), size);
+    const avail = space.bottom - space.top;
+    // לא נכנס: קודם מצמצמים את המרווח בין השורות (עד שהן כמעט נוגעות), ואחר כך מקטינים את הטקסט
+    if (L.height(lineGap) > avail && n > 1) lineGap = Math.max(L.need, lineGap - (L.height(lineGap) - avail) / (n - 1));
+    if (L.height(lineGap) > avail && size > minSize) {
+      const k = Math.max(minSize / size, avail / L.height(lineGap));
+      size *= k;
+      L = layout(size);
+      lineGap = Math.max(L.need, lineGap * k);
+      w = Math.max(...lines.map(ln => writeAt(ln, size, baseline, false)));
+    }
+    const first = baseline - (n - 1) / 2 * lineGap;
+    const top0 = first - L.ink[0].asc, bottom0 = first + (n - 1) * lineGap + L.ink[n - 1].desc;
+    // הזזה קטנה למעלה או למטה, כדי לא לעלות על השורה השכנה
+    const shift = bottom0 - top0 > avail ? (space.top + space.bottom) / 2 - (top0 + bottom0) / 2
+      : top0 < space.top ? space.top - top0 : bottom0 > space.bottom ? space.bottom - bottom0 : 0;
+    const baselines = lines.map((ln, i) => first + shift + i * lineGap);
     const left = Math.min(b.x, cx - w / 2) - 2, right = Math.max(b.x + b.w, cx + w / 2) + 2;
-    const top = Math.min(b.y, baselines[0] - size) - 1, bottom = Math.max(b.y + b.h, baselines[baselines.length - 1] + size * 0.3) + 1;
+    // הרקע מכסה את הטקסט המקורי ואת הדיו של החדש, ולא יותר – כדי לא למחוק את השורה השכנה
+    const top = Math.min(b.y, baselines[0] - L.ink[0].asc - 2) - 1, bottom = Math.max(b.y + b.h, baselines[n - 1] + L.ink[n - 1].desc + 2) + 1;
     ctx.fillStyle = st.bg;
     ctx.fillRect(left, top, right - left, bottom - top);
     ctx.fillStyle = st.fg;
@@ -411,13 +445,64 @@ export async function templateCanvas(tpl, values) {
  */
 function textWriter(ctx, f, look, cx) {
   const removed = f && ((f.bold && !look.bold) || (f.italic && !look.italic));
-  if (f && f.family && !removed) return (str, sz, y, draw) => embeddedText(ctx, str, f, look, sz, cx, y, draw);
-  const css = !f ? FALLBACK : removed ? f.plainCss : f.css;
-  return (str, sz, y, draw) => {
-    ctx.font = cssFont(look, sz, css);
-    if (draw) ctx.fillText(str, cx, y);
-    return ctx.measureText(str).width;
+  let run;
+  if (f && f.family && !removed) run = (str, sz, y, draw) => embeddedText(ctx, str, f, look, sz, cx, y, draw);
+  else {
+    const css = !f ? FALLBACK : removed ? f.plainCss : f.css;
+    run = (str, sz, y, draw) => {
+      ctx.font = cssFont(look, sz, css);
+      if (draw) ctx.fillText(str, cx, y);
+      const m = ctx.measureText(str);
+      return { w: m.width, asc: m.actualBoundingBoxAscent ?? sz * 0.75, desc: m.actualBoundingBoxDescent ?? sz * 0.25 };
+    };
+  }
+  const write = (str, sz, y, draw) => run(str, sz, y, draw).w;
+  // גובה הדיו של הטקסט מעל קו הבסיס ומתחתיו: { w, asc, desc }
+  write.ink = (str, sz) => run(str, sz, 0, false);
+  return write;
+}
+
+const rgb = h => (h.length === 4 ? [1, 2, 3].map(i => h[i] + h[i]) : [1, 3, 5].map(i => h.slice(i, i + 2))).map(v => parseInt(v, 16));
+
+/**
+ * המקום הפנוי מעל האזור ומתחתיו בתמונה המקורית – עד הדיו הקרוב (שורה אחרת, קו בטבלה): { top, bottom }.
+ * עמודות של טקסט שבאותה שורה (השם שליד השעה) לא נבדקות. reach – עד כמה רחוק מחפשים
+ */
+function verticalRoom(src, b, x0, x1, side, bg, reach, size) {
+  x0 = Math.max(0, Math.floor(x0)); x1 = Math.min(src.width, Math.ceil(x1));
+  const y0 = Math.max(0, Math.floor(b.y - reach)), y1 = Math.min(src.height, Math.ceil(b.y + b.h + reach));
+  const free = { top: y0, bottom: y1 };
+  const cols = [];
+  for (let x = x0; x < x1; x++) if (!side.some(k => x >= k.x - 1 && x <= k.x + k.w + 1)) cols.push(x - x0);
+  if (cols.length < 2 || y1 - y0 < 2) return free;
+  const RW = x1 - x0, data = src.getContext('2d', { willReadFrequently: true }).getImageData(x0, y0, RW, y1 - y0).data, c = rgb(bg);
+  const ink = y => {
+    let n = 0;
+    for (const x of cols) { const i = ((y - y0) * RW + x) * 4; if (dist([data[i], data[i + 1], data[i + 2]], c) > 70 && ++n > 2) return true; }
+    return false;
   };
+  // דיו שצמוד לקצה האזור הוא עוד חלק מהטקסט המקורי (אות שיורדת מתחת לשורה), ולא השורה השכנה
+  const edge = Math.ceil(size * 0.35);
+  const scan = (from, step, end) => {
+    let y = from;
+    for (let n = 0; y !== end && n < edge && ink(y); n++) y += step;
+    for (; y !== end; y += step) if (ink(y)) return y;
+    return end;
+  };
+  const pad = Math.max(1, size * 0.06);
+  return { top: scan(Math.floor(b.y) - 1, -1, y0 - 1) + 1 + pad, bottom: scan(Math.ceil(b.y + b.h), 1, y1) - pad };
+}
+
+/** תיבות של טקסט באותה שורה של האזור, מימינו או משמאלו (לא מעליו או מתחתיו, ולא הטקסט המקורי שלו) */
+function sideBoxes(tpl, s) {
+  const b = s.box, out = [];
+  const boxes = [...tpl.slots.flatMap(o => o === s ? [s.labelBox] : [o.box, o.labelBox]), ...(tpl.candidates || []).map(c => c.box)];
+  for (const k of boxes) {
+    if (!k || k === b) continue;
+    const mid = k.y + k.h / 2, over = Math.min(k.x + k.w, b.x + b.w) - Math.max(k.x, b.x);
+    if (mid > b.y && mid < b.y + b.h && over < k.w * 0.3) out.push(k);
+  }
+  return out;
 }
 
 /**
