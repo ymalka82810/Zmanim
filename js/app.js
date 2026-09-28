@@ -3,7 +3,7 @@
  * ועותק שלהן נשמר בדפדפן. הלוחות המאושרים נשמרים בקהילה (community.js).
  */
 
-import { CITIES, BASES, WHEN, APPLIES, ROUND, FONTS, THEMES, SIZE_PARTS, SIZES, DEFAULT_CONFIG, DAY_APPLIES, BUILTIN, isBuiltin, newTemplate, designOf, activeDesign,
+import { CITIES, BASES, WHEN, WHEN_LABELS, APPLIES, ROUND, FONTS, THEMES, SIZE_PARTS, SIZES, DEFAULT_CONFIG, DAY_APPLIES, BUILTIN, isBuiltin, newTemplate, designOf, activeDesign,
   prayerBases, fontFamilies, fontsHref, themeColors, normalize, loadConfig, saveConfig, clearConfig } from './config.js';
 import { findOccasion, templateFor, periodFor, occasionParts, buildLuach, buildDaysLuach, dayPages } from './luach.js';
 import { MOADIM } from './moadim.js';
@@ -458,7 +458,9 @@ $('tz').innerHTML = zones.map(z => '<option>' + esc(z) + '</option>').join('');
 $('font').innerHTML = FONTS.map(f => '<option value="' + f[0] + '">' + esc(f[1]) + '</option>').join('');
 $('theme').innerHTML = THEMES.map(x => '<option value="' + x[0] + '">' + esc(x[1]) + '</option>').join('');
 
-const opts = (list, v) => list.map(x => '<option' + (x === v ? ' selected' : '') + '>' + esc(x) + '</option>').join('');
+const opts = (list, v) => list.map(x => Array.isArray(x)
+  ? '<option value="' + x[0] + '"' + (x[0] === v ? ' selected' : '') + '>' + esc(x[1]) + '</option>'
+  : '<option' + (x === v ? ' selected' : '') + '>' + esc(x) + '</option>').join('');
 const selTpl = () => cfg.templates.find(t => t.id === sel) || cfg.templates[0];
 const rules = () => selTpl().rules;
 
@@ -738,7 +740,7 @@ function renderRules() {
       '<input data-k="name" value="' + esc(r.name) + '" placeholder="שם התפילה או השיעור" aria-label="שם התפילה">' +
       '<button type="button" data-del="' + i + '" aria-label="מחיקת ' + esc(r.name) + '">מחיקה</button></div>' +
       '<div class="rgrid">' +
-      (days ? '' : '<div><label>מתי</label><select data-k="when">' + opts(WHEN, r.when) + '</select></div>') +
+      (days ? '' : '<div><label>מתי</label><select data-k="when">' + opts(WHEN_LABELS, r.when) + '</select></div>') +
       '<div><label>חל על</label><select data-k="applies">' + opts(days ? DAY_APPLIES : APPLIES, r.applies) + '</select></div>' +
       '<div><label>לפי</label><select data-k="base">' + baseOpts(r) + '</select></div>' +
       (kiddush || fixed

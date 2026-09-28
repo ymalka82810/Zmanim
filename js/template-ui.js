@@ -3,7 +3,7 @@
  * מה ייכתב בכל אזור (תפילה, זמן היום, כותרת, תאריך). במסמך סרוק מסמנים אזורים ידנית.
  */
 
-import { BASES, WHEN, ROUND, DAY_APPLIES, appliesOnDay, prayerBases, designOf } from './config.js';
+import { BASES, WHEN, WHEN_LABELS, ROUND, DAY_APPLIES, appliesOnDay, prayerBases, designOf } from './config.js';
 import { readFile, tokenize, detectDate, suggestSlots, textCandidates, inferRule } from './template-read.js';
 import { analyzeSlot, refineBox, templateCanvas } from './template-render.js';
 import { findOccasion, findPeriod, periodFor, buildLuach, buildDaysLuach, timesFor } from './luach.js';
@@ -160,14 +160,32 @@ function boxStyle(b) {
   return 'right:' + pct(st.W - b.x - b.w, st.W) + ';top:' + pct(b.y, st.H) + ';width:' + pct(b.w, st.W) + ';height:' + pct(b.h, st.H);
 }
 
+/** מספור האזורים לפי מיקומם בעמוד (שורה עליונה למטה, בכל שורה מימין לשמאל) ולא לפי סדר ההוספה */
+function slotRanks() {
+  const items = st.slots.map((s, i) => ({ i, x: s.box.x, y: s.box.y, h: s.box.h }));
+  items.sort((a, b) => a.y - b.y);
+  const rows = [];
+  items.forEach(it => {
+    const row = rows.find(r => Math.abs(r.y - it.y) <= it.h * 0.6);
+    if (row) { row.items.push(it); row.y = (row.y * (row.items.length - 1) + it.y) / row.items.length; }
+    else rows.push({ y: it.y, items: [it] });
+  });
+  rows.sort((a, b) => a.y - b.y);
+  const ranks = [];
+  let n = 0;
+  rows.forEach(r => { r.items.sort((a, b) => b.x - a.x); r.items.forEach(it => { ranks[it.i] = ++n; }); });
+  return ranks;
+}
+
 function renderBoxes() {
+  const ranks = slotRanks();
   let h = '';
   st.candidates.forEach((c, i) => {
     if (st.slots.some(s => s.box.x === c.box.x && s.box.y === c.box.y)) return;
     h += '<button type="button" class="tb cand" data-c="' + i + '" style="' + boxStyle(c.box) + '" title="' + esc(c.old) + '" aria-label="הוספת אזור: ' + esc(c.old) + '"></button>';
   });
   st.slots.forEach((s, i) => {
-    h += '<button type="button" class="tb slot" data-s="' + i + '" style="' + boxStyle(s.box) + '" aria-label="אזור ' + (i + 1) + '"><span>' + (i + 1) + '</span></button>';
+    h += '<button type="button" class="tb slot" data-s="' + i + '" style="' + boxStyle(s.box) + '" aria-label="אזור ' + ranks[i] + '"><span>' + ranks[i] + '</span></button>';
   });
   $('tplBoxes').innerHTML = h;
 }
@@ -244,7 +262,7 @@ function slotFields(s) {
     return '<div class="rgrid">' +
       '<div class="wide"><label>שם</label><input data-k="name" value="' + esc(s.name) + '" placeholder="למשל: מנחה"></div>' +
       (isDays() ? '<div><label>יום</label><select data-k="when">' + opts(dayOpts(), s.when) + '</select></div>'
-        : '<div><label>מתי</label><select data-k="when">' + opts(WHEN, s.when) + '</select></div>') +
+        : '<div><label>מתי</label><select data-k="when">' + opts(WHEN_LABELS, s.when) + '</select></div>') +
       '<div><label>לפי</label><select data-k="base">' + baseOpts(s) + '</select></div>' +
       (kd || fixed
         ? '<div><label>' + (kd ? 'נוסח' : 'שעה') + '</label><input data-k="offset" dir="' + (kd ? 'rtl' : 'ltr') +
@@ -294,11 +312,12 @@ function renderSlots() {
     $('tplSlots').innerHTML = '<p class="hint">לא זוהו אזורים. ' + (st.scanned ? 'לחצו "סימון אזור" וגררו על כל שעה בדף.' : '') + '</p>';
     return;
   }
+  const ranks = slotRanks();
   $('tplSlots').innerHTML = st.slots.map((s, i) =>
     '<details class="rule slot-ed" data-i="' + i + '"' + (openSlots.has(s) ? ' open' : '') + '>' +
-    '<summary><span class="num">' + (i + 1) + '</span><b class="rule-name">' + esc(slotLabel(s)) + '</b>' +
+    '<summary><span class="num">' + ranks[i] + '</span><b class="rule-name">' + esc(slotLabel(s)) + '</b>' +
     '<span class="rule-sum">' + esc(slotSum(s)) + '</span></summary>' +
-    '<div class="slot-top"><select data-k="kind" aria-label="מה יופיע באזור ' + (i + 1) + '">' + opts(KINDS, s.kind) + '</select>' +
+    '<div class="slot-top"><select data-k="kind" aria-label="מה יופיע באזור ' + ranks[i] + '">' + opts(KINDS, s.kind) + '</select>' +
     '<button type="button" class="del" data-del="' + i + '">הסרה</button></div>' + slotFields(s) + '</details>'
   ).join('');
 }
