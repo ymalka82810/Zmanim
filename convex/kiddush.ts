@@ -163,10 +163,13 @@ export const register = mutation({
       throw new ConvexError("נא למלא שם שיוצג בלוח");
     }
     const phone = clip(args.phone, 20);
+    // גבאי או רב לא צריכים לאשר רישום של עצמם
+    const selfApproved = isManager(membership.role);
     await ctx.db.insert("kiddushBookings", {
       synagogueId: args.synagogueId,
       dateKey: args.dateKey,
-      status: "pending",
+      status: selfApproved ? "approved" : "pending",
+      ...(selfApproved ? { decidedBy: userId, decidedAt: Date.now() } : {}),
       userId,
       manual: false,
       sponsorName,
@@ -182,7 +185,10 @@ export const register = mutation({
       await ctx.db.patch(membership._id, { phone });
     }
     await notify(ctx, args.synagogueId, userId, "managers", args.dateKey,
-      `בקשה חדשה לקידוש ב${clip(args.label, 80)}: ${sponsorName}`);
+      selfApproved
+        ? `${await userName(ctx, userId)} רשם קידוש ב${clip(args.label, 80)}: ${sponsorName}`
+        : `בקשה חדשה לקידוש ב${clip(args.label, 80)}: ${sponsorName}`);
+    return { status: selfApproved ? "approved" : "pending" };
   },
 });
 

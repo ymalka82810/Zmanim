@@ -289,7 +289,7 @@ function registerSheet(k){
     <div id="step2" hidden>
       <div class="card" style="background:var(--surface2)">${termsBody(curTerms())}</div>
       <label class="check"><input type="checkbox" id="fAgree"> קראתי את ההנחיות ואני מאשר אותן</label>
-      <div class="row"><button class="btn" data-act="regSubmit" data-k="${k}">שליחת הבקשה</button><button class="btn ghost" data-act="regBack">חזרה</button></div>
+      <div class="row"><button class="btn" data-act="regSubmit" data-k="${k}">${isManager()?'רישום הקידוש':'שליחת הבקשה'}</button><button class="btn ghost" data-act="regBack">חזרה</button></div>
     </div>`);
 }
 function termsVerSheet(v){
@@ -372,9 +372,9 @@ const A = {
   regBack: () => { $('#step1').hidden = false; $('#step2').hidden = true; $('#st2').classList.remove('on'); },
   regSubmit: guard(async d => {
     if (!$('#fAgree').checked) return toast('יש לאשר את ההנחיות כדי להירשם');
-    await call('kiddush:register', { dateKey:d.k, label:slotLabel(d.k),
+    const res = await call('kiddush:register', { dateKey:d.k, label:slotLabel(d.k),
       sponsorName:$('#fSponsor').value, occasion:$('#fOcc').value, phone:$('#fPhone').value, note:$('#fNote').value });
-    closeSheet(); toast('הבקשה נשלחה לאישור');
+    closeSheet(); toast(res?.status === 'approved' ? 'הקידוש נרשם ואושר' : 'הבקשה נשלחה לאישור');
   }),
   cancelMine: d => {
     const sl = slotFor(d.k, !!syn().il);
