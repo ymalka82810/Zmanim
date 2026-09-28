@@ -213,7 +213,9 @@ function kiddushRow(rule, ctx) {
   const info = ctx.kiddush && ctx.kiddush.get(toYmd(ctx.day.day));
   if (!info) return null;
   const occasion = info.occasion || '';
-  const fmt = String(rule.offset || '').trim() || '{שם}{לרגל}';
+  // הפרש או שעה שנשארו מאזור שהיה קודם תפילה ("0", "-20", "08:00") – הנוסח הרגיל
+  const raw = String(rule.offset || '').trim();
+  const fmt = !raw || /^[-+]?\d+(?::\d+)?$/.test(raw) ? '{שם}{לרגל}' : raw;
   const text = fmt
     .replace(/\{לרגל\}/g, occasion ? ' לרגל ' + occasion : '')
     .replace(/\{סיבה\}/g, occasion)

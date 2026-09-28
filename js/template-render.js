@@ -430,8 +430,14 @@ function redrawLabel(ctx, tpl, s, fonts, timeStyle) {
   const cand = (tpl.candidates || []).find(c => c.box.x === lb.x && c.box.y === lb.y);
   const text = cand ? cand.old : s.label;
   if (!text) return;
+  // טקסט רחוק מהשעה או גדול ממנה בהרבה הוא כותרת ולא השם שלה – נשאר כמו שהוא בקובץ
+  const tSize = s.box.size || s.box.h * 0.72, lSize = lb.size || lb.h * 0.72;
+  const gap = Math.max(lb.x - (s.box.x + s.box.w), s.box.x - (lb.x + lb.w));
+  if (gap > tSize * 2 || lSize > tSize * 1.25) return;
+  // תבנית שנשמרה בלי הגופן של השם: עדיף להשאיר אותו מהתמונה מאשר לכתוב אותו בגופן אחר
+  if (lb.font && !fonts[lb.font]) return;
   const st = s.labelStyle || timeStyle;
-  const size = (lb.size || lb.h * 0.72) * (s.sizePct / 100);
+  const size = lSize * (s.sizePct / 100);
   const baseline = lb.baseline ?? (lb.y + lb.h * 0.78);
   const f = fonts[lb.font] || fonts[tpl.mainFont];
   const look = slotLook({ box: lb }, f, st);

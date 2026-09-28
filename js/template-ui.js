@@ -32,6 +32,7 @@ const baseOpts = s => {
 };
 let kiddush = null;   // dateKey ← קידוש מאושר, לתצוגה המקדימה (מ-app.js)
 export function setKiddush(map) { kiddush = map; }
+const SAMPLE_KIDDUSH = { sponsorName: 'משפחת ישראלי', occasion: 'בר מצווה' };
 const oldMinutes = s => { const m = /^(\d{1,2}):(\d{2})$/.exec(s.old || ''); return m ? +m[1] * 60 + +m[2] : null; };
 /** ערך מוחלט (בדקות) של הפרש האזור, להצגה בשדה המספר */
 const offsetAbs = s => { const n = parseInt(s.offset, 10); return isNaN(n) ? '' : String(Math.abs(n)); };
@@ -357,7 +358,9 @@ function stretchPrefix(s) {
   s.prefix = all.length ? all.join(' ') + ' ' : '';
 }
 
-/** "הקידוש נתרם ע"י", "קידוש:" – הטקסט הקבוע שלפני שם התורם, או null אם לא נמצא */
+const isTimeOffset = v => /^[-+]?\d+(?::\d+)?$/.test(String(v ?? '').trim());
+
+/** "הקידוש נתרם ע"י", "קידוש:" –הטקסט הקבוע שלפני שם התורם, או null אם לא נמצא */
 function kiddushPrefix(text) {
   const m = /^(.*?(?:נתרמ[הו]?|ע["״]י|על[\s-]ידי|בחסות|באדיבות)(?:\s+(?:ע["״]י|על[\s-]ידי))?)\s+\S/.exec(text) ||
     /^([^:]*קידוש[^:]*:)\s*\S/.exec(text);
@@ -548,7 +551,7 @@ function slotFields(s) {
       '<div class="wide"><label>נוסח</label><input data-k="offset" dir="rtl" value="' + esc(s.offset) + '" placeholder="{שם}{לרגל}"></div></div>' +
       '<p class="hint">הטקסט יתמלא לפי מי שאושר לקידוש בתאריך הזה (מלוח הקידושים של הקהילה). ' +
       'אפשר להשתמש ב-{שם} (שם התורם), ב-{סיבה} (לרגל מה נתרם) וב-{לרגל} (מוסיף "לרגל ..." רק אם יש סיבה). ' +
-      'בלי תאריך מאושר, האזור לא יתמלא.</p>';
+      'בלי תאריך מאושר, האזור לא יתמלא. כשאין קידוש מאושר, התצוגה המקדימה כאן מציגה תורם לדוגמה ("משפחת ישראלי לרגל בר מצווה").</p>';
   }
   if (s.kind === 'parasha' || s.kind === 'parashaName') {
     return '<div class="rgrid"><div class="wide"><label>טקסט לפני הפרשה</label><input data-k="prefix" value="' + esc(s.prefix || '') +
@@ -692,6 +695,8 @@ $('tplSlots').addEventListener('input', e => {
     const when0 = isDays() ? 'd0' : 'כל יום';
     if (v === 'rule' && !s.base) { Object.assign(s, { when: s.when || when0, name: s.label || '', base: 'שקיעה', offset: '0', round: 'ללא' }); reinfer(s); }
     if (v === 'kiddush' && !s.name) Object.assign(s, { when: s.when || when0, name: s.label || 'קידוש', offset: s.offset || '{שם}{לרגל}' });
+    // הפרש או שעה שנשארו מתפילה ("0", "-20", "08:00") אינם נוסח של קידוש
+    if (v === 'kiddush' && isTimeOffset(s.offset)) s.offset = '{שם}{לרגל}';
     if (v === 'kiddush') { fitKiddush(s, true); schedulePreviewRefresh(); }
     if (v === 'zman' && !s.zman) Object.assign(s, { zman: 'sunset', when: s.when || when0 });
     if (v === 'gregDate' && !s.fmt) s.fmt = { sep: '/', year: 4, pad: false };
@@ -730,8 +735,8 @@ $('tplSlots').addEventListener('input', e => {
   }
   ed.querySelector('.rule-name').textContent = slotLabel(s);
   ed.querySelector('.rule-sum').textContent = slotSum(s);
-  // הטקסט השתנה – המילים בתיבות השורות מתעדכנות עם התצוגה
-  if (s.wrap) schedulePreviewRefresh();
+  // הטקסט השתנה – המילים בתיבות השורות מתעדכנות עם התצוגה. בקידוש רואים מיד את הנוסח החדש
+  if (s.wrap || s.kind === 'kiddush') schedulePreviewRefresh();
 });
 $('tplSlots').addEventListener('click', async e => {
   const lookBtn = e.target.closest('[data-look]');
@@ -883,9 +888,10 @@ function slotStyle(s) {
 
 function buildTemplate(built = builtSlots()) {
   const slots = built.filter(s => (s.kind !== 'rule' && s.kind !== 'kiddush') || s.name);
-  // רק הגופנים שבשימוש נשמרים
+  // רק הגופנים שבשימוש נשמרים – גם של השם שליד השעה, שנכתב מחדש כשמשנים את גודל האזור
   const { count, mainFont } = fontUse(slots);
-  const fonts = Object.fromEntries(Object.keys(count).map(k => [k, st.fonts[k]]));
+  const used = new Set([...Object.keys(count), ...slots.map(s => s.labelBox && s.labelBox.font).filter(k => k && st.fonts[k])]);
+  const fonts = Object.fromEntries([...used].map(k => [k, st.fonts[k]]));
   return { enabled: true, name: st.name, day: st.day, image: st.canvas.toDataURL('image/jpeg', 0.88),
     slots, candidates: st.candidates, fonts, mainFont };
 }
@@ -895,7 +901,9 @@ async function renderTemplatePreview() {
   const cfg = { ...st.cfg, rules: mergeRules(st.cfg.rules, slotRules(), $('tplRules').checked, st.tpl.kind) };
   const today = todayIn(cfg.tz);
   const occ = periodFor(st.cfgAll, st.tpl, today) || findPeriod(st.tpl.kind, today, cfg.il);
-  const values = occ.mode === 'days' ? buildDaysLuach(cfg, occ, kiddush).values : buildLuach(cfg, occ, kiddush).values;
+  // בעורך רואים איך הקידוש ייראה גם בלי קידוש מאושר לתאריך – עם תורם לדוגמה. בלוח עצמו אין דוגמה
+  const kd = { get: k => (kiddush && kiddush.get(k)) || SAMPLE_KIDDUSH };
+  const values = occ.mode === 'days' ? buildDaysLuach(cfg, occ, kd).values : buildLuach(cfg, occ, kd).values;
   const canvas = await templateCanvas(tpl, values);
   const host = specialHost(tpl.slots);
   slotTexts = new WeakMap(st.slots.map((s, i) => [s, slotText(built[i], values, host) ?? '']));
