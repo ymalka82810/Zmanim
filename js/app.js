@@ -11,7 +11,7 @@ import { luachHtml, luachText, esc } from './render.js';
 import { todayIn, toYmd } from './dates.js';
 import { luachCanvas, pngBlob, pdfBlob, stackCanvases } from './image.js';
 import { templateCanvas } from './template-render.js';
-import { editFromFile, editExisting, mergeRules } from './template-ui.js';
+import { editFromFile, editExisting, mergeRules, setKiddush } from './template-ui.js';
 import { initCommunity } from './community.js';
 import { startSync } from './settings-sync.js';
 
@@ -784,6 +784,7 @@ initCommunity({
   onManager: manageSync,
   onKiddush(map) {
     kiddush = map;
+    setKiddush(map);
     renderLuach();
   }
 });

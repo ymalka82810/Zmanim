@@ -14,7 +14,8 @@ const $ = id => document.getElementById(id);
 const KINDS = [['rule', 'תפילה או שיעור'], ['zman', 'זמן היום'], ['title', 'כותרת (שבת פרשת…)'], ['parasha', 'פרשת…'],
   ['parashaName', 'שם הפרשה בלבד'], ['hebDate', 'תאריך עברי'], ['gregDate', 'תאריך לועזי']];
 const BASE_LABELS = Object.keys(BASES);
-const ZMANIM = BASE_LABELS.filter(l => BASES[l] !== 'fixed');
+const ZMANIM = BASE_LABELS.filter(l => BASES[l] !== 'fixed' && BASES[l] !== 'kiddush');
+const isKiddush = s => BASES[s.base] === 'kiddush';
 const zmanKey = label => BASES[label];
 const zmanLabel = key => ZMANIM.find(l => BASES[l] === key) || ZMANIM[0];
 const opts = (list, v) => list.map(x => Array.isArray(x)
@@ -26,6 +27,8 @@ const baseOpts = s => {
   if (s.base && !(s.base in BASES) && names.indexOf(s.base) < 0) names.push(s.base);
   return opts(BASE_LABELS, s.base) + (names.length ? '<optgroup label="לפי תפילה">' + opts(names, s.base) + '</optgroup>' : '');
 };
+let kiddush = null;   // dateKey ← קידוש מאושר, לתצוגה המקדימה (מ-app.js)
+export function setKiddush(map) { kiddush = map; }
 const oldMinutes = s => { const m = /^(\d{1,2}):(\d{2})$/.exec(s.old || ''); return m ? +m[1] * 60 + +m[2] : null; };
 
 const DOW_LABELS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי'];
@@ -134,7 +137,7 @@ $('tplDate').addEventListener('change', () => {
 /** חישוב מחדש של הכלל לפי השעה בקובץ, היום והמתי */
 function reinfer(s) {
   const m = oldMinutes(s);
-  if (s.kind !== 'rule' || m == null || st.day == null) return;
+  if (s.kind !== 'rule' || m == null || st.day == null || isKiddush(s)) return;
   if (isDays()) {
     const c = colOf(s.when);
     if (c.day != null) Object.assign(s, inferRule(m, 'כל יום', timesFor(st.cfg, c.day), st.cfg.tz, s.name));
@@ -223,14 +226,15 @@ $('tplPage').addEventListener('pointerup', () => {
 
 function slotFields(s) {
   if (s.kind === 'rule') {
-    const fixed = s.base === 'שעה קבועה';
+    const fixed = s.base === 'שעה קבועה', kd = isKiddush(s);
     return '<div class="rgrid">' +
       '<div class="wide"><label>שם</label><input data-k="name" value="' + esc(s.name) + '" placeholder="למשל: מנחה"></div>' +
       (isDays() ? '<div><label>יום</label><select data-k="when">' + opts(dayOpts(), s.when) + '</select></div>'
         : '<div><label>מתי</label><select data-k="when">' + opts(WHEN, s.when) + '</select></div>') +
       '<div><label>לפי</label><select data-k="base">' + baseOpts(s) + '</select></div>' +
-      '<div><label>' + (fixed ? 'שעה' : 'הפרש (דקות)') + '</label><input data-k="offset" dir="ltr" value="' + esc(s.offset) + '"></div>' +
-      '<div><label>עיגול</label><select data-k="round"' + (fixed ? ' disabled' : '') + '>' + opts(ROUND, s.round) + '</select></div></div>';
+      '<div><label>' + (kd ? 'נוסח' : fixed ? 'שעה' : 'הפרש (דקות)') + '</label><input data-k="offset" dir="' + (kd ? 'rtl' : 'ltr') +
+      '" value="' + esc(s.offset) + '"' + (kd ? ' placeholder="{שם}{לרגל}"' : '') + '></div>' +
+      '<div><label>עיגול</label><select data-k="round"' + (fixed || kd ? ' disabled' : '') + '>' + opts(ROUND, s.round) + '</select></div></div>';
   }
   if (s.kind === 'zman') {
     return '<div class="rgrid">' +
@@ -269,8 +273,10 @@ $('tplSlots').addEventListener('input', e => {
   else s[k] = v;
   if (k === 'when' && s.kind === 'rule') { reinfer(s); renderSlots(); }
   if (k === 'base') {
+    const kd = isKiddush(s);
     if (v === 'שעה קבועה' && s.offset.indexOf(':') < 0) s.offset = s.old && s.old.includes(':') ? s.old : '08:00';
-    if (v !== 'שעה קבועה' && s.offset.indexOf(':') >= 0) s.offset = '0';
+    if (kd && /^-?\d+$/.test(s.offset)) s.offset = '';
+    if (!kd && v !== 'שעה קבועה' && s.offset.indexOf(':') >= 0) s.offset = '0';
     renderSlots();
   }
 });
@@ -361,7 +367,7 @@ $('tplPreview').onclick = async () => {
   const cfg = { ...st.cfg, rules: mergeRules(st.cfg.rules, slotRules(), $('tplRules').checked, st.tpl.kind) };
   const today = todayIn(cfg.tz);
   const occ = periodFor(st.cfgAll, st.tpl, today) || findPeriod(st.tpl.kind, today, cfg.il);
-  const values = occ.mode === 'days' ? buildDaysLuach(cfg, occ).values : buildLuach(cfg, occ).values;
+  const values = occ.mode === 'days' ? buildDaysLuach(cfg, occ, kiddush).values : buildLuach(cfg, occ, kiddush).values;
   const canvas = await templateCanvas(tpl, values);
   $('tplPreviewTitle').textContent = 'תצוגה מקדימה – ' + occ.title;
   $('tplPreviewImg').src = canvas.toDataURL('image/png');
