@@ -154,6 +154,9 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .check input { width: auto; transform: scale(1.2); }
 .day-checks { display: flex; flex-wrap: wrap; gap: 0 16px; }
 .day-checks .check { margin: 4px 0; font-weight: 400; }
+.rule-opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.rule-opts .chip { padding: 5px 12px; font-weight: 400; }
+.rule-opts small { opacity: .75; }
 .tpl-status { margin: 0 0 6px; font-weight: 600; color: var(--ok); }
 .tpl-occ { align-self: end; margin: 0 0 8px; }
 .tpl-fontfill { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0 12px; }

@@ -4,7 +4,7 @@
  */
 
 import { BASES, WHEN, WHEN_LABELS, ROUND, SIZES, DAY_APPLIES, appliesOnDay, prayerBases, designOf } from './config.js';
-import { readFile, tokenize, detectDate, detectHebDate, detectShulAddress, suggestSlots, textCandidates, inferRule, guessOldDay } from './template-read.js';
+import { readFile, tokenize, detectDate, detectHebDate, detectShulAddress, suggestSlots, textCandidates, ruleOptions, agreeRules, printedTimes, approxStart, guessOldDay } from './template-read.js';
 import { analyzeSlot, refineBox, templateCanvas, specialHost } from './template-render.js';
 import { findOccasion, findPeriod, periodFor, buildLuach, buildDaysLuach, timesFor } from './luach.js';
 import { toDayNum, toYmd, todayIn, dow } from './dates.js';
@@ -79,7 +79,8 @@ export async function editFromFile(file, cfgAll, tpl, onDone, onStatus) {
   st = { canvas, W: canvas.width, H: canvas.height, cfg, cfgAll, tpl, name: file.name, onDone, fonts,
     candidates: textCandidates(tokens).map(fit), scanned: !items.length, detected: detectShulAddress(tokens) };
   setDay(detectDate(tokens, docDayNum));
-  // לוח ימי חול בלי תאריך בקובץ: מזהים את הימים לפי שבוע כללי (ראשון–שישי), והשעות נשמרות כשעה קבועה עד שבוחרים תאריך
+  // לוח ימי חול בלי תאריך בקובץ: מזהים את הימים לפי שבוע כללי (ראשון–שישי). הכללים נשענים על זמני היום
+  // שמודפסים בלוח, ובלעדיהם השעות נשמרות כשעה קבועה עד שבוחרים תאריך
   const week = { mode: 'days', days: [0, 1, 2, 3, 4, 5].map(i => colOf('d' + i)) };
   let slots = suggestSlots(tokens, cfg, st.day, st.period || (isDays() ? week : null));
   // אין תאריך מפורש בקובץ: מנסים לנחש אותו לפי שם הפרשה, התאריך העברי בלי שנה והזמנים שכבר זוהו
@@ -94,6 +95,7 @@ export async function editFromFile(file, cfgAll, tpl, onDone, onStatus) {
     }
   }
   st.slots = slots.map(fit);
+  st.approx = approxStart(st.slots, cfg, isDays());
   open();
 }
 
@@ -108,6 +110,7 @@ export async function editExisting(tplObj, cfgAll, onDone) {
   st = { canvas, W: canvas.width, H: canvas.height, cfg, cfgAll, tpl: tplObj, name: tpl.name, onDone, fonts: tpl.fonts || {},
     slots: JSON.parse(JSON.stringify(tpl.slots)), candidates: tpl.candidates || [], scanned: !(tpl.candidates || []).length };
   setDay(tpl.day ?? null);
+  st.approx = approxStart(st.slots, cfg, isDays());
   // כללים קיימים: להציג את ההגדרה הנוכחית שלהם
   for (const s of st.slots) {
     if (s.kind !== 'rule') continue;
@@ -116,6 +119,9 @@ export async function editExisting(tplObj, cfgAll, onDone) {
     if (r) Object.assign(s, { base: r.base, offset: r.offset, round: r.round });
     // אזור שנשמר לפני שקידוש היה סוג אזור נפרד: מעבר לסוג "קידוש"
     if (s.base && BASES[s.base] === 'kiddush') s.kind = 'kiddush';
+    // החלופות לכלל, בלי לשנות את מה שכבר הוגדר
+    const options = ruleOpts(s);
+    if (options) s.options = options;
   }
   open();
 }
@@ -207,7 +213,11 @@ function close(result) {
 
 function renderOcc() {
   const o = st.period || (st.day != null ? findOccasion(st.day, st.cfg.il) : null);
-  $('tplOcc').textContent = !o ? 'בחרו את התאריך של הלוח הישן כדי שהאתר יזהה את הכללים.'
+  const byPrinted = st.slots && st.slots.some(s => s.options && s.options.some(x => x.printed || x.approx));
+  $('tplOcc').textContent = !o ? (byPrinted
+    ? 'הכללים זוהו לפי זמני היום שמודפסים בלוח (כלל שמסומן "משוער" – לפי זמנים קרובים לאלה שבלוח). ' +
+      'בחירת התאריך של הלוח הישן תאפשר לזהות את הכללים בדיוק.'
+    : 'בחרו את התאריך של הלוח הישן כדי שהאתר יזהה את הכללים.')
     : 'הלוח הישן: ' + o.title + (st.autoGuessed ? ' (זוהה אוטומטית לפי הפרשה והזמנים – אפשר לתקן)' : '');
 }
 
@@ -219,21 +229,57 @@ $('tplDate').addEventListener('change', () => {
   if (dow(d) === 5 && !isDays()) d++;          // יום שישי ← השבת שאחריו
   st.autoGuessed = false;
   setDay(d);
-  st.slots.forEach(reinfer);
+  reinferAll();
   renderOcc(); renderSlots();
 });
 
-/** חישוב מחדש של הכלל לפי השעה בקובץ, היום והמתי */
-function reinfer(s) {
-  const m = oldMinutes(s);
-  if (s.kind !== 'rule' || m == null || st.day == null) return;
+/**
+ * היום של אזור תפילה להסקת הכלל: הזמנים המחושבים (כשתאריך הלוח ידוע, ואם לא – משוערים לפי st.approx)
+ * והזמנים שמודפסים בלוח לאותו יום
+ */
+function ruleCtx(s) {
+  const printed = printedTimes(st.slots)[s.when];
   if (isDays()) {
     const c = colOf(s.when);
-    if (c.day != null) Object.assign(s, inferRule(m, 'כל יום', timesFor(st.cfg, c.day), st.cfg.tz, s.name));
-    return;
+    const d = c.day != null ? c.day : st.approx != null ? st.approx + c.dow : null;
+    return { when: 'כל יום', times: d != null ? timesFor(st.cfg, d) : null, printed, approx: c.day == null };
   }
-  const t = timesFor(st.cfg, s.when === 'כניסה' ? st.day - 1 : st.day);
-  Object.assign(s, inferRule(m, s.when, t, st.cfg.tz, s.name));
+  const at = st.day != null ? st.day : st.approx;
+  return { when: s.when, times: at != null ? timesFor(st.cfg, s.when === 'כניסה' ? at - 1 : at) : null, printed, approx: st.day == null };
+}
+
+/** האפשרויות לכלל של האזור לפי השעה בקובץ, היום והמתי */
+function ruleOpts(s) {
+  const m = oldMinutes(s);
+  return s.kind === 'rule' && m != null ? ruleOptions(m, ruleCtx(s), st.cfg.tz, s.name) : null;
+}
+
+/** חישוב מחדש של הכלל לפי השעה בקובץ, היום והמתי */
+function reinfer(s) {
+  const options = ruleOpts(s);
+  if (!options) return;
+  s.options = options;
+  // בלי תאריך ובלי זמנים מודפסים יש רק "שעה קבועה" – לא דורסים כלל שהמשתמש הגדיר
+  if (options.length > 1 || st.day != null) Object.assign(s, pickRule(options[0]));
+}
+
+/** כל האזורים מחדש, ובלוח ימי חול – כלל אחד לתפילה שמופיעה בכמה ימים */
+function reinferAll() {
+  st.slots.forEach(reinfer);
+  if (!isDays()) return;
+  // agreeRules בודק כל כלל מועמד מול כל אזור – היום של כל אזור מחושב פעם אחת
+  const ctxs = new Map();
+  agreeRules(st.slots, s => { if (!ctxs.has(s.when)) ctxs.set(s.when, ruleCtx(s)); return ctxs.get(s.when); }, st.cfg.tz);
+}
+
+const pickRule = o => ({ base: o.base, offset: o.offset, round: o.round });
+const sameRule = (a, b) => a.base === b.base && String(a.offset) === String(b.offset) && a.round === b.round;
+
+/** תיאור קצר של כלל: "15 דק׳ לפני שקיעה", "בשעה 08:00" */
+function ruleText(r) {
+  if (r.base === 'שעה קבועה') return 'בשעה ' + (r.offset || '');
+  const n = parseInt(r.offset, 10) || 0;
+  return (n ? Math.abs(n) + ' דק׳ ' + (n < 0 ? 'לפני ' : 'אחרי ') : '') + r.base + (r.round && r.round !== 'ללא' ? ', עיגול ' + r.round : '');
 }
 
 /* ---------- האזורים על העמוד ---------- */
@@ -419,7 +465,8 @@ function slotFields(s) {
         ? '<div><label>שעה</label><input data-k="offset" dir="ltr" value="' + esc(s.offset) + '"></div>'
         : '<div><label>הפרש (דקות)</label><div class="offset-pair"><input data-k="offsetAbs" type="number" min="0" inputmode="numeric" dir="ltr" value="' +
           esc(offsetAbs(s)) + '" placeholder="20"><select data-k="offsetDir">' + opts(['אחרי', 'לפני'], offsetDir(s)) + '</select></div></div>') +
-      '<div><label>עיגול</label><select data-k="round"' + (fixed ? ' disabled' : '') + '>' + opts(ROUND, s.round) + '</select></div></div>';
+      '<div><label>עיגול</label><select data-k="round"' + (fixed ? ' disabled' : '') + '>' + opts(ROUND, s.round) + '</select></div>' +
+      ruleChoices(s) + '</div>';
   }
   if (s.kind === 'kiddush') {
     return '<div class="rgrid">' +
@@ -441,6 +488,18 @@ function slotFields(s) {
       '<div><label>של איזה יום</label><select data-k="when">' + opts(isDays() ? dayOpts() : [['כניסה', 'ערב שבת/חג'], ['כל יום', 'שבת/חג'], ['יציאה', 'מוצאי שבת/חג']], s.when) + '</select></div></div>';
   }
   return '';
+}
+
+/**
+ * הכללים שמסבירים את השעה שבקובץ (למשל "15 דק׳ לפני שקיעה" או "שעה קבועה"), לבחירה בלחיצה.
+ * הכלל שנבחר ייקבע את השעה בשאר השבתות.
+ */
+function ruleChoices(s) {
+  if (!s.options || s.options.length < 2) return '';
+  return '<div class="wide"><label>כללים שמתאימים ל-' + esc(s.old) + ' בקובץ</label><div class="rule-opts">' +
+    s.options.map((o, j) => '<button type="button" class="chip" data-opt="' + j + '" aria-pressed="' + sameRule(o, s) + '">' +
+      esc(ruleText(o)) + (o.printed ? ' <small>(לפי הזמן שבלוח)</small>' : o.approx ? ' <small>(משוער)</small>' : '') + '</button>').join('') +
+    '</div></div>';
 }
 
 /** גודל הטקסט וריווח השורות באזור, בנפרד מהאזורים האחרים */
@@ -484,11 +543,7 @@ const slotLabel = s => (s.kind === 'rule' || s.kind === 'kiddush') ? (s.name || 
 function slotSum(s) {
   const parts = [];
   if (s.kind === 'rule') {
-    const fixed = s.base === 'שעה קבועה';
-    const n = parseInt(s.offset, 10) || 0;
-    const at = fixed ? 'בשעה ' + (s.offset || '')
-      : n ? Math.abs(n) + ' דק׳ ' + (n < 0 ? 'לפני ' : 'אחרי ') + s.base : s.base;
-    parts.push(daysLabel(s), at);
+    parts.push(daysLabel(s), ruleText(s));
   } else if (s.kind === 'kiddush') {
     parts.push(daysLabel(s));
   } else if (s.kind === 'zman') {
@@ -575,6 +630,13 @@ $('tplSlots').addEventListener('input', e => {
   ed.querySelector('.rule-sum').textContent = slotSum(s);
 });
 $('tplSlots').addEventListener('click', async e => {
+  const opt = e.target.closest('[data-opt]');
+  if (opt) {
+    const s = st.slots[+opt.closest('.slot-ed').dataset.i];
+    Object.assign(s, pickRule(s.options[+opt.dataset.opt]));
+    renderSlots();
+    return;
+  }
   const i = e.target.dataset.del;
   if (i == null) return;
   if (!await SiteDialog.confirm('להסיר את האזור מהתבנית?', { ok: 'הסרה', danger: true })) return;

@@ -4,7 +4,7 @@
  * ספריית pdf.js נטענת רק כשמעלים קובץ PDF, ו-Tesseract.js (זיהוי טקסט בתמונה) רק כשמעלים תמונה.
  */
 
-import { hm, toDayNum, DAY_MS } from './dates.js';
+import { hm, toDayNum, dow, DAY_MS } from './dates.js';
 import { PARSHIYOT, fromHebrew, toHebrew, isLeap, TISHREI, CHESHVAN, KISLEV, TEVET, SHVAT, ADAR, ADAR2, NISAN, IYYAR, SIVAN, TAMUZ, AV, ELUL } from './hebrew.js';
 import { timesFor, applyOffset, findOccasion } from './luach.js';
 
@@ -717,31 +717,173 @@ const PREFER = [
   [/ותיקין|כותיקין|נץ/, ['sunrise']]
 ];
 
-/** מציאת בסיס, הפרש ועיגול שמסבירים את השעה. name – שם התפילה (לא חובה) */
-export function inferRule(minutes, when, times, tz, name = '') {
-  const toMin = ms => { const [h, m] = hm(ms, tz).split(':').map(Number); return h * 60 + m; };
-  const bases = BASE_BY_WHEN[when].filter(k => times[k] != null).map(k => ({ k, min: toMin(times[k]), ms: times[k] }));
-  const near = bases.map(b => ({ ...b, diff: minutes - b.min })).filter(b => Math.abs(b.diff) <= 120);
+const MIN_MS = 60000;
+const toMinutes = (ms, tz) => { const [h, m] = hm(ms, tz).split(':').map(Number); return h * 60 + m; };
+const fmtHM = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+const BASE_KEY = Object.fromEntries(Object.entries(BASE_LABEL).map(([k, v]) => [v, k]));
+
+/**
+ * זמני היום שמודפסים בלוח עצמו (אזורי "זמן היום", למשל "שקיעה 19:04"), לפי ה"מתי" של כל אזור:
+ * { [when]: { [מפתח הזמן]: דקות } }. בעזרתם אפשר להסיק כלל גם בלי לדעת את תאריך הלוח הישן.
+ */
+export function printedTimes(slots) {
+  const out = {};
+  for (const s of slots || []) {
+    const m = s.kind === 'zman' ? parseHM(s.old) : null;
+    if (m == null || !s.zman) continue;
+    (out[s.when] = out[s.when] || {})[s.zman] = m;
+  }
+  return out;
+}
+
+/**
+ * זמן היום k ביום של ctx: מהזמנים המחושבים (ctx.times, כשתאריך הלוח ידוע), ואם אין – מהזמן המודפס בלוח (ctx.printed).
+ * מחזיר { min, at(הפרש, עיגול) → דקות, printed } או null.
+ * כשהתאריך ידוע עדיפים הזמנים המחושבים: לפיהם ייכתבו השעות בשבתות הבאות, כך שהכלל ישחזר בדיוק את מה שהיה בלוח.
+ */
+function baseAt(k, ctx, tz) {
+  const ms = ctx.times && ctx.times[k];
+  const p = ctx.printed && ctx.printed[k];
+  // זמנים משוערים (ctx.approx – מיום אחר שזמניו דומים) רק לזמן שלא מודפס בלוח
+  if (ms != null && !(ctx.approx && p != null)) {
+    return { min: toMinutes(ms, tz), ...(ctx.approx ? { approx: true } : {}), at: (off, round) => toMinutes(applyOffset(ms, off, round), tz) };
+  }
+  // בזמן מודפס אין שניות: העיגול ל-5 על דקות מתחילת היום זהה לעיגול על השעה
+  if (p != null) return { min: p, printed: true, at: (off, round) => applyOffset(p * MIN_MS, off, round) / MIN_MS };
+  return null;
+}
+
+/**
+ * בלי תאריך ללוח הישן: מחפשים בשנה האחרונה שבוע שבו הזמנים המחושבים מתאימים לזמנים שמודפסים בלוח
+ * (הדלקת נרות, צאת שבת…). הזמנים של אותו שבוע קרובים לזמנים של הלוח הישן, וכך אפשר להסיק כלל גם לפי זמן
+ * שלא מודפס בו – למשל מנחה בשבת לפי השקיעה של יום השבת. days – לוח ימי חול (d0 הוא יום ראשון).
+ * מחזיר את היום של השבת (בלוח ימי חול – של יום ראשון), או null כשאין התאמה.
+ */
+export function approxStart(slots, cfg, days) {
+  const anchors = (slots || []).filter(s => s.kind === 'zman' && s.zman && parseHM(s.old) != null);
+  if (!anchors.length) return null;
+  const dayFor = (when, start) => days ? start + (+String(when).slice(1) || 0) : when === 'כניסה' ? start - 1 : start;
+  // גם כמה שבועות קדימה: לוח שהוכן מראש לשבת הקרובה
+  let start = Math.floor(Date.now() / DAY_MS) + 56;
+  while (dow(start) !== (days ? 0 : 6)) start--;
+  const cache = new Map();
+  const times = d => { if (!cache.has(d)) cache.set(d, timesFor(cfg, d)); return cache.get(d); };
+  let best = null;
+  for (let w = 0; w < 61; w++) {
+    const st = start - w * 7;
+    let total = 0;
+    for (const a of anchors) {
+      const ms = times(dayFor(a.when, st))[a.zman];
+      total += ms == null ? Infinity : Math.abs(parseHM(a.old) - toMinutes(ms, cfg.tz));
+    }
+    const avg = total / anchors.length;
+    if (!best || avg < best.avg) best = { st, avg };
+  }
+  return best.avg <= 2 ? best.st : null;
+}
+
+/** השעה (בדקות) שכלל נותן ביום של ctx, או null אם הבסיס שלו לא ידוע ביום הזה */
+function ruleMinutes(r, ctx, tz) {
+  if (r.base === 'שעה קבועה') return parseHM(r.offset);
+  const b = BASE_KEY[r.base] && baseAt(BASE_KEY[r.base], ctx, tz);
+  return b ? b.at(Number(r.offset) || 0, r.round) : null;
+}
+
+/**
+ * כל הכללים שמסבירים את השעה (בדקות) – הסביר ביותר ראשון, ואחריו חלופות (בסיס אחר, או שעה קבועה).
+ * ctx: { when, times – זמני היום המחושבים (או null כשהתאריך לא ידוע), printed – זמני היום המודפסים בלוח לאותו יום }.
+ * name – שם התפילה (לא חובה). כלל שהבסיס שלו נלקח מהזמן המודפס מסומן printed.
+ */
+export function ruleOptions(minutes, ctx, tz, name = '') {
+  const when = BASE_BY_WHEN[ctx.when] ? ctx.when : 'כל יום';
+  const near = BASE_BY_WHEN[when].map(k => ({ k, b: baseAt(k, ctx, tz) })).filter(x => x.b)
+    .map(({ k, b }) => ({ k, ...b, diff: minutes - b.min })).filter(b => Math.abs(b.diff) <= 120);
+  const fixed = { base: 'שעה קבועה', offset: fmtHM(minutes), round: 'ללא' };
+  if (!near.length) return [fixed];
   const pref = when === 'כניסה' ? 'candles' : when === 'יציאה' ? 'havdalah' : null;
   const round5 = minutes % 5 === 0;
-  if (!near.length || (minutes < 12 * 60 && minutes % 15 === 0) || (when === 'כל יום' && minutes < 12 * 60 && round5)) {
-    return { base: 'שעה קבועה', offset: String(Math.floor(minutes / 60)).padStart(2, '0') + ':' + String(minutes % 60).padStart(2, '0'), round: 'ללא' };
-  }
   near.sort((a, b) => Math.abs(a.diff) - Math.abs(b.diff));
   const byName = (PREFER.find(p => p[0].test(name)) || [null, []])[1];
-  const best = byName.map(k => near.find(b => b.k === k && Math.abs(b.diff) <= 90)).find(Boolean) ||
-    near.find(b => b.k === pref && Math.abs(b.diff) <= 45) || near[0];
-  const target = best.ms + best.diff * 60000;
-  // אם השעה עגולה ל-5 והבסיס לא – מחפשים הפרש עגול עם עיגול שנותן בדיוק את השעה
-  if (round5 && best.min % 5 !== 0) {
-    const d5 = Math.round(best.diff / 5) * 5;
+  // זמן שמודפס בלוח קודם לזמן משוער: "מנחה 10 דק׳ אחרי הדלקת הנרות שבלוח" ולא "28 דק׳ לפני שקיעה משוערת"
+  const named = byName.map(k => near.find(b => b.k === k && Math.abs(b.diff) <= 90)).filter(Boolean)
+    .sort((a, b) => !!a.approx - !!b.approx);
+  const best = named[0] || near.find(b => b.k === pref && Math.abs(b.diff) <= 45) || near[0];
+  const fit = b => {
+    // בזמן משוער השעה יכולה לסטות בדקה, ולכן הפרש שקרוב בדקה למספר עגול ("39") הוא כנראה העגול ("40")
+    const d = b.approx && Math.abs(b.diff - Math.round(b.diff / 5) * 5) <= 1 ? Math.round(b.diff / 5) * 5 : b.diff;
+    const out = { base: BASE_LABEL[b.k], offset: String(d), round: 'ללא', ...(b.printed ? { printed: true } : {}), ...(b.approx ? { approx: true } : {}) };
+    if (b.approx) return out;
+    // אם השעה עגולה ל-5 והבסיס לא – מחפשים הפרש עגול עם עיגול שנותן בדיוק את השעה
+    if (!round5 || b.min % 5 === 0) return out;
+    const d5 = Math.round(b.diff / 5) * 5;
     for (const round of ['למטה ל-5', 'למעלה ל-5', 'לקרוב ל-5']) {
       for (const off of [d5, d5 - 5, d5 + 5]) {
-        if (toMin(applyOffset(best.ms, off, round)) === toMin(target)) return { base: BASE_LABEL[best.k], offset: String(off), round };
+        if (b.at(off, round) === minutes) return { ...out, offset: String(off), round };
       }
     }
+    return out;
+  };
+  const rel = [best, ...near.filter(b => b !== best)].slice(0, 3).map(fit);
+  // שעה עגולה בבוקר היא בדרך כלל שעה קבועה, והכללים נשארים כחלופה
+  const fixedFirst = (minutes < 12 * 60 && minutes % 15 === 0) || (when === 'כל יום' && minutes < 12 * 60 && round5);
+  return fixedFirst ? [fixed, ...rel] : [...rel, fixed];
+}
+
+/** מציאת בסיס, הפרש ועיגול שמסבירים את השעה. name – שם התפילה (לא חובה) */
+export function inferRule(minutes, when, times, tz, name = '') {
+  return ruleOptions(minutes, { when, times }, tz, name)[0];
+}
+
+/**
+ * כשאותה תפילה מופיעה בלוח כמה פעמים (למשל מנחה בכל יום בלוח ימי חול), מחפשים כלל אחד שמסביר את כולן:
+ * "15 דק׳ לפני השקיעה" שנותן בדיוק את השעה בכל יום עדיף על כלל נפרד לכל יום.
+ * כל אזור של תפילה צריך options (מ-ruleOptions); ctxOf(s) – ה-ctx של היום של האזור.
+ * האזורים שהכלל המשותף מסביר מקבלים אותו, והשאר נשארים עם הכלל שלהם.
+ */
+export function agreeRules(slots, ctxOf, tz) {
+  const groups = new Map();
+  for (const s of slots) {
+    const name = String(s.name || '').trim();
+    if (s.kind !== 'rule' || !name || !s.options || parseHM(s.old) == null) continue;
+    if (!groups.has(name)) groups.set(name, []);
+    groups.get(name).push(s);
   }
-  return { base: BASE_LABEL[best.k], offset: String(best.diff), round: 'ללא' };
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    const seen = new Set(), cands = [];
+    const add = o => {
+      const key = o.base + '|' + o.offset + '|' + o.round;
+      if (!seen.has(key)) { seen.add(key); cands.push(o); }
+    };
+    for (const s of list) for (const o of s.options) {
+      add(o);
+      // "15 דק׳ לפני השקיעה" שנותן 18:05 ביום אחד יכול להיות "15 לפני, עיגול למטה" שמתאים לכל הימים
+      if (o.base !== 'שעה קבועה' && o.round === 'ללא' && Number(o.offset) % 5 === 0) {
+        for (const round of ['למטה ל-5', 'למעלה ל-5', 'לקרוב ל-5']) add({ ...o, round });
+      }
+    }
+    const fits = (o, s) => ruleMinutes(o, ctxOf(s), tz) === parseHM(s.old);
+    // בשוויון: הבסיס שהאזורים מדרגים גבוה יותר (למשל השקיעה שמודפסת בלוח ולא צאת הכוכבים המשוער), ואז בלי עיגול
+    const baseRank = o => list.reduce((sum, s) => {
+      const i = s.options.findIndex(x => x.base === o.base);
+      return sum + (i < 0 ? s.options.length : i);
+    }, 0);
+    let best = null, bestKey = null;
+    for (const o of cands) {
+      const n = list.filter(s => fits(o, s)).length;
+      if (n < 2) continue;
+      const key = [-n, baseRank(o), o.round === 'ללא' ? 0 : 1];
+      const i = bestKey ? key.findIndex((v, j) => v !== bestKey[j]) : 0;
+      if (!bestKey || (i >= 0 && key[i] < bestKey[i])) { best = o; bestKey = key; }
+    }
+    if (!best) continue;
+    for (const s of list) {
+      if (!fits(best, s)) continue;
+      Object.assign(s, { base: best.base, offset: best.offset, round: best.round });
+      // הכלל המשותף מופיע ראשון ברשימת האפשרויות של האזור
+      if (!s.options.some(o => o.base === best.base && o.offset === best.offset && o.round === best.round)) s.options = [best, ...s.options];
+    }
+  }
 }
 
 const DAY_WORDS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי']
@@ -776,9 +918,6 @@ export function suggestSlots(tokens, cfg, day, period) {
   const texts = tokens.filter(t => t.kind !== 'time');
   if (period && period.mode === 'days') return suggestDaySlots(tokens, texts, cfg, period);
   const slots = [];
-  const tErev = day != null ? timesFor(cfg, day - 1) : null;
-  const tDay = day != null ? timesFor(cfg, day) : null;
-
   for (const t of tokens) {
     const box = boxOf(t);
     if (isFixedKind(t.kind)) { slots.push(fixedSlot(t, box)); continue; }
@@ -807,13 +946,20 @@ export function suggestSlots(tokens, cfg, day, period) {
 
     const zm = !PRAYER_WORDS.test(label) && ZMAN_WORDS.find(z => z[0].test(label));
     const name = label.replace(/[:\-–|]+$/g, '').trim();
-    if (zm) {
-      slots.push({ box, labelBox, kind: 'zman', zman: zm[1], when: zm[2] || when, old: t.str, label: name });
-    } else {
-      const rule = tDay ? inferRule(t.minutes, when, when === 'כניסה' ? tErev : tDay, cfg.tz, label)
-        : { base: 'שעה קבועה', offset: t.str, round: 'ללא' };
-      slots.push({ box, labelBox, kind: 'rule', when, name: name || 'תפילה', old: t.str, label: name, ...rule });
-    }
+    if (zm) slots.push({ box, labelBox, kind: 'zman', zman: zm[1], when: zm[2] || when, old: t.str, label: name });
+    else slots.push({ box, labelBox, kind: 'rule', when, name: name || 'תפילה', old: t.str, label: name });
+  }
+  // הכללים אחרי שכל זמני היום בלוח זוהו: בלי תאריך הם נשענים על הזמנים המודפסים ("מנחה 18:50" ליד "שקיעה 19:04")
+  const printed = printedTimes(slots);
+  // בלי תאריך: זמנים משוערים משבת שזמניה מתאימים לזמנים שבלוח
+  const at = day != null ? day : approxStart(slots, cfg, false);
+  const tErev = at != null ? timesFor(cfg, at - 1) : null;
+  const tDay = at != null ? timesFor(cfg, at) : null;
+  for (const s of slots) {
+    if (s.kind !== 'rule') continue;
+    const ctx = { when: s.when, times: s.when === 'כניסה' ? tErev : tDay, printed: printed[s.when], approx: day == null };
+    const options = ruleOptions(parseHM(s.old), ctx, cfg.tz, s.label);
+    Object.assign(s, options[0], { options });
   }
   return slots;
 }
@@ -867,12 +1013,26 @@ function suggestDaySlots(tokens, texts, cfg, period) {
     const zm = !PRAYER_WORDS.test(label) && ZMAN_WORDS.find(z => z[0].test(label));
     const name = label.replace(/[:\-–|]+$/g, '').trim();
     if (zm) slots.push({ box, labelBox, kind: 'zman', zman: zm[1], when: col.key, old: t.str, label: name });
-    else {
-      const rule = col.day != null ? inferRule(t.minutes, 'כל יום', timesFor(cfg, col.day), cfg.tz, label)
-        : { base: 'שעה קבועה', offset: t.str, round: 'ללא' };
-      slots.push({ box, labelBox, kind: 'rule', when: col.key, ...days, name: name || 'תפילה', old: t.str, label: name, ...rule });
-    }
+    else slots.push({ box, labelBox, kind: 'rule', when: col.key, ...days, name: name || 'תפילה', old: t.str, label: name });
   }
+  const printed = printedTimes(slots);
+  // בלי תאריך: זמנים משוערים משבוע שזמניו מתאימים לזמנים שבלוח
+  const sun = period.days.some(x => x.day != null) ? null : approxStart(slots, cfg, true);
+  const ctxs = new Map();   // לפי יום בלוח: agreeRules בודק כל כלל מועמד מול כל אזור
+  const ctxOf = s => {
+    if (ctxs.has(s.when)) return ctxs.get(s.when);
+    const c = period.days.find(x => x.key === s.when) || period.days[0];
+    const d = c.day != null ? c.day : sun != null ? sun + c.dow : null;
+    ctxs.set(s.when, { when: 'כל יום', times: d != null ? timesFor(cfg, d) : null, printed: printed[s.when], approx: c.day == null });
+    return ctxs.get(s.when);
+  };
+  for (const s of slots) {
+    if (s.kind !== 'rule') continue;
+    const options = ruleOptions(parseHM(s.old), ctxOf(s), cfg.tz, s.label);
+    Object.assign(s, options[0], { options });
+  }
+  // אותה תפילה בכמה ימים: כלל אחד שמסביר את כולם
+  agreeRules(slots, ctxOf, cfg.tz);
   return slots;
 }
 
