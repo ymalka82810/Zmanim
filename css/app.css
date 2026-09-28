@@ -167,6 +167,12 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .wrap-edit { margin-inline-start: auto; min-width: 36px; min-height: 36px; padding: 4px 8px; font-size: 1.05rem; line-height: 1;
   background: transparent; color: inherit; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; opacity: .8; }
 .wrap-edit:hover, .wrap-edit:focus-visible { opacity: 1; }
+.line-ed { align-items: flex-start; }
+.line-ed-body { flex: 1; display: grid; gap: 8px; min-width: 0; }
+.line-ed-body input[data-line-text], .line-ed-body select { width: 100%; }
+.line-ed-week { padding: 8px 10px; border-radius: 8px; background: var(--line); line-height: 1.6; }
+.line-ed-week small { display: block; opacity: .75; }
+.line-ed-scope, .line-ed-btns { display: flex; flex-wrap: wrap; gap: 8px 16px; }
 .linkish { background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }
 .look-btns { display: flex; gap: 6px; }
 .look-btns .chip { min-width: 42px; padding: 5px 10px; font-family: Georgia, "Times New Roman", serif; }

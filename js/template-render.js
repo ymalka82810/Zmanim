@@ -183,8 +183,18 @@ export function slotText(slot, v, host) {
   if (v.edits && k in v.edits) return String(v.edits[k]);
   const text = slotValue(slot, v);
   // "שבת פרשת תצוה – שבת זכור", "לשבת תצוה – זכור"
-  if (!v.special || slot.kind !== host || text == null) return text;
-  return text + ' – ' + (slot.kind === 'parashaName' ? v.special.replace(/^שבת\s+/, '') : v.special);
+  if (!v.special || slot.kind !== host || text == null) return reword(slot, text);
+  return reword(slot, text + ' – ' + (slot.kind === 'parashaName' ? v.special.replace(/^שבת\s+/, '') : v.special));
+}
+
+/**
+ * הנוסח שהגבאי שינה בשורה: slot.rewords – זוגות [מה שהיה, מה שנכתב במקומו], לפי הסדר.
+ * רק המילים שנערכו מוחלפות, כך שמה שמשתנה משבוע לשבוע (שם בעל הקידוש) ממשיך להתעדכן
+ */
+function reword(slot, text) {
+  if (text == null || !slot.rewords) return text;
+  const out = slot.rewords.reduce((t, [from, to]) => from ? t.split(from).join(to) : t, text);
+  return out.replace(/\s+/g, ' ').trim();
 }
 
 /* ---------- ציור ---------- */
@@ -333,8 +343,15 @@ function splitLines(text, measure, n) {
 export function wordLine(lines, i, count = 2) {
   return Math.min(lines && lines.length ? lines[Math.min(i, lines.length - 1)] || 0 : 0, count - 1);
 }
-/** השורות לפי הבחירה, בלי שורות ריקות. null כשהכל נשאר בשורה אחת */
+/**
+ * השורות לפי הבחירה, בלי שורות ריקות. null כשהכל נשאר בשורה אחת.
+ * נוסח שהגבאי ערך לשבוע מסוים שומר את השורות שלו בירידות שורה (\n)
+ */
 function chosenLines(text, lines, count) {
+  if (text.includes('\n')) {
+    const own = text.split('\n').map(ln => ln.trim()).filter(Boolean);
+    return own.length > 1 ? own : null;
+  }
   const out = Array.from({ length: count }, () => []);
   text.trim().split(/\s+/).forEach((w, i) => out[wordLine(lines, i, count)].push(w));
   const full = out.filter(a => a.length).map(a => a.join(' '));
@@ -514,8 +531,11 @@ export async function templateCanvas(tpl, values) {
   const host = specialHost(tpl.slots);
   const plans = [];
   for (const s of tpl.slots) {
-    const text = slotText(s, values, host);
-    if (text == null) continue;
+    const raw = slotText(s, values, host);
+    if (raw == null) continue;
+    // ירידות שורה שנשמרו בעריכה לשבוע מסוים: קובעות את השורות רק כשמותר לגלוש
+    const own = s.wrap && /\S\s*\n\s*\S/.test(raw);
+    const text = own ? raw.trim() : raw.replace(/\s*\n\s*/g, ' ').trim();
     const b = s.box, st = s.style || { bg: '#fff', fg: '#000', bold: false };
     let size = (b.size || b.h * 0.72) * ((s.sizePct || 100) / 100);
     const minSize = size * 0.6;
@@ -534,9 +554,9 @@ export async function templateCanvas(tpl, values) {
     // טקסט שתפס כמה שורות בקובץ הישן (srcLines): מחלקים לשורות בגודל המקורי, ומקטינים רק אם עדיין לא נכנס
     const multi = s.wrap && s.srcLines > 1;
     const split = w > room && multi && !chosen ? splitLines(text, str => writeAt(str, size, baseline, false), count) : null;
-    if (w > room && chosen) {
-      const cw = multi ? widest(chosen) : w;
-      if (!multi || cw > room) size = Math.max(size * 0.7, size * room / cw);
+    if ((w > room || own) && chosen) {
+      const cw = multi || own ? widest(chosen) : w;
+      if ((!multi && !own) || cw > room) size = Math.max(size * 0.7, size * room / cw);
       lines = chosen;
       w = widest(lines);
     } else if (split && widest(split) <= room) {
