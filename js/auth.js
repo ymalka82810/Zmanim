@@ -19,6 +19,13 @@ function getClient(){
   return client;
 }
 
+/* פעולות בלי טוקן (רענון, השלמת כניסה) עוברות בחיבור HTTP נפרד, כמו ב-@convex-dev/auth.
+ * ה-ConvexClient עוצר את כל הבקשות בזמן שהוא מחכה ל-fetchToken, ולכן רענון דרכו לא חוזר לעולם
+ * והדפים נתקעים על "טוען…" ברגע שהטוקן פג. */
+function unauthenticatedAction(name, args){
+  return new window.convex.ConvexHttpClient(window.CONVEX_URL).action(name, args);
+}
+
 const listeners = new Set();
 function notify(isAuthenticated){ listeners.forEach(fn => { try { fn(isAuthenticated); } catch(e){ console.error(e); } }); }
 
@@ -38,7 +45,7 @@ async function fetchToken({ forceRefreshToken }){
   const refreshToken = read(REFRESH_KEY);
   if (!refreshToken) return null;
   try {
-    const { tokens } = await getClient().action('auth:signIn', { refreshToken });
+    const { tokens } = await unauthenticatedAction('auth:signIn', { refreshToken });
     return applyTokens(tokens ?? null);
   } catch(e){
     console.warn('רענון ההתחברות נכשל', e);
@@ -67,7 +74,7 @@ async function completeSignInFromRedirect(){
   history.replaceState(null, '', url.pathname + url.search + url.hash);
   const verifier = read(VERIFIER_KEY);
   write(VERIFIER_KEY, null);
-  const { tokens } = await getClient().action('auth:signIn', { params: { code }, verifier });
+  const { tokens } = await unauthenticatedAction('auth:signIn', { params: { code }, verifier });
   applyTokens(tokens ?? null);
   return true;
 }
