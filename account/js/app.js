@@ -12,7 +12,7 @@ const roleOptions = (selected, disableRabbi) => Object.entries(ROLE)
   .filter(([v]) => v !== 'rabbi' || !disableRabbi || v === selected)
   .map(([v, t]) => `<option value="${v}" ${v === selected ? 'selected' : ''}>${t}</option>`).join('');
 
-const S = { ready:false, isAuthenticated:false, me:null, synagogues:[], invitations:[], joinCode:null, joinInfo:undefined, detail:null, members:null, pending:null, storage:null, errorLogs:null };
+const S = { ready:false, isAuthenticated:false, me:null, synagogues:[], invitations:[], joinCode:null, joinInfo:undefined, detail:null, members:null, pending:null, errorLogs:null };
 
 let toastT;
 function toast(msg){ let t = $('.toast'); if (!t){ t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role','status'); document.body.appendChild(t); } t.textContent = msg; clearTimeout(toastT); toastT = setTimeout(() => t.remove(), 3600); }
@@ -148,54 +148,16 @@ async function createSynagogue(form){
 }
 
 async function loadManagerData(id){
-  const [members, pending, storage] = await Promise.all([
+  const [members, pending] = await Promise.all([
     client.query('members:list', { synagogueId: id }).catch(() => []),
     client.query('invitations:listForSynagogue', { synagogueId: id }).catch(() => []),
-    client.query('storage:overview', { synagogueId: id }).catch(() => null),
   ]);
-  S.members = members; S.pending = pending; S.storage = storage;
-}
-
-async function refreshStorage(id){
-  try { S.storage = await client.query('storage:overview', { synagogueId: id }); } catch(e){ console.warn(e); }
-  if (S.detail && S.detail._id === id) render();
-}
-
-async function storageAction(synagogueId, name, args, confirmText, confirmOpts, done){
-  if (confirmText && !await SiteDialog.confirm(confirmText, { ...confirmOpts, within: $('#sheet') })) return;
-  try {
-    const result = await client.mutation(name, { synagogueId, ...args });
-    toast(result && result.pending ? 'הקובץ שוחזר וממתין לאישור, כי בינתיים נשלח לוח אחר לאותו תאריך' : done);
-    await refreshStorage(synagogueId);
-  } catch(e){ toast(errMsg(e)); }
-}
-
-const DANGER = { danger: true, cancel: 'ביטול' };
-function bindStorage(s){
-  const sheet = $('#sheet');
-  sheet.querySelectorAll('[data-trash]').forEach(b => b.addEventListener('click', () =>
-    storageAction(s._id, 'schedules:remove', { fileId: b.dataset.trash },
-      'להעביר את הקובץ לסל המחזור? הוא יוסתר מהקהילה, ואפשר יהיה לשחזר אותו. עד שיימחק לצמיתות הוא ממשיך לתפוס מקום.',
-      { ok: 'העברה לסל', ...DANGER }, 'הקובץ הועבר לסל המחזור')));
-  sheet.querySelectorAll('[data-restore]').forEach(b => b.addEventListener('click', () =>
-    storageAction(s._id, 'schedules:restore', { fileId: b.dataset.restore }, null, null, 'הקובץ שוחזר')));
-  sheet.querySelectorAll('[data-purge]').forEach(b => b.addEventListener('click', () =>
-    storageAction(s._id, 'schedules:purge', { fileId: b.dataset.purge },
-      'למחוק את הקובץ לצמיתות? אי אפשר יהיה לשחזר אותו.', { ok: 'מחיקה לצמיתות', ...DANGER }, 'הקובץ נמחק לצמיתות')));
-  sheet.querySelectorAll('[data-purge-design]').forEach(b => b.addEventListener('click', () =>
-    storageAction(s._id, 'storage:purgeDesign', { designId: b.dataset.purgeDesign },
-      'למחוק את העיצוב לצמיתות? אף תבנית לא משתמשת בו.', { ok: 'מחיקה לצמיתות', ...DANGER }, 'העיצוב נמחק')));
-  const box = $('#trashBox');
-  if (box) box.addEventListener('toggle', () => { S.trashOpen = box.open; });
-  const empty = $('#btnEmptyTrash');
-  if (empty) empty.addEventListener('click', () =>
-    storageAction(s._id, 'schedules:emptyTrash', {},
-      'למחוק לצמיתות את כל הקבצים שבסל המחזור? אי אפשר יהיה לשחזר אותם.', { ok: 'ריקון הסל', ...DANGER }, 'סל המחזור רוקן'));
+  S.members = members; S.pending = pending;
 }
 
 async function openDetail(id){
   refreshDetail(id);
-  S.members = null; S.pending = null; S.storage = null;
+  S.members = null; S.pending = null;
   render();
   if (S.detail && isManager(S.detail.role)){
     await loadManagerData(id);
@@ -467,9 +429,6 @@ function renderDetailSheet(){
     <h3 style="margin-top:18px">חברים</h3>
     <div id="membersList">${S.members ? renderMembers(S.members) : '<p class="muted">טוען…</p>'}</div>
 
-    <h3 style="margin-top:18px">קבצים ואחסון</h3>
-    <div id="storageBox">${S.storage ? renderStorage(S.storage) : `<p class="muted">${S.members ? 'לא ניתן לטעון את רשימת הקבצים.' : 'טוען…'}</p>`}</div>
-
     <h3 style="margin-top:18px">פרטי הקהילה</h3>
     <form id="editSynForm">
       <label class="f">שם</label><input type="text" name="name" value="${esc(s.name)}" required>
@@ -494,54 +453,7 @@ function renderDetailSheet(){
     $('#sheet').querySelectorAll('[data-cancel-invite]').forEach(b => b.addEventListener('click', () => cancelInvitation(s._id, b.dataset.cancelInvite)));
     $('#sheet').querySelectorAll('[data-role]').forEach(sel => sel.addEventListener('change', () => setRole(s._id, sel.dataset.role, sel.value)));
     $('#sheet').querySelectorAll('[data-remove]').forEach(b => b.addEventListener('click', () => removeMember(s._id, b.dataset.remove)));
-    bindStorage(s);
   }
-}
-
-const MB = 1024 * 1024;
-const fmtSize = b => b >= MB ? (b / MB).toFixed(b >= 10 * MB ? 0 : 1) + 'MB' : Math.max(1, Math.round(b / 1024)) + 'KB';
-const fmtDay = t => new Date(t).toLocaleDateString('he-IL');
-// באפליקציית Capacitor קישור רגיל נפתח בדפדפן החיצוני, ו-target="_blank" לא נתמך
-const isNativeApp = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
-const openLink = url => url ? `<a class="btn ghost" href="${esc(url)}"${isNativeApp() ? '' : ' target="_blank" rel="noopener"'}>פתיחה</a>` : '';
-
-function fileRow(f){
-  let desc, actions;
-  if (f.type === 'design'){
-    desc = `עיצוב · ${fmtSize(f.size)} · ${fmtDay(f.uploadedAt)} · ${f.usedBy.length ? 'בשימוש בתבנית ' + esc(f.usedBy.join(', ')) : 'לא בשימוש'}`;
-    actions = f.usedBy.length ? '' : `<button class="btn danger" data-purge-design="${f._id}">מחיקה לצמיתות</button>`;
-  } else if (f.deletedAt){
-    desc = `${fmtSize(f.size)} · נמחק ${fmtDay(f.deletedAt)}${f.deletedBy ? ' על ידי ' + esc(f.deletedBy) : ''}`;
-    actions = `<button class="btn sec" data-restore="${f._id}">שחזור</button><button class="btn danger" data-purge="${f._id}">מחיקה לצמיתות</button>`;
-  } else {
-    desc = `לוח ${f.status === 'approved' ? 'מאושר' : 'ממתין לאישור'} · ${fmtSize(f.size)} · ${fmtDay(f.uploadedAt)}${f.uploadedBy ? ' · ' + esc(f.uploadedBy) : ''}`;
-    actions = `<button class="btn sec" data-trash="${f._id}">לסל המחזור</button><button class="btn danger" data-purge="${f._id}">מחיקה לצמיתות</button>`;
-  }
-  return `<div class="file-row">
-    <div class="info"><div class="n">${esc(f.title)}</div><div class="e">${desc}</div></div>
-    <div class="row">${openLink(f.url)}${actions}</div>
-  </div>`;
-}
-
-function renderStorage(st){
-  const pct = Math.min(100, st.used / st.quota * 100);
-  const level = pct >= 90 ? 'full' : pct >= 70 ? 'high' : '';
-  const active = st.files.filter(f => !f.deletedAt), trash = st.files.filter(f => f.deletedAt);
-  const trashBytes = trash.reduce((sum, f) => sum + f.size, 0);
-  let html = `<div class="usage ${level}" role="meter" aria-valuemin="0" aria-valuemax="${st.quota}" aria-valuenow="${st.used}" aria-label="אחסון הקהילה">
-      <div class="usage-bar"><span style="width:${pct.toFixed(1)}%"></span></div>
-      <div class="small"><b>${fmtSize(st.used)}</b> בשימוש מתוך ${fmtSize(st.quota)} · עד ${fmtSize(st.maxSchedule)} לתמונת לוח ועד ${fmtSize(st.maxDesign)} לעיצוב</div>
-    </div>`;
-  if (level === 'full') html += `<div class="warn">האחסון של הקהילה כמעט מלא. כדי להעלות לוחות ועיצובים חדשים יש למחוק לצמיתות קבצים מיותרים.</div>`;
-  html += active.length ? active.map(fileRow).join('') : '<p class="muted small">אין קבצים.</p>';
-  if (trash.length){
-    html += `<details class="trash" id="trashBox"${S.trashOpen ? ' open' : ''}><summary>סל המחזור (${trash.length} · ${fmtSize(trashBytes)})</summary>
-      <p class="muted small">הקבצים כאן מוסתרים מהקהילה אבל עדיין תופסים מקום. הם נמחקים לצמיתות אוטומטית ${st.trashDays} יום אחרי שהועברו לסל.</p>
-      ${trash.map(fileRow).join('')}
-      <button class="btn danger" type="button" id="btnEmptyTrash" style="margin-top:8px">ריקון סל המחזור</button>
-    </details>`;
-  }
-  return html;
 }
 
 function emailStatusBadge(p){

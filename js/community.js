@@ -55,7 +55,7 @@ function renderManager(){
     (approved.length ? '<details><summary>קבצים מאושרים (' + approved.length + ')</summary>' + approved.map(row).join('') + '</details>' : '');
   $('communityFiles').querySelectorAll('[data-approve]').forEach(b => b.onclick = () => act('schedules:approve', b.dataset.approve, 'הלוח אושר ופורסם לקהילה'));
   $('communityFiles').querySelectorAll('[data-remove]').forEach(b => b.onclick = async () => {
-    if (await SiteDialog.confirm('להעביר את הקובץ לסל המחזור? אפשר לשחזר או למחוק אותו לצמיתות ב"החשבון שלי", תחת "קבצים ואחסון".', { ok: 'העברה לסל', danger: true }))
+    if (await SiteDialog.confirm('להעביר את הקובץ לסל המחזור? אפשר לשחזר אותו או למחוק אותו לצמיתות למטה, תחת "קבצים ואחסון".', { ok: 'העברה לסל', danger: true }))
       act('schedules:remove', b.dataset.remove, 'הקובץ הועבר לסל המחזור');
   });
 }
@@ -65,6 +65,82 @@ const errText = (e, fallback) => (e && typeof e.data === 'string') ? e.data : fa
 async function act(name, fileId, done){
   try { await Auth.client().mutation(name, { synagogueId: sid, fileId }); toast(done); }
   catch (e) { toast(errText(e, 'הפעולה נכשלה'), true); }
+}
+
+/* ---------- קבצים ואחסון: כל הקבצים של הקהילה, מחיקה רכה (סל המחזור) ומחיקה לצמיתות ---------- */
+
+const MB = 1024 * 1024;
+const fmtSize = b => b >= MB ? (b / MB).toFixed(b >= 10 * MB ? 0 : 1) + 'MB' : Math.max(1, Math.round(b / 1024)) + 'KB';
+const fmtDay = t => new Date(t).toLocaleDateString('he-IL');
+const openLink = url => url ? `<a class="file-open" href="${esc(url)}"${isNativeApp() ? '' : ' target="_blank" rel="noopener"'}>פתיחה</a>` : '';
+let trashOpen = false;
+
+function fileRow(f){
+  let desc, actions;
+  if (f.type === 'design'){
+    desc = `עיצוב · ${fmtSize(f.size)} · ${fmtDay(f.uploadedAt)} · ${f.usedBy.length ? 'בשימוש בתבנית ' + esc(f.usedBy.join(', ')) : 'לא בשימוש'}`;
+    actions = f.usedBy.length ? '' : `<button type="button" class="danger" data-purge-design="${f._id}">מחיקה לצמיתות</button>`;
+  } else if (f.deletedAt){
+    desc = `${fmtSize(f.size)} · נמחק ${fmtDay(f.deletedAt)}${f.deletedBy ? ' על ידי ' + esc(f.deletedBy) : ''}`;
+    actions = `<button type="button" data-restore="${f._id}">שחזור</button><button type="button" class="danger" data-purge="${f._id}">מחיקה לצמיתות</button>`;
+  } else {
+    desc = `לוח ${f.status === 'approved' ? 'מאושר' : 'ממתין לאישור'} · ${fmtSize(f.size)} · ${fmtDay(f.uploadedAt)}${f.uploadedBy ? ' · ' + esc(f.uploadedBy) : ''}`;
+    actions = `<button type="button" data-trash="${f._id}">לסל המחזור</button><button type="button" class="danger" data-purge="${f._id}">מחיקה לצמיתות</button>`;
+  }
+  return `<div class="file-row">
+    <div class="info"><div class="n">${esc(f.title)}</div><div class="hint">${desc}</div></div>
+    <div class="file-actions">${openLink(f.url)}${actions}</div>
+  </div>`;
+}
+
+function renderStorage(st){
+  const pct = Math.min(100, st.used / st.quota * 100);
+  const level = pct >= 90 ? 'full' : pct >= 70 ? 'high' : '';
+  const active = st.files.filter(f => !f.deletedAt), trash = st.files.filter(f => f.deletedAt);
+  const trashBytes = trash.reduce((sum, f) => sum + f.size, 0);
+  $('storageSummary').textContent = `· ${fmtSize(st.used)} מתוך ${fmtSize(st.quota)}`;
+  let html = `<div class="usage ${level}" role="meter" aria-valuemin="0" aria-valuemax="${st.quota}" aria-valuenow="${st.used}" aria-label="אחסון הקהילה">
+      <div class="usage-bar"><span style="width:${pct.toFixed(1)}%"></span></div>
+      <p class="hint"><b>${fmtSize(st.used)}</b> בשימוש מתוך ${fmtSize(st.quota)} · עד ${fmtSize(st.maxSchedule)} לתמונת לוח ועד ${fmtSize(st.maxDesign)} לעיצוב</p>
+    </div>`;
+  if (level === 'full') html += `<p class="storage-warn">האחסון של הקהילה כמעט מלא. כדי לשלוח לוחות ועיצובים חדשים יש למחוק לצמיתות קבצים מיותרים.</p>`;
+  html += active.length ? active.map(fileRow).join('') : '<p class="hint">אין קבצים.</p>';
+  html += `<details class="trash" id="trashBox"${trashOpen ? ' open' : ''}><summary>סל המחזור (${trash.length}${trash.length ? ' · ' + fmtSize(trashBytes) : ''})</summary>
+      <p class="hint">קבצים שהוסרו מוסתרים מהקהילה, אבל עדיין תופסים מקום עד שנמחקים לצמיתות. הם נמחקים אוטומטית ${st.trashDays} יום אחרי שהועברו לסל.</p>
+      ${trash.length ? trash.map(fileRow).join('') + '<div class="actions left"><button type="button" class="danger" id="btnEmptyTrash">ריקון סל המחזור</button></div>' : '<p class="hint">סל המחזור ריק.</p>'}
+    </details>`;
+  const box = $('storageBox');
+  box.innerHTML = html;
+  const bind = (sel, handler) => box.querySelectorAll(sel).forEach(b => b.onclick = () => handler(b));
+  bind('[data-trash]', b => storageAction('schedules:remove', { fileId: b.dataset.trash },
+    'להעביר את הקובץ לסל המחזור? הוא יוסתר מהקהילה ואפשר יהיה לשחזר אותו. עד שיימחק לצמיתות הוא ממשיך לתפוס מקום.', 'העברה לסל', 'הקובץ הועבר לסל המחזור'));
+  bind('[data-restore]', b => storageAction('schedules:restore', { fileId: b.dataset.restore }, null, null, 'הקובץ שוחזר'));
+  bind('[data-purge]', b => storageAction('schedules:purge', { fileId: b.dataset.purge },
+    'למחוק את הקובץ לצמיתות? אי אפשר יהיה לשחזר אותו.', 'מחיקה לצמיתות', 'הקובץ נמחק לצמיתות'));
+  bind('[data-purge-design]', b => storageAction('storage:purgeDesign', { designId: b.dataset.purgeDesign },
+    'למחוק את העיצוב לצמיתות? אף תבנית לא משתמשת בו.', 'מחיקה לצמיתות', 'העיצוב נמחק'));
+  bind('#btnEmptyTrash', () => storageAction('schedules:emptyTrash', {},
+    'למחוק לצמיתות את כל הקבצים שבסל המחזור? אי אפשר יהיה לשחזר אותם.', 'ריקון הסל', 'סל המחזור רוקן'));
+  $('trashBox').ontoggle = () => { trashOpen = $('trashBox').open; };
+  if (level === 'full') $('storagePanel').open = true;
+}
+
+async function storageAction(name, args, confirmText, okText, done){
+  if (confirmText && !await SiteDialog.confirm(confirmText, { ok: okText, danger: true })) return;
+  try {
+    const result = await Auth.client().mutation(name, { synagogueId: sid, ...args });
+    toast(result && result.pending ? 'הקובץ שוחזר וממתין לאישור, כי בינתיים נשלח לוח אחר לאותו תאריך' : done);
+  } catch (e) { toast(errText(e, 'הפעולה נכשלה'), true); }
+}
+
+let unsubscribeStorage = null;
+function watchStorage(on){
+  if (!on || unsubscribeStorage){
+    if (!on && unsubscribeStorage){ unsubscribeStorage(); unsubscribeStorage = null; }
+    return;
+  }
+  unsubscribeStorage = Auth.client().onUpdate('storage:overview', { synagogueId: sid }, renderStorage,
+    () => { $('storageBox').innerHTML = '<p class="hint">לא ניתן לטעון את רשימת הקבצים.</p>'; });
 }
 
 async function submitCurrent(){
@@ -89,6 +165,7 @@ async function submitCurrent(){
 
 function subscribe(id){
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+  watchStorage(false);
   if (unsubscribeKiddush) { unsubscribeKiddush(); unsubscribeKiddush = null; }
   sid = id;
   unsubscribe = Auth.client().onUpdate('schedules:list', { synagogueId: id }, data => {
@@ -96,6 +173,7 @@ function subscribe(id){
     const manager = role === 'gabbai' || role === 'rabbi';
     onManager(manager ? id : null);
     show(manager ? 'app' : 'member');
+    watchStorage(manager);
     if (manager) { $('communityRole').textContent = ROLE[role]; renderManager(); } else renderMember();
   }, e => { onManager(null); gate(esc(errText(e, 'לא ניתן לטעון את לוח הזמנים של הקהילה.')), `<a class="btn-link" href="${ACCOUNT_URL}">לחשבון שלי</a>`); });
   unsubscribeKiddush = Auth.client().onUpdate('kiddush:board', { synagogueId: id }, data => {
@@ -113,6 +191,7 @@ async function load(){
     onManager(null);
     if (unsubscribe) { unsubscribe(); unsubscribe = null; }
     if (unsubscribeKiddush) { unsubscribeKiddush(); unsubscribeKiddush = null; }
+    watchStorage(false);
     return gate('כדי לראות את לוח הזמנים של הקהילה יש להתחבר עם חשבון Google.', '<button type="button" class="primary btn-google" id="gateSignIn">כניסה עם Google</button>');
   }
   let synagogues = [];

@@ -305,3 +305,23 @@ button[aria-pressed="true"] { background: linear-gradient(135deg, var(--blue), v
 .chip-join { display: inline-flex; align-items: stretch; }
 .chip-join .chip { border-start-end-radius: 0; border-end-end-radius: 0; padding-inline-end: 10px; }
 .chip-split { border-start-start-radius: 0; border-end-start-radius: 0; border-start-end-radius: 18px; border-end-end-radius: 18px; padding: 0 11px; margin-inline-start: 1px; background: var(--blue-2); color: var(--on-accent); border-color: transparent; font-weight: 400; }
+
+/* קבצים ואחסון של הקהילה */
+.storage-panel { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
+.storage-panel > summary { cursor: pointer; font-weight: 700; color: var(--blue); }
+.storage-panel > summary .hint { font-weight: 400; }
+.usage { margin: 10px 0; }
+.usage-bar { height: 10px; border-radius: 999px; background: var(--soft); border: 1px solid var(--line); overflow: hidden; }
+.usage-bar span { display: block; height: 100%; background: var(--ok); border-radius: inherit; }
+.usage.high .usage-bar span { background: var(--gold); }
+.usage.full .usage-bar span { background: var(--danger); }
+.storage-warn { background: var(--note); color: var(--danger); border-radius: 10px; padding: 8px 12px; font-weight: 600; font-size: .9rem; }
+.file-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.file-row .info { flex: 1 1 220px; min-width: 0; }
+.file-row .info .n { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-row .hint { margin: 0; }
+.file-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.file-actions button { padding: 5px 10px; font-size: .85rem; }
+.storage-panel .trash { margin-top: 12px; }
+.storage-panel .trash > summary { cursor: pointer; font-weight: 700; }
+.file-open { color: var(--blue); font-weight: 700; font-size: .85rem; padding: 5px 6px; }

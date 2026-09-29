@@ -108,18 +108,3 @@ input[type=text],select{width:100%;border:1px solid var(--line);background:var(-
 .invite-box{display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:.9rem;overflow:hidden}
 .invite-box code{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:ltr;text-align:left}
 
-/* קבצים ואחסון של הקהילה */
-.usage{margin:6px 0 10px}
-.usage-bar{height:10px;border-radius:999px;background:var(--surface2);border:1px solid var(--line);overflow:hidden}
-.usage-bar span{display:block;height:100%;background:var(--free);border-radius:inherit}
-.usage.high .usage-bar span{background:var(--pend)}
-.usage.full .usage-bar span{background:var(--danger)}
-.usage .small{margin-top:4px}
-.file-row{display:flex;align-items:center;gap:8px 10px;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--line)}
-.file-row:last-of-type{border-bottom:0}
-.file-row .info{flex:1 1 200px;min-width:0}
-.file-row .info .n{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.file-row .info .e{color:var(--muted);font-size:.82rem}
-.file-row .btn{padding:6px 10px;font-size:.85rem}
-.trash{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
-.trash summary{cursor:pointer;font-weight:700}
