@@ -64,7 +64,15 @@
   </section>
 
   <section id="view-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
-    <div class="panel">
+    <nav class="tabs sub-tabs" role="tablist" aria-label="חלקי ההגדרות" id="settingsTabs">
+      <button role="tab" data-pane="shul" aria-selected="true">בית הכנסת</button>
+      <button role="tab" data-pane="rules" aria-selected="false">זמני התפילות</button>
+      <button role="tab" data-pane="design" aria-selected="false">עיצוב מלוח קיים</button>
+      <button role="tab" data-pane="font" aria-selected="false">גופן וגדלים</button>
+      <button role="tab" data-pane="backup" aria-selected="false">גיבוי</button>
+    </nav>
+
+    <div class="panel" data-panes="shul">
       <h2>בית הכנסת</h2>
       <div class="field"><label for="shul">שם בית הכנסת</label><input id="shul" autocomplete="off"></div>
       <div class="field"><label for="address">כתובת</label><input id="address" autocomplete="off" placeholder="למשל: רח׳ הרב קוק 3"></div>
@@ -90,7 +98,7 @@
         </select></div>
     </div>
 
-    <div class="panel">
+    <div class="panel" data-panes="rules design font">
       <h2>תבניות</h2>
       <p class="hint">לכל תבנית יש זמני תפילות ועיצוב משלה. בוחרים תבנית כדי לערוך אותה.</p>
       <div class="tpl-list" id="tplList" aria-label="תבניות"></div>
@@ -109,7 +117,7 @@
       <div id="tplInfo" class="tpl-info"></div>
     </div>
 
-    <div class="panel">
+    <div class="panel" data-panes="rules">
       <h2>זמני התפילות – <span id="rulesTplName"></span></h2>
       <div id="rules"></div>
       <button type="button" id="addRule">הוספת תפילה או שיעור</button>
@@ -126,7 +134,7 @@
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel" data-panes="design">
       <h2>עיצוב מלוח קיים – <span id="designTplName"></span></h2>
       <p class="hint" id="designShared" hidden></p>
       <p class="hint">רוצים שהלוח ייראה כמו הלוח שאתם מכירים? מעלים קובץ PDF או תמונה של לוח ישן, והאתר יחליף בו רק את השעות והתאריכים. הוא גם יזהה ממנו את זמני התפילות. הלוח יתווסף לתבניות התצוגה של הקהילה, וכל תבנית מאותו סוג תוכל להשתמש בו.</p>
@@ -158,7 +166,7 @@
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel" data-panes="font">
       <h2>עיצוב, גופן וגדלים – <span id="fontTplName"></span></h2>
       <label id="layoutsLabel">תבנית תצוגה</label>
       <div class="lay-pick" id="layouts" role="group" aria-labelledby="layoutsLabel"></div>
@@ -178,12 +186,12 @@
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel" data-panes="shul">
       <h2>הודעה בתחתית הלוח</h2>
       <textarea id="notes" rows="2" aria-label="הודעה בתחתית הלוח"></textarea>
     </div>
 
-    <div class="panel">
+    <div class="panel" data-panes="backup">
       <h2>גיבוי</h2>
       <p class="hint">ההגדרות נשמרות בקהילה, ומתעדכנות אצל כל הגבאים והרב בכל מכשיר ודפדפן. אפשר גם לשמור קובץ גיבוי.</p>
       <div class="actions left">

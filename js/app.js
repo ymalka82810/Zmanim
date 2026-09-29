@@ -56,6 +56,20 @@ $('tab-luach').onclick = () => showTab('luach');
 $('tab-settings').onclick = () => showTab('settings');
 $('goSettings').onclick = () => showTab('settings');
 
+/* לשוניות בתוך ההגדרות. לוח התבניות מופיע בכל לשונית שתלויה בתבנית שנבחרה */
+const PANE_KEY = 'zmanim.settingsPane';
+function showPane(name) {
+  for (const b of $('settingsTabs').querySelectorAll('[data-pane]')) b.setAttribute('aria-selected', String(b.dataset.pane === name));
+  for (const p of $('view-settings').querySelectorAll('[data-panes]')) p.hidden = !p.dataset.panes.split(' ').includes(name);
+  try { localStorage.setItem(PANE_KEY, name); } catch (e) { /* אין גישה לאחסון */ }
+}
+$('settingsTabs').onclick = e => { const b = e.target.closest('[data-pane]'); if (b) showPane(b.dataset.pane); };
+{
+  let pane = 'shul';
+  try { pane = localStorage.getItem(PANE_KEY) || pane; } catch (e) { /* אין גישה לאחסון */ }
+  showPane($('settingsTabs').querySelector(`[data-pane="${pane}"]`) ? pane : 'shul');
+}
+
 const boardTpl = () => cfg.templates.find(t => t.id === board) || cfg.templates[0];
 
 /** מעבר לתבנית אחרת בלוח. day – היום שממנו מחפשים את הלוח, או null ללוח הקרוב */
@@ -235,6 +249,7 @@ $('luach').addEventListener('click', e => {
   sel = board;
   renderTemplates();
   showTab('settings');
+  showPane('rules');
 });
 
 $('prevOcc').onclick = () => stepLuach(-1);
