@@ -688,13 +688,13 @@ function renderLayouts() {
     '<div class="lay-thumb" aria-hidden="true">' + thumb + '</div><b>' + esc(name) + '</b><small>' + esc(about) + '</small></button>';
   // בלי "הצג עוד" – התבניות הראשונות, ותמיד גם התבנית שנבחרה
   const shown = LAYOUTS.filter(([id], i) => moreLayouts || i < LAYOUTS_SHOWN || id === t.layout);
-  $('layoutsMore').textContent = moreLayouts ? 'הצג פחות תבניות' : 'הצג עוד תבניות';
+  $('layoutsMore').textContent = moreLayouts ? 'הצג פחות עיצובים' : 'הצג עוד עיצובים';
   $('layoutsMore').setAttribute('aria-expanded', String(moreLayouts));
   $('layouts').innerHTML =
     shown.map(([id, name, about]) => card('data-layout="' + id + '"', !active && id === t.layout, '<div class="luach"></div>', name, about)).join('') +
     uploadedDesigns(t).map(x => card('data-design="' + esc(x.id) + '"', active === x.id, '<img src="' + esc(x.design.image) + '" alt="">',
       x === t ? 'הלוח שהועלה לתבנית הזו' : 'הלוח של "' + x.name + '"', 'לוח שהועלה בקהילה: ' + x.design.name)).join('') +
-    card('data-upload="1"', false, '<span class="lay-plus">+</span>', 'העלאת לוח משלכם', 'PDF או תמונה של לוח ישן. הוא יתווסף לתבניות של הקהילה');
+    card('data-upload="1"', false, '<span class="lay-plus">+</span>', 'העלאת לוח משלכם', 'PDF או תמונה של לוח ישן. הוא יתווסף לעיצובים של הקהילה');
   $('layouts').querySelectorAll('.lay-card[data-layout]').forEach(c => {
     const el = c.querySelector('.luach');
     applyDesign(el, t, c.dataset.layout);
@@ -749,12 +749,10 @@ $('sizes').addEventListener('input', e => {
 
 /**
  * התבניות שאפשר לייבא מהן. עיצוב מלוח ישן – רק מתבנית מאותו סוג, כי האזורים שלו בנויים לפי סוג הלוח.
- * part='ref' – שיוך לעיצוב של תבנית אחרת בלי עותק, ולכן רק תבנית שהעיצוב שמור בה עצמה.
  */
 function importSources(part) {
   const t = selTpl();
   if (part === 'design') return cfg.templates.filter(x => x !== t && x.kind === t.kind && designOf(cfg, x));
-  if (part === 'ref') return cfg.templates.filter(x => x !== t && x.kind === t.kind && x.design && !x.design.ref);
   return cfg.templates.filter(x => x !== t);
 }
 function closeImport(box) {
@@ -765,20 +763,15 @@ function closeImport(box) {
 function openImport(box) {
   const part = box.dataset.part, t = selTpl(), list = importSources(part), hint = box.querySelector('.imp-hint');
   if (!list.length) {
-    hint.textContent = part === 'design' || part === 'ref'
-      ? 'אין תבנית אחרת מאותו סוג (' + (t.kind === 'days' ? 'ימי חול' : 'שבת או חג') + ') שיש לה עיצוב מלוח ישן.'
+    hint.textContent = part === 'design'
+      ? 'אין תבנית אחרת מאותו סוג (' + (t.kind === 'days' ? 'ימי חול' : 'שבת או חג') + ') שיש לה לוח שהועלה.'
       : 'אין תבניות אחרות.';
     hint.hidden = false;
     return;
   }
-  box.querySelector('.imp-from').innerHTML = list.map(x => '<option value="' + esc(x.id) + '">' + (part === 'ref' ? '' : 'מ') + esc(x.name) + '</option>').join('');
+  box.querySelector('.imp-from').innerHTML = list.map(x => '<option value="' + esc(x.id) + '">מ' + esc(x.name) + '</option>').join('');
   box.querySelector('.imp-open').hidden = true;
   box.querySelector('.imp-form').hidden = false;
-  if (part === 'ref') {
-    hint.textContent = 'העיצוב לא ישוכפל: שתי התבניות ישתמשו באותו קובץ, וזמני התפילות בו יילקחו מכל תבנית בנפרד. ' +
-      'אפשר לכבות אותו כאן בלי להשפיע על התבנית השנייה.';
-    hint.hidden = false;
-  }
   if (part === 'rules') {
     hint.textContent = 'בייבוא בין לוח של שבת/חג ללוח של ימי חול, "מתי" ו"חל על" מתאימים את עצמם לסוג הלוח. כדאי לעבור על הזמנים אחרי הייבוא.';
     hint.hidden = false;
@@ -805,11 +798,6 @@ async function doImport(box) {
     const list = convertRules(src.rules, t.kind);
     t.rules = box.querySelector('.imp-how').value === 'add' ? mergeRules(t.rules, list, false, t.kind) : list;
     toast('הזמנים יובאו מ' + src.name);
-  } else if (part === 'ref') {
-    // שיוך בלי עותק: התבנית מצביעה על העיצוב של src, כך שהלוח שלה נראה כמו הלוח הישן בלי להכפיל את הקובץ במכשיר
-    t.design = { ref: src.id, enabled: true };
-    if (!store()) { t.design = null; toast('לא ניתן לשמור במכשיר הזה', true); return; }
-    toast('העיצוב של "' + src.name + '" ישמש גם ב"' + t.name + '", עם זמני התפילות של "' + t.name + '"');
   } else if (part === 'design') {
     const d = designOf(cfg, src);
     if (designOf(cfg, t) && !await SiteDialog.confirm('להחליף את העיצוב של "' + t.name + '" בעיצוב של "' + src.name + '"?', { ok: 'החלפה' })) return;
@@ -1078,19 +1066,19 @@ bind('cols', v => { selTpl().cols = Number(v); renderLayouts(); });
 
 function renderTemplateStatus() {
   const t = selTpl(), d = designOf(cfg, t), shared = !!(t.design && t.design.ref);
+  const src = shared ? cfg.templates.find(x => x.id === t.design.ref) : t;
+  const lay = LAYOUTS.find(x => x[0] === t.layout) || LAYOUTS[0];
+  $('designCurrent').textContent = 'העיצוב הנבחר: ' + (activeDesign(cfg, t)
+    ? (shared ? 'הלוח של "' + src.name + '"' : 'הלוח שהועלה לתבנית הזו') + ' – לוח שהועלה בקהילה'
+    : lay[1] + ' – לוח של המערכת');
   $('tplStatus').hidden = !d;
-  $('tplUseWrap').hidden = !d;
   $('tplEdit').hidden = !d;
   $('tplRemove').hidden = !d;
   $('designShared').hidden = !(d && shared);
   $('tplUpload').textContent = d ? 'העלאת לוח אחר' : 'העלאת לוח ישן (PDF או תמונה)';
-  // שיוך לעיצוב של תבנית אחרת מוצע רק לתבנית בלי עיצוב משלה, כשיש ממה לשייך
-  document.querySelector('.imp[data-part="ref"]').hidden = !!t.design || !importSources('ref').length;
   if (d) {
     $('tplStatus').textContent = 'קובץ: ' + d.name + ' (' + d.slots.length + ' אזורים)';
-    $('tplUse').checked = !!activeDesign(cfg, t);
     if (shared) {
-      const src = cfg.templates.find(x => x.id === t.design.ref);
       $('designShared').textContent = 'העיצוב משותף עם התבנית "' + src.name + '". עריכה או העלאה כאן יוצרות עיצוב נפרד לתבנית הזו.';
     }
   }
@@ -1163,11 +1151,6 @@ $('tplRemove').onclick = async () => {
     for (const x of cfg.templates) if (x.design && x.design.ref === t.id) x.design = { ...t.design, enabled: x.design.enabled !== false };
   }
   t.design = null; fill(); changed();
-};
-$('tplUse').onchange = () => {
-  // בעיצוב משותף ההפעלה נשמרת בתבנית עצמה, כך שאפשר לכבות אותו רק בחגים למשל
-  selTpl().design.enabled = $('tplUse').checked;
-  renderLayouts(); changed();
 };
 
 /* ---------- גיבוי ---------- */

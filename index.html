@@ -69,7 +69,7 @@
     <nav class="tabs sub-tabs" role="tablist" aria-label="חלקי ההגדרות" id="settingsTabs">
       <button role="tab" data-pane="shul" aria-selected="true">בית הכנסת</button>
       <button role="tab" data-pane="rules" aria-selected="false">זמני התפילות</button>
-      <button role="tab" data-pane="design" aria-selected="false">עיצוב מלוח קיים</button>
+      <button role="tab" data-pane="design" aria-selected="false">עיצוב הלוח</button>
       <button role="tab" data-pane="font" aria-selected="false">גופן וגדלים</button>
       <button role="tab" data-pane="backup" aria-selected="false">שמירה וגיבוי</button>
     </nav>
@@ -137,25 +137,18 @@
     </div>
 
     <div class="panel" data-panes="design">
-      <h2>עיצוב מלוח קיים – <span id="designTplName"></span></h2>
+      <h2>עיצוב הלוח – <span id="designTplName"></span></h2>
+      <p class="tpl-status" id="designCurrent"></p>
+      <p class="hint">בוחרים את עיצוב הלוח: אחד מלוחות המערכת, או לוח שהועלה בקהילה. רוצים שהלוח ייראה כמו הלוח שאתם מכירים? מעלים קובץ PDF או תמונה של לוח ישן, והאתר יחליף בו רק את השעות והתאריכים. הוא גם יזהה ממנו את זמני התפילות. הלוח יתווסף לעיצובים של הקהילה, וכל תבנית מאותו סוג תוכל להשתמש בו.</p>
+      <div class="lay-pick" id="layouts" role="group" aria-label="עיצוב הלוח"></div>
+      <button type="button" class="link lay-more" id="layoutsMore" aria-controls="layouts" aria-expanded="false">הצג עוד עיצובים</button>
       <p class="hint" id="designShared" hidden></p>
-      <p class="hint">רוצים שהלוח ייראה כמו הלוח שאתם מכירים? מעלים קובץ PDF או תמונה של לוח ישן, והאתר יחליף בו רק את השעות והתאריכים. הוא גם יזהה ממנו את זמני התפילות. הלוח יתווסף לתבניות התצוגה של הקהילה, וכל תבנית מאותו סוג תוכל להשתמש בו.</p>
       <p id="tplStatus" class="tpl-status" hidden></p>
-      <label class="check" id="tplUseWrap" hidden><input type="checkbox" id="tplUse"> להשתמש בעיצוב מהקובץ</label>
       <div class="actions left">
         <button type="button" id="tplUpload">העלאת לוח ישן (PDF או תמונה)</button>
         <input type="file" id="tplFile" accept="application/pdf,.pdf,image/*" hidden>
         <button type="button" id="tplEdit" hidden>עריכת התבנית</button>
         <button type="button" class="danger" id="tplRemove" hidden>הסרת העיצוב</button>
-      </div>
-      <div class="imp" data-part="ref" hidden>
-        <button type="button" class="link imp-open">להשתמש בעיצוב של תבנית אחרת</button>
-        <div class="imp-form" hidden>
-          <select class="imp-from" aria-label="התבנית שמשתמשים בעיצוב שלה"></select>
-          <button type="button" class="primary imp-ok">שיוך</button>
-          <button type="button" class="imp-cancel">ביטול</button>
-        </div>
-        <p class="hint imp-hint" hidden></p>
       </div>
       <div class="imp" data-part="design">
         <button type="button" class="link imp-open">ייבוא מתבנית אחרת</button>
@@ -169,21 +162,18 @@
     </div>
 
     <div class="panel" data-panes="font">
-      <h2>עיצוב, גופן וגדלים – <span id="fontTplName"></span></h2>
-      <label id="layoutsLabel">תבנית תצוגה</label>
-      <div class="lay-pick" id="layouts" role="group" aria-labelledby="layoutsLabel"></div>
-      <button type="button" class="link lay-more" id="layoutsMore" aria-controls="layouts" aria-expanded="false">הצג עוד תבניות</button>
+      <h2>גופן וגדלים – <span id="fontTplName"></span></h2>
       <div class="field"><label for="theme">ערכת צבעים</label><select id="theme"></select></div>
       <div class="field"><label for="font">גופן הלוח</label><select id="font"></select></div>
       <div class="sizes" id="sizes"></div>
       <p class="hint" id="fontSample">שבת פרשת בראשית · מנחה 17:25</p>
-      <p class="hint">חל על הלוח שהאתר מעצב. בעיצוב מלוח קיים נכתבים הגופן, הצבעים והגודל מהקובץ עצמו.</p>
+      <p class="hint">חל על לוחות המערכת. בלוח שהועלה נכתבים הגופן, הצבעים והגודל מהקובץ עצמו.</p>
       <div class="sizes">
         <div><label for="paper">גודל הדף</label><select id="paper"></select></div>
         <div><label for="orient">כיוון הדף</label><select id="orient"></select></div>
         <div id="colsField"><label for="cols">חלוקה לעמודות</label><select id="cols"></select></div>
       </div>
-      <p class="hint">להדפסה ולקובץ ה-PDF, גם בעיצוב מלוח קיים. ב-A3 הלוח מודפס מוגדל, כך שהוא ממלא את הדף. בחלוקה לעמודות הקטעים של השבת או החג (ערב שבת, יום השבת, מוצאי שבת) מוצגים זה לצד זה – מתאים במיוחד לדף לרוחב.</p>
+      <p class="hint">להדפסה ולקובץ ה-PDF, גם בלוח שהועלה. ב-A3 הלוח מודפס מוגדל, כך שהוא ממלא את הדף. בחלוקה לעמודות הקטעים של השבת או החג (ערב שבת, יום השבת, מוצאי שבת) מוצגים זה לצד זה – מתאים במיוחד לדף לרוחב.</p>
       <div class="imp" data-part="font">
         <button type="button" class="link imp-open">ייבוא מתבנית אחרת</button>
         <div class="imp-form" hidden>
