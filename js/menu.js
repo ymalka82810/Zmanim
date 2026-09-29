@@ -42,6 +42,7 @@ const css = `
 .sm-open .sm-drawer{transform:none}
 .sm-drawer h2{margin:4px 10px 12px;font-size:.85rem;font-weight:600;color:#5d6b82}
 .sm-drawer a{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 14px;border-radius:10px;color:inherit;text-decoration:none;font-size:1.05rem;font-weight:600}
+.sm-drawer a[hidden]{display:none}
 .sm-drawer a:hover{background:#eef3fa}
 .sm-drawer a[aria-current="page"]{background:#e3e9f2;color:#2c4a7c}
 .sm-theme{display:flex;margin:0 10px;padding:3px;border:1px solid #d6dce8;border-radius:999px}
