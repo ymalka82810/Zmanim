@@ -42,8 +42,14 @@ async function loadAll(){
     client.query('invites:preview', { code: S.joinCode }).then(info => { S.joinInfo = info; render(); }).catch(() => { S.joinInfo = null; render(); });
   }
   if (S.isAuthenticated){
+    // מה שהשרת ענה בכניסה הקודמת מוצג מיד, ומתעדכן כשמגיעה תשובה חדשה
+    const me = A.cached('users:me', {}), synagogues = A.cached('synagogues:mine', {});
+    if (me && synagogues){
+      S.me = me; S.synagogues = synagogues; S.invitations = A.cached('invitations:mine', {}) || [];
+      render();
+    }
     try {
-      const [me] = await Promise.all([client.query('users:me', {}), refreshSynagogues(), refreshInvitations()]);
+      const [me] = await Promise.all([A.query('users:me', {}), refreshSynagogues(), refreshInvitations()]);
       if (me === null){
         /* יש טוקן ב-localStorage אבל השרת לא מזהה אותו (פג תוקף/בוטל) - מתייחסים כאל מנותק */
         A.clearAuth();
@@ -89,11 +95,11 @@ async function signOut(){
 }
 
 async function refreshSynagogues(){
-  S.synagogues = await client.query('synagogues:mine', {});
+  S.synagogues = await A.query('synagogues:mine', {});
   const active = A.activeSynagogueId();
   if (!S.synagogues.some(s => s._id === active)) A.setActiveSynagogueId(S.synagogues.length ? S.synagogues[0]._id : null);
 }
-async function refreshInvitations(){ S.invitations = await client.query('invitations:mine', {}); }
+async function refreshInvitations(){ S.invitations = await A.query('invitations:mine', {}); }
 async function refreshErrorLogs(){
   try { S.errorLogs = await client.query('errorLog:recent', {}); render(); }
   catch(e){ console.warn(e); }

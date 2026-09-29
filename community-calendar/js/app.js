@@ -39,14 +39,21 @@ async function boot(){
 
 async function loadSynagogues(){
   if (!S.signedIn){ S.ready = true; S.synagogues = []; attach(null); return render(); }
+  // הקהילות מהכניסה הקודמת מוצגות מיד, והרשימה מהשרת מחליפה אותן כשהיא מגיעה
+  const saved = Auth.cached('synagogues:mine', {});
+  if (saved) useSynagogues(saved);
   let synagogues = [];
   try {
-    const [me, list] = await Promise.all([Auth.client().query('users:me', {}), Auth.client().query('synagogues:mine', {})]);
+    const [me, list] = await Promise.all([Auth.query('users:me', {}), Auth.query('synagogues:mine', {})]);
     if (me === null) S.signedIn = false;
     synagogues = list;
-  } catch(e){ console.warn(e); }
+  } catch(e){ console.warn(e); if (saved) return; }
+  if (!S.signedIn){ S.synagogues = synagogues; S.ready = true; attach(null); return render(); }
+  useSynagogues(synagogues);
+}
+
+function useSynagogues(synagogues){
   S.synagogues = synagogues;
-  if (!S.signedIn){ S.ready = true; attach(null); return render(); }
   S.ready = true;
   let sid = Auth.activeSynagogueId();
   if (!S.synagogues.some(s => s._id === sid)){ sid = S.synagogues[0]?._id || null; Auth.setActiveSynagogueId(sid); }
@@ -61,11 +68,11 @@ function attach(sid){
   unsubBoard = unsubSchedule = unsubFund = unsubEvents = null;
   S.sid = sid; S.board = null; S.boardError = null; S.schedule = null; S.fund = null; S.events = [];
   if (!sid) return;
-  unsubBoard = Auth.client().onUpdate('kiddush:board', { synagogueId: sid }, board => { S.board = board; render(); },
+  unsubBoard = Auth.watch('kiddush:board', { synagogueId: sid }, board => { S.board = board; render(); },
     e => { console.warn(e); S.boardError = errMsg(e); render(); });
-  unsubSchedule = Auth.client().onUpdate('schedules:list', { synagogueId: sid }, data => { S.schedule = data; render(); }, () => {});
-  unsubFund = Auth.client().onUpdate('fund:ledger', { synagogueId: sid }, data => { S.fund = data; render(); }, () => {});
-  unsubEvents = Auth.client().onUpdate('events:list', { synagogueId: sid }, data => { S.events = data; render(); }, () => {});
+  unsubSchedule = Auth.watch('schedules:list', { synagogueId: sid }, data => { S.schedule = data; render(); }, () => {});
+  unsubFund = Auth.watch('fund:ledger', { synagogueId: sid }, data => { S.fund = data; render(); }, () => {});
+  unsubEvents = Auth.watch('events:list', { synagogueId: sid }, data => { S.events = data; render(); }, () => {});
 }
 
 function errMsg(e){ return (e && typeof e.data === 'string') ? e.data : 'הפעולה לא נשמרה. נסו שוב.'; }

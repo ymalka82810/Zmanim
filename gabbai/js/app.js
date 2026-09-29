@@ -383,7 +383,7 @@ function subscribe(id){
   sid=id;
   if(!id){stage="noCommunity";return render()}
   stage="loading";render();
-  unsubscribe=Auth.client().onUpdate("fund:ledger",{synagogueId:id},d=>{
+  unsubscribe=Auth.watch("fund:ledger",{synagogueId:id},d=>{
     role=d.role;txs=d.txs;members=d.members;notifications=d.notifications||[];
     settings=Object.assign({},settings,d.settings||{},{synName:d.synagogue.name,israel:d.synagogue.il?1:0});
     hcache.clear();stage="ready";render();
@@ -392,12 +392,18 @@ function subscribe(id){
 function signedOut(){if(unsubscribe){unsubscribe();unsubscribe=null}sid=null;stage="signedOut";render()}
 async function load(){
   if(!Auth.isAuthenticated()) return signedOut();
+  // הקהילות מהכניסה הקודמת מוצגות מיד, והרשימה מהשרת מחליפה אותן כשהיא מגיעה
+  const saved=Auth.cached("synagogues:mine",{});
+  if(saved) useSynagogues(saved);
   let synagogues=[];
   try{
-    const [me,list]=await Promise.all([Auth.client().query("users:me",{}),Auth.client().query("synagogues:mine",{})]);
+    const [me,list]=await Promise.all([Auth.query("users:me",{}),Auth.query("synagogues:mine",{})]);
     if(me===null) return signedOut();
     synagogues=list;
-  }catch(e){console.warn(e)}
+  }catch(e){console.warn(e);if(saved) return}
+  useSynagogues(synagogues);
+}
+function useSynagogues(synagogues){
   let id=Auth.activeSynagogueId();
   if(!synagogues.some(s=>s._id===id)){id=synagogues[0]?synagogues[0]._id:null;Auth.setActiveSynagogueId(id)}
   if(id!==sid||!unsubscribe) subscribe(id);

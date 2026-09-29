@@ -1,10 +1,12 @@
 /**
  * Service worker: מאפשר לאתר לעבוד בלי אינטרנט.
- * קבצי האתר: קודם מהרשת (כדי לקבל עדכונים), ואם אין חיבור – מהמטמון.
- * הבקשה לרשת עוקפת את המטמון של הדפדפן, כי GitHub Pages מורה לשמור קבצים 10 דקות.
+ * קבצי האתר: מהמטמון, בלי לחכות לרשת, כדי שכל דף ייפתח מיד. CACHE משתנה בכל שינוי בתוכן הקבצים
+ * (tools/build-sw.js), ולכן גרסה חדשה של האתר מתקינה service worker חדש שמוריד את כל הקבצים מחדש,
+ * והיא מוצגת מהטעינה הבאה. ההורדה עוקפת את המטמון של הדפדפן, כי GitHub Pages מורה לשמור קבצים 10 דקות.
+ * בשרת המקומי (npm start) ובאפליקציה הקבצים נמצאים במכשיר, ולכן שם קודם מהרשת, כדי ששינוי יופיע מיד.
  * גופנים: מהמטמון, ואם אין – מהרשת.
  */
-const CACHE = 'luach-8a77438cb3';
+const CACHE = 'luach-94356bb808';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/app.js', 'js/astro.js', 'js/auth.js', 'js/community.js', 'js/config.js', 'js/convex-config.js', 'js/dates.js', 'js/dialog.js', 'js/font-fill.js', 'js/hebrew.js', 'js/image.js', 'js/luach.js', 'js/menu.js', 'js/moadim.js', 'js/render.js', 'js/settings-sync.js', 'js/template-read.js', 'js/template-render.js', 'js/template-ui.js', 'js/theme.js', 'js/zmanim.js',
@@ -17,8 +19,12 @@ const SHELL = [
   'community-calendar/', 'community-calendar/index.html', 'community-calendar/js/app.js'
 ];
 
+const LOCAL = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE)
+    .then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' }))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
@@ -33,10 +39,14 @@ self.addEventListener('fetch', e => {
   const url = new URL(req.url);
 
   if (url.origin === location.origin) {
-    e.respondWith(fetch(req, { cache: 'no-cache' }).then(res => {
+    const fromNetwork = () => fetch(req, { cache: 'no-cache' }).then(res => {
       if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
       return res;
-    }).catch(() => caches.match(req, { ignoreSearch: true })));
+    });
+    const fromCache = () => caches.open(CACHE).then(c => c.match(req, { ignoreSearch: true }));
+    e.respondWith(LOCAL
+      ? fromNetwork().catch(fromCache)
+      : fromCache().then(hit => hit || fromNetwork()));
   } else if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') {
     e.respondWith(caches.match(req).then(hit => hit || fetch(req).then(res => {
       const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy));

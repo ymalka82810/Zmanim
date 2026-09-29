@@ -63,12 +63,20 @@ async function boot(){
 
 async function loadSynagogues(){
   if (!S.signedIn){ S.ready = true; S.synagogues = []; attach(null); return renderAll(); }
+  // הקהילות מהכניסה הקודמת מוצגות מיד, והרשימה מהשרת מחליפה אותן כשהיא מגיעה
+  const saved = Auth.cached('synagogues:mine', {});
+  if (saved) useSynagogues(saved);
   try {
-    const [me, synagogues] = await Promise.all([Auth.client().query('users:me', {}), Auth.client().query('synagogues:mine', {})]);
+    const [me, synagogues] = await Promise.all([Auth.query('users:me', {}), Auth.query('synagogues:mine', {})]);
     if (me === null) S.signedIn = false;
     S.synagogues = synagogues;
-  } catch(e){ console.warn(e); S.synagogues = []; }
+  } catch(e){ console.warn(e); if (saved) return; S.synagogues = []; }
   if (!S.signedIn){ S.ready = true; attach(null); return renderAll(); }
+  useSynagogues(S.synagogues);
+}
+
+function useSynagogues(synagogues){
+  S.synagogues = synagogues;
   S.ready = true;
   let sid = Auth.activeSynagogueId();
   if (!S.synagogues.some(s => s._id === sid)){ sid = S.synagogues[0]?._id || null; Auth.setActiveSynagogueId(sid); }
@@ -82,7 +90,7 @@ function attach(sid){
   if (unsubscribe){ unsubscribe(); unsubscribe = null; }
   S.sid = sid; S.board = null; S.boardError = null; termsInitRequested = false;
   if (!sid) return;
-  unsubscribe = Auth.client().onUpdate('kiddush:board', { synagogueId: sid }, board => {
+  unsubscribe = Auth.watch('kiddush:board', { synagogueId: sid }, board => {
     S.board = board;
     if (!board.terms.length && isManager() && !termsInitRequested){
       termsInitRequested = true;

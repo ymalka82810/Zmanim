@@ -12,7 +12,8 @@ const PAGES = [
   { path: '',                   title: 'לוח זמנים' },
   { path: 'kiddush/',           title: 'לוח קידושים' },
   { path: 'gabbai/',            title: 'קופת בית הכנסת' },
-  { path: 'account/',           title: 'החשבון שלי' }
+  { path: 'account/',           title: 'החשבון שלי' },
+  { path: 'community-calendar/', title: 'יומן קהילה', hidden: true } /* לא במגירה, רק כותרת הפס */
 ];
 const here = location.pathname.replace(/index\.html$/, '');
 const current = PAGES.slice().reverse().find(p => here === new URL(p.path, ROOT).pathname) || PAGES[0];
@@ -138,6 +139,7 @@ function build(){
   layer.innerHTML = `<div class="sm-shade"></div><nav class="sm-drawer" id="sm-drawer" aria-label="דפי האתר"><h2>בית הכנסת</h2></nav>`;
   const nav = layer.querySelector('nav');
   for (const p of PAGES){
+    if (p.hidden) continue;
     const a = document.createElement('a');
     a.href = new URL(p.path, ROOT).href;
     a.textContent = p.title;

@@ -139,7 +139,7 @@ function watchStorage(on){
     if (!on && unsubscribeStorage){ unsubscribeStorage(); unsubscribeStorage = null; }
     return;
   }
-  unsubscribeStorage = Auth.client().onUpdate('storage:overview', { synagogueId: sid }, renderStorage,
+  unsubscribeStorage = Auth.watch('storage:overview', { synagogueId: sid }, renderStorage,
     () => { $('storageBox').innerHTML = '<p class="hint">לא ניתן לטעון את רשימת הקבצים.</p>'; });
 }
 
@@ -168,7 +168,7 @@ function subscribe(id){
   watchStorage(false);
   if (unsubscribeKiddush) { unsubscribeKiddush(); unsubscribeKiddush = null; }
   sid = id;
-  unsubscribe = Auth.client().onUpdate('schedules:list', { synagogueId: id }, data => {
+  unsubscribe = Auth.watch('schedules:list', { synagogueId: id }, data => {
     role = data.role; files = data.files;
     const manager = role === 'gabbai' || role === 'rabbi';
     onManager(manager ? id : null);
@@ -176,7 +176,7 @@ function subscribe(id){
     watchStorage(manager);
     if (manager) { $('communityRole').textContent = ROLE[role]; renderManager(); } else renderMember();
   }, e => { onManager(null); gate(esc(errText(e, 'לא ניתן לטעון את לוח הזמנים של הקהילה.')), `<a class="btn-link" href="${ACCOUNT_URL}">לחשבון שלי</a>`); });
-  unsubscribeKiddush = Auth.client().onUpdate('kiddush:board', { synagogueId: id }, data => {
+  unsubscribeKiddush = Auth.watch('kiddush:board', { synagogueId: id }, data => {
     // נוסח הגבאי ("קידוש והתוועדות לאחר התפילה", "ע״י") – להודעת הקידוש בלוח המודפס
     const wording = { heading: data.synagogue.kiddushHeading || '', by: data.synagogue.kiddushBy || '' };
     const map = new Map();
@@ -194,12 +194,19 @@ async function load(){
     watchStorage(false);
     return gate('כדי לראות את לוח הזמנים של הקהילה יש להתחבר עם חשבון Google.', '<button type="button" class="primary btn-google" id="gateSignIn">כניסה עם Google</button>');
   }
+  // הקהילות מהכניסה הקודמת מוצגות מיד, והרשימה מהשרת מחליפה אותן כשהיא מגיעה
+  const saved = Auth.cached('synagogues:mine', {});
+  if (saved) useSynagogues(saved);
   let synagogues = [];
   try {
-    const [me, list] = await Promise.all([Auth.client().query('users:me', {}), Auth.client().query('synagogues:mine', {})]);
+    const [me, list] = await Promise.all([Auth.query('users:me', {}), Auth.query('synagogues:mine', {})]);
     if (me === null) { Auth.clearAuth(); return load(); }
     synagogues = list;
-  } catch (e) { console.warn(e); }
+  } catch (e) { console.warn(e); if (saved) return; }
+  useSynagogues(synagogues);
+}
+
+function useSynagogues(synagogues){
   let id = Auth.activeSynagogueId();
   if (!synagogues.some(s => s._id === id)) { id = synagogues[0] ? synagogues[0]._id : null; Auth.setActiveSynagogueId(id); }
   if (!id) { onManager(null); return gate('עדיין לא הצטרפת לקהילה. אפשר להצטרף דרך הזמנה מהגבאי או לפתוח קהילה חדשה.', `<a class="btn-link" href="${ACCOUNT_URL}">לחשבון שלי</a>`); }

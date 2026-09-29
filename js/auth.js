@@ -29,6 +29,52 @@ function unauthenticatedAction(name, args){
 const listeners = new Set();
 function notify(isAuthenticated){ listeners.forEach(fn => { try { fn(isAuthenticated); } catch(e){ console.error(e); } }); }
 
+/* ---------- תשובות אחרונות מהשרת, שמורות במכשיר ----------
+ * כל דף מציג מיד את מה שהשרת ענה בכניסה הקודמת, ומתעדכן כשמגיעה תשובה חדשה.
+ * הן שייכות למשתמש המחובר, ולכן נמחקות ביציאה ובכניסה עם חשבון אחר. */
+const CACHE_PREFIX = 'site.cache.';
+const CACHE_MAX_CHARS = 500000;   // תשובה גדולה יותר לא נשמרת, כדי לא למלא את האחסון של הדפדפן
+const cacheKey = (name, args) => CACHE_PREFIX + name + ':' + JSON.stringify(args || {});
+
+function cached(name, args){
+  const raw = read(cacheKey(name, args));
+  if (raw == null) return undefined;
+  try { return JSON.parse(raw); } catch(e){ return undefined; }
+}
+
+function remember(name, args, value){
+  const text = JSON.stringify(value);
+  write(cacheKey(name, args), text != null && text.length <= CACHE_MAX_CHARS ? text : null);
+}
+
+function clearCache(){
+  try {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); if (k && k.startsWith(CACHE_PREFIX)) keys.push(k); }
+    keys.forEach(k => localStorage.removeItem(k));
+  } catch(e){ /* אין גישה לאחסון */ }
+}
+
+/* כמו client.query, ושומר את התשובה */
+async function query(name, args){
+  const value = await getClient().query(name, args);
+  remember(name, args, value);
+  return value;
+}
+
+/* כמו client.onUpdate: קודם התשובה השמורה (אם יש), ואחר כך כל תשובה מהשרת */
+function watch(name, args, onData, onError){
+  let live = false, stopped = false;
+  const unsub = getClient().onUpdate(name, args, value => {
+    live = true;
+    remember(name, args, value);
+    onData(value);
+  }, onError);
+  const hit = cached(name, args);
+  if (hit !== undefined) Promise.resolve().then(() => { if (!live && !stopped) onData(hit); });
+  return () => { stopped = true; unsub(); };
+}
+
 function applyTokens(tokens){
   if (tokens){
     write(TOKEN_KEY, tokens.token);
@@ -37,6 +83,7 @@ function applyTokens(tokens){
   }
   write(TOKEN_KEY, null);
   write(REFRESH_KEY, null);
+  clearCache();
   return null;
 }
 
@@ -147,6 +194,7 @@ async function completeSignInFromRedirect(){
   const verifier = read(VERIFIER_KEY);
   write(VERIFIER_KEY, null);
   const { tokens } = await unauthenticatedAction('auth:signIn', { params: { code }, verifier });
+  clearCache();   // אולי נכנסו עם חשבון אחר
   applyTokens(tokens ?? null);
   /* ה-client כבר נוצר בטעינת הדף וקרא טוקן ריק; בלי זה הוא נשאר לא מחובר עד רענון הדף */
   if (client) client.setAuth(fetchToken, notify);
@@ -173,6 +221,9 @@ window.SiteAuth = {
   setActiveSynagogueId(id){ write(ACTIVE_KEY, id); },
   isAuthenticated(){ return !!read(TOKEN_KEY); },
   onChange(fn){ listeners.add(fn); return () => listeners.delete(fn); },
+  cached,
+  query,
+  watch,
   signInWithGoogle,
   completeSignInFromRedirect,
   signOut,
