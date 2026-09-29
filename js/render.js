@@ -1,4 +1,4 @@
-/** הצגת הלוח: HTML לתצוגה ולהדפסה, וטקסט לשיתוף (וואטסאפ וכו'). */
+/** הצגת הלוח: HTML לתצוגה ולהדפסה. */
 
 export const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -27,13 +27,6 @@ function fields(l) {
     s.zmanim.forEach((z, j) => { add(s.zk[j] + '.name', z, 0); add(s.zk[j] + '.val', z, 1); });
   });
   return f;
-}
-
-/** הטקסט בלוח l לפי המפתח שלו, או null אם אין כזה. המפתחות נשארים לפי השמות שחושבו, גם אחרי עריכה */
-export function baseText(l, key) {
-  const { values, ...rest } = l;
-  const x = fields(JSON.parse(JSON.stringify(rest))).find(x => x.key === key);
-  return x ? String(x.obj[x.prop] ?? '') : null;
 }
 
 /**
@@ -136,23 +129,3 @@ export function luachHtml(l, editing, cols = 1) {
   return h;
 }
 
-export function luachText(l) {
-  const lines = ['*' + l.title + '*'];
-  if (l.shul) lines.push(l.shul);
-  lines.push(l.dates);
-  if (l.type === 'poster') { if (l.body) lines.push('', l.body); }
-  else if (l.type === 'days') {
-    l.days.forEach((d, i) => {
-      const items = r => r.filter(x => x.cells[i] != null).map(x => x.name + ' ' + x.cells[i]);
-      lines.push('', '*' + d.name + ' ' + d.date + '*' + (d.special ? ' – ' + d.special : ''));
-      const rows = items(l.rows), z = items(l.zmanim);
-      if (rows.length) lines.push(rows.join(' · '));
-      if (z.length) lines.push('_' + z.join(' · ') + '_');
-    });
-  } else for (const s of l.sections) {
-    lines.push('', '*' + s.title + '* – ' + s.date);
-    for (const r of s.rows) lines.push(r.name + ' ' + r.text);
-    if (s.zmanim.length) lines.push('_' + s.zmanim.map(z => z[0] + ' ' + z[1]).join(' · ') + '_');
-  }
-  return lines.join('\n');
-}

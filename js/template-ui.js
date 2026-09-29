@@ -11,6 +11,7 @@ import { toDayNum, toYmd, todayIn, dow } from './dates.js';
 import { esc } from './render.js';
 import { fontsToFill, fontLabel, isUnnamed, canReadLocalFonts, isPhone, localFontsPermission, fillFromLocal, fillFromFile } from './font-fill.js';
 import { openTextEdit } from './text-edit.js';
+import { placer } from './template-place.js';
 
 const $ = id => document.getElementById(id);
 const KINDS = [['text', 'טקסט שכותבים כאן'], ['rule', 'תפילה או שיעור'], ['kiddush', 'קידוש (מלוח הקידושים)'], ['zman', 'זמן היום'], ['title', 'כותרת (שבת פרשת…)'], ['parasha', 'פרשת…'],
@@ -75,13 +76,24 @@ function setDay(d) {
 
 /** פתיחת העורך מקובץ חדש, לתבנית tpl */
 export async function editFromFile(file, cfgAll, tpl, onDone, onStatus) {
-  const { canvas, items, fonts, docDayNum } = await readFile(file, onStatus);
+  openRead(await readFile(file, onStatus), file.name, cfgAll, tpl, onDone);
+}
+
+/**
+ * פתיחת העורך מלוח של המערכת (luachTextCanvas ב-image.js), כדי לערוך אותו כמו לוח שהועלה.
+ * day – היום של הלוח. השעות בו מחושבות מזמני התפילות של התבנית, ולכן הכללים נשארים כמו שהם
+ */
+export function editFromBoard(read, name, cfgAll, tpl, onDone, day) {
+  openRead(read, name, cfgAll, tpl, onDone, day);
+}
+
+function openRead({ canvas, items, fonts, docDayNum }, name, cfgAll, tpl, onDone, day = null) {
   const tokens = tokenize(items);
   const cfg = { ...cfgAll, rules: tpl.rules };
   const fit = x => ({ ...x, box: refineBox(canvas, x.box), ...(x.labelBox ? { labelBox: refineBox(canvas, x.labelBox) } : {}) });
-  st = { canvas, W: canvas.width, H: canvas.height, cfg, cfgAll, tpl, name: file.name, onDone, fonts,
+  st = { canvas, W: canvas.width, H: canvas.height, cfg, cfgAll, tpl, name, onDone, fonts,
     candidates: textCandidates(tokens).map(fit), scanned: !items.length, detected: detectShulAddress(tokens) };
-  setDay(detectDate(tokens, docDayNum));
+  setDay(day ?? detectDate(tokens, docDayNum));
   // לוח ימי חול בלי תאריך בקובץ: מזהים את הימים לפי שבוע כללי (ראשון–שישי). הכללים נשענים על זמני היום
   // שמודפסים בלוח, ובלעדיהם השעות נשמרות כשעה קבועה עד שבוחרים תאריך
   const week = { mode: 'days', days: [0, 1, 2, 3, 4, 5].map(i => colOf('d' + i)) };
@@ -99,7 +111,24 @@ export async function editFromFile(file, cfgAll, tpl, onDone, onStatus) {
   }
   st.slots = slots.map(fit);
   st.approx = approxStart(st.slots, cfg, isDays());
+  if (day != null) keepRules();
   open();
+}
+
+/** אזורי התפילות לפי ההגדרה הנוכחית שלהן בתבנית, עם החלופות לכל כלל */
+function keepRules() {
+  const cfg = st.cfg;
+  for (const s of st.slots) {
+    if (s.kind !== 'rule') continue;
+    const r = isDays() ? cfg.rules.find(x => x.name === s.name && appliesOnDay(x.applies, colOf(s.when)))
+      : cfg.rules.find(x => x.name === s.name && x.when === s.when);
+    if (r) Object.assign(s, { base: r.base, offset: r.offset, round: r.round });
+    // אזור שנשמר לפני שקידוש היה סוג אזור נפרד: מעבר לסוג "קידוש"
+    if (s.base && BASES[s.base] === 'kiddush') s.kind = 'kiddush';
+    // החלופות לכלל, בלי לשנות את מה שכבר הוגדר
+    const options = ruleOpts(s);
+    if (options) s.options = options;
+  }
 }
 
 /** פתיחת העורך לעיצוב הקיים של התבנית tplObj */
@@ -114,23 +143,12 @@ export async function editExisting(tplObj, cfgAll, onDone) {
     slots: JSON.parse(JSON.stringify(tpl.slots)), candidates: tpl.candidates || [], scanned: !(tpl.candidates || []).length };
   setDay(tpl.day ?? null);
   st.approx = approxStart(st.slots, cfg, isDays());
-  // כללים קיימים: להציג את ההגדרה הנוכחית שלהם
-  for (const s of st.slots) {
-    if (s.kind !== 'rule') continue;
-    const r = isDays() ? cfg.rules.find(x => x.name === s.name && appliesOnDay(x.applies, colOf(s.when)))
-      : cfg.rules.find(x => x.name === s.name && x.when === s.when);
-    if (r) Object.assign(s, { base: r.base, offset: r.offset, round: r.round });
-    // אזור שנשמר לפני שקידוש היה סוג אזור נפרד: מעבר לסוג "קידוש"
-    if (s.base && BASES[s.base] === 'kiddush') s.kind = 'kiddush';
-    // החלופות לכלל, בלי לשנות את מה שכבר הוגדר
-    const options = ruleOpts(s);
-    if (options) s.options = options;
-  }
+  keepRules();
   open();
 }
 
 function open() {
-  $('tplTitle').textContent = 'עיצוב מלוח קיים – ' + st.tpl.name;
+  $('tplTitle').textContent = 'עריכת הלוח – ' + st.tpl.name;
   $('tplDateLabel').textContent = isDays() ? 'תאריך מתוך הלוח הישן' : 'תאריך הלוח הישן';
   $('tplImg').src = st.canvas.toDataURL('image/png');
   $('tplImg').style.aspectRatio = st.W + ' / ' + st.H;
@@ -340,7 +358,7 @@ function unionBox(a, b) {
 function shownBox(s) {
   const v = st.view, e = v && v.slots.get(s);
   const moved = b => b && v ? { ...b, y: v.toView(b.y) } : b;
-  if (!e || (resize && resize.s === s)) return { box: moved(s.box), label: moved(s.labelBox) };
+  if (!e || (resize && resize.s === s) || (move && move.s === s)) return { box: moved(s.box), label: moved(s.labelBox) };
   // מסגרת קצת רחבה מהדיו, כדי שיהיה נוח ללחוץ עליה
   const pad = b => { const k = Math.max(2, Math.min(b.h, b.w) * 0.12); return { x: b.x - k, y: b.y - k, w: b.w + 2 * k, h: b.h + 2 * k }; };
   return { box: e.ink ? pad(e.ink) : e.box, label: e.labelInk ? pad(e.labelInk) : e.labelBox };
@@ -351,7 +369,7 @@ function renderBoxes() {
   let h = '';
   const same = (a, b) => a && a.x === b.x && a.y === b.y;
   st.candidates.forEach((c, i) => {
-    if (st.slots.some(s => same(s.box, c.box) || same(s.labelBox, c.box) || covers(s.box, c.box))) return;
+    if (st.slots.some(s => same(s.box, c.box) || same(s.labelBox, c.box) || covers(s.box, c.box) || movedFrom(s, c.box))) return;
     const b = (st.view && st.view.candidates[i]) || c.box;
     h += '<button type="button" class="tb cand" data-c="' + i + '" style="' + boxStyle(b) + '" title="' + esc(c.old) + '" aria-label="הוספת אזור: ' + esc(c.old) + '"></button>';
   });
@@ -361,9 +379,11 @@ function renderBoxes() {
     const { box, label } = shown[i];
     const lb = (s.kind === 'rule' || s.kind === 'zman') && label;
     const outer = lb ? unionBox(box, lb) : box;
-    h += '<button type="button" class="tb slot" data-s="' + i + '" style="' + boxStyle(outer) + '" aria-label="אזור ' + ranks[i] + '"><span>' + ranks[i] + '</span></button>';
+    h += '<button type="button" class="tb slot' + (i === st.sel ? ' sel' : '') + '" data-s="' + i + '" style="' + boxStyle(outer) +
+      '" aria-label="אזור ' + ranks[i] + '" title="לחיצה – עריכת האזור, גרירה – הזזה למקום אחר בעמוד"><span>' + ranks[i] + '</span></button>';
     if (lb) h += '<div class="tb val" style="' + boxStyle(box) + '"></div>';
   });
+  if (move && move.ghost) h += '<div class="tb slot drag ghost" style="' + boxStyle(move.ghost) + '"></div>';
   const sel = st.slots[st.sel];
   if (sel && !st.drawing) {
     // ידיות למתיחת האזור הנבחר
@@ -381,6 +401,8 @@ const covers = (a, b) => {
   const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
   return cx > a.x && cx < a.x + a.w && cy > a.y && cy < a.y + a.h;
 };
+/** טקסט מהקובץ במקום שממנו האזור s הוזז – נמחק בציור */
+const movedFrom = (s, b) => !!s.origin && (covers(s.origin.box, b) || (!!s.origin.labelBox && covers(s.origin.labelBox, b)));
 
 /**
  * אזור של פרשה שנמתח על טקסט שלפניו ("לשבת", "זמני התפילות לשבת"): הטקסט המכוסה נשמר
@@ -456,6 +478,8 @@ $('tplBoxes').addEventListener('click', e => {
   if (!st || st.drawing) return;
   const b = e.target.closest('.tb');
   if (!b) return;
+  // סוף גרירה של אזור אינו לחיצה עליו
+  if (Date.now() - (st.movedAt || 0) < 400) return;
   if (st.textEditing) {
     if (b.dataset.s != null) {
       const s = st.slots[+b.dataset.s];
@@ -532,7 +556,7 @@ function focusSlot(i) {
   if (!ed) return;
   document.querySelectorAll('.slot-ed.sel').forEach(x => x.classList.remove('sel'));
   ed.classList.add('sel');
-  ed.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  ed.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   (ed.querySelector('[data-k="text"]') || ed.querySelector('select')).focus({ preventScroll: true });
 }
 
@@ -569,6 +593,8 @@ $('tplPage').addEventListener('pointerdown', e => {
     resize = { s, edge: h.dataset.edge };
     return;
   }
+  const tb = st && !st.drawing && e.button === 0 && e.target.closest('.tb.slot, .tb.cand');
+  if (tb) { move = { i: tb.dataset.s != null ? +tb.dataset.s : null, c: tb.dataset.c, cx: e.clientX, cy: e.clientY, start: toImg(e) }; return; }
   if (!st || !st.drawing) return;
   e.preventDefault();
   $('tplPage').setPointerCapture(e.pointerId);
@@ -588,12 +614,22 @@ $('tplPage').addEventListener('pointermove', e => {
     renderBoxes();
     return;
   }
+  if (move) {
+    // תזוזה קטנה היא עדיין לחיצה על האזור
+    if (!move.s && Math.hypot(e.clientX - move.cx, e.clientY - move.cy) < 6) return;
+    e.preventDefault();
+    if (!move.s) { $('tplPage').setPointerCapture(e.pointerId); startMove(); }
+    move.p = toImg(e);
+    if (!move.frame) move.frame = requestAnimationFrame(stepMove);
+    return;
+  }
   if (!drag) return;
   const p = toImg(e), s = drag.start;
   drag.box = { x: Math.min(s.x, p.x), y: Math.min(s.y, p.y), w: Math.abs(p.x - s.x), h: Math.abs(p.y - s.y) };
   drag.el.setAttribute('style', boxStyle(drag.box));
 });
 $('tplPage').addEventListener('pointerup', () => {
+  if (move) { endMove(); return; }
   if (resize) {
     const s = resize.s, b = s.box;
     resize = null;
@@ -620,6 +656,80 @@ $('tplPage').addEventListener('pointerup', () => {
   $('tplPage').classList.remove('drawing');
   renderBoxes(); focusSlot(st.slots.length - 1);
 });
+// גלילה בטלפון שהתחילה על אזור: הגרירה מתבטלת והאזור חוזר למקומו
+$('tplPage').addEventListener('pointercancel', () => {
+  if (!move) return;
+  const m = move;
+  move = null;
+  cancelAnimationFrame(m.frame);
+  if (m.s) { m.s.box = m.base.box; m.s.labelBox = m.base.label; renderBoxes(); }
+});
+
+/*
+ * גרירת אזור למקום אחר בעמוד. המסגרת המקווקוות עוקבת אחרי הסמן, והאזור עצמו מוצג במקום שבו יונח:
+ * המקום הקרוב שבו הוא לא עולה על טקסט אחר, ועדיף מיושר לשורה או לעמודה של הטקסט שסביבו (template-place.js).
+ * המקום המקורי בקובץ נשמר ב-s.origin, כדי שהטקסט הישן יימחק ממנו בציור
+ */
+let move = null;   // { i, cx, cy, start, s, base, place, p, ghost, frame }
+const shiftBox = (b, dx, dy) => b && { ...b, x: b.x + dx, y: b.y + dy, ...(b.baseline != null ? { baseline: b.baseline + dy } : {}) };
+const toView = y => st.view ? st.view.toView(y) : y;
+
+function startMove() {
+  // טקסט מהקובץ שעוד אינו אזור: נגרר כאזור של טקסט קבוע
+  if (move.i == null) {
+    const c = st.candidates[+move.c];
+    st.slots.push({ box: c.box, kind: 'text', text: c.old, old: c.old });
+    move.i = st.slots.length - 1;
+  }
+  const s = move.s = st.slots[move.i];
+  const bg = slotStyle(s).bg;   // המראה נמדד על הטקסט המקורי, לפני שהאזור זז ממנו
+  move.base = { box: s.box, label: s.labelBox };
+  const home = o => (o.origin && o.origin.box) || o.box;
+  const others = st.slots.filter(o => o !== s);
+  const taken = others.flatMap(o => [o.box, o.labelBox]).filter(Boolean);
+  // טקסט מהקובץ שנשאר בעמוד כמו שהוא: לא מכוסה באזור, ולא במקום שממנו אזור הוזז
+  const kept = st.candidates.map(c => c.box).filter(b => !st.slots.some(o => covers(o.box, b) || (o.labelBox && covers(o.labelBox, b)) || movedFrom(o, b)));
+  move.place = placer(st.canvas, {
+    bg,
+    // הטקסט באזורים נכתב מחדש, והשם של האזור שנגרר עובר איתו – הדיו הישן שם לא תופס מקום
+    erased: [...st.slots.map(home), (s.origin && s.origin.labelBox) || s.labelBox].filter(Boolean),
+    taken,
+    refs: [...taken, ...kept, home(s)]
+  });
+}
+
+function stepMove() {
+  move.frame = 0;
+  const { s, base, start, p } = move;
+  const g = base.label ? unionBox(base.box, base.label) : base.box;
+  // הסמן זז על העמוד שבעורך; המקום בקובץ מחושב לפי השורות שנפתחו או נסגרו בו
+  const vy = p.y - start.y, dx = p.x - start.x, dy = toSrcY(toView(base.box.y) + vy) - base.box.y;
+  move.ghost = { ...g, x: g.x + dx, y: toView(g.y) + vy };
+  const best = move.place(base.box, base.label, dx, dy);
+  s.box = shiftBox(base.box, best.dx, best.dy);
+  s.labelBox = shiftBox(base.label, best.dx, best.dy);
+  renderBoxes();
+}
+
+function endMove() {
+  const m = move;
+  move = null;
+  if (!m.s) return;
+  cancelAnimationFrame(m.frame);
+  if (m.p) { move = m; stepMove(); move = null; }
+  const s = m.s, dx = s.box.x - m.base.box.x, dy = s.box.y - m.base.box.y;
+  st.movedAt = Date.now();
+  if (dx || dy) {
+    if (!s.origin) s.origin = { box: m.base.box, ...(m.base.label ? { labelBox: m.base.label } : {}) };
+    // הוחזר בדיוק למקום המקורי – אין מה למחוק
+    else if (s.box.x === s.origin.box.x && s.box.y === s.origin.box.y) delete s.origin;
+    if (s.nameBox) s.nameBox = shiftBox(s.nameBox, dx, dy);
+    if (st.view) st.view.slots.delete(s);
+    schedulePreviewRefresh();
+  }
+  st.sel = m.i;
+  renderBoxes(); renderSlots();
+}
 
 /* ---------- רשימת האזורים ---------- */
 
@@ -1166,7 +1276,8 @@ export function mergeRules(rules, fromTpl, replace, kind) {
 function builtSlots() {
   return st.slots.map(s => {
     const c = { box: s.box, kind: s.kind, old: s.old || '' };
-    if (s.labelBox) Object.assign(c, { labelBox: s.labelBox, labelStyle: analyzeSlot(st.canvas, s.labelBox), ...(s.label ? { label: s.label } : {}) });
+    if (s.labelBox) Object.assign(c, { labelBox: s.labelBox, labelStyle: analyzeSlot(st.canvas, (s.origin && s.origin.labelBox) || s.labelBox), ...(s.label ? { label: s.label } : {}) });
+    if (s.origin) c.origin = s.origin;
     if ((s.kind === 'parasha' || s.kind === 'parashaName') && s.prefix && s.prefix.trim()) c.prefix = s.prefix.trim() + ' ';
     if (s.kind === 'rule' || s.kind === 'kiddush') Object.assign(c, { name: String(s.name).trim(), when: s.when, ...(s.days ? { days: s.days } : {}) });
     if (s.kind === 'zman') Object.assign(c, { zman: s.zman, when: s.when });
@@ -1212,8 +1323,9 @@ function lookOf(s) {
  * עובי הקו נמדד ביחס לגובה האזור, וכותרת שמותחים או מכווצים לא צריכה לאבד את ההדגשה או לקבל צבע אחר
  */
 function slotStyle(s) {
-  if (!s.box.size) return analyzeSlot(st.canvas, s.box);
-  if (!s.style) s.style = analyzeSlot(st.canvas, s.box);
+  // אזור שהוזז: המראה נמדד במקום המקורי שלו בקובץ, ולא במקום החדש (שבו אין את הטקסט שלו)
+  if (!s.box.size && !s.origin) return analyzeSlot(st.canvas, s.box);
+  if (!s.style) s.style = analyzeSlot(st.canvas, s.origin ? s.origin.box : s.box);
   return s.style;
 }
 
@@ -1283,7 +1395,7 @@ function schedulePreviewRefresh() {
     $('tplImg').src = canvas.toDataURL('image/png');
     // המסגרות עוברות למקום שבו הטקסט נכתב בתמונה החדשה (לא באמצע גרירה – היא מצוירת בתוך המסגרות)
     st.view = canvas.view;
-    if (!drag && !resize) renderBoxes();
+    if (!drag && !resize && !(move && move.s)) renderBoxes();
   }, 200);
 }
 

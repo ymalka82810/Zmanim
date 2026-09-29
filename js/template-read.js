@@ -832,11 +832,6 @@ export function ruleOptions(minutes, ctx, tz, name = '') {
   return fixedFirst ? [fixed, ...rel] : [...rel, fixed];
 }
 
-/** מציאת בסיס, הפרש ועיגול שמסבירים את השעה. name – שם התפילה (לא חובה) */
-export function inferRule(minutes, when, times, tz, name = '') {
-  return ruleOptions(minutes, { when, times }, tz, name)[0];
-}
-
 /**
  * כשאותה תפילה מופיעה בלוח כמה פעמים (למשל מנחה בכל יום בלוח ימי חול), מחפשים כלל אחד שמסביר את כולן:
  * "15 דק׳ לפני השקיעה" שנותן בדיוק את השעה בכל יום עדיף על כלל נפרד לכל יום.

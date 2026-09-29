@@ -139,7 +139,7 @@
     <div class="panel" data-panes="design">
       <h2>עיצוב הלוח – <span id="designTplName"></span></h2>
       <p class="tpl-status" id="designCurrent"></p>
-      <p class="hint">בוחרים את עיצוב הלוח: אחד מלוחות המערכת, או לוח שהועלה בקהילה. רוצים שהלוח ייראה כמו הלוח שאתם מכירים? מעלים קובץ PDF או תמונה של לוח ישן, והאתר יחליף בו רק את השעות והתאריכים. הוא גם יזהה ממנו את זמני התפילות. הלוח יתווסף לעיצובים של הקהילה, וכל תבנית מאותו סוג תוכל להשתמש בו.</p>
+      <p class="hint">בוחרים את עיצוב הלוח: אחד מלוחות המערכת, או לוח שהועלה בקהילה. רוצים שהלוח ייראה כמו הלוח שאתם מכירים? מעלים קובץ PDF או תמונה של לוח ישן, והאתר יחליף בו רק את השעות והתאריכים. הוא גם יזהה ממנו את זמני התפילות. הלוח יתווסף לעיצובים של הקהילה, וכל תבנית מאותו סוג תוכל להשתמש בו. ב"עריכת הלוח" עורכים את העיצוב הנבחר – גם לוח של המערכת, שנשמר אז כלוח משלכם.</p>
       <div class="lay-pick" id="layouts" role="group" aria-label="עיצוב הלוח"></div>
       <button type="button" class="link lay-more" id="layoutsMore" aria-controls="layouts" aria-expanded="false">הצג עוד עיצובים</button>
       <p class="hint" id="designShared" hidden></p>
@@ -147,7 +147,7 @@
       <div class="actions left">
         <button type="button" id="tplUpload">העלאת לוח ישן (PDF או תמונה)</button>
         <input type="file" id="tplFile" accept="application/pdf,.pdf,image/*" hidden>
-        <button type="button" id="tplEdit" hidden>עריכת התבנית</button>
+        <button type="button" id="tplEdit">עריכת הלוח</button>
         <button type="button" class="danger" id="tplRemove" hidden>הסרת העיצוב</button>
       </div>
       <div class="imp" data-part="design">
@@ -209,12 +209,12 @@
   <section id="view-template" hidden aria-labelledby="tplTitle">
     <div class="panel">
       <h2 id="tplTitle">תבנית מלוח קיים</h2>
-      <div class="row2">
+      <div class="row2 tpl-head">
         <div><label for="tplDate" id="tplDateLabel">תאריך הלוח הישן</label><input type="date" id="tplDate" lang="he"></div>
         <p id="tplOcc" class="hint tpl-occ"></p>
       </div>
       <label class="check"><input type="checkbox" id="tplRules" checked> לעדכן את זמני התפילות של התבנית לפי הקובץ</label>
-      <p class="hint">האזורים המסומנים בכחול יוחלפו בכל לוח. לוחצים על אזור כדי לערוך אותו: לכתוב בו טקסט משלכם ("טקסט שכותבים כאן"), או לבחור ערך שמתעדכן בכל לוח (תפילה, זמן, פרשה, תאריך). לוחצים על טקסט אפור כדי לסמן אותו ולשנות אותו. עם "עריכת טקסט" אפשר גם ללחוץ ישירות על כל טקסט בעמוד ולערוך, להוסיף או למחוק אותו – לתמיד או לשבוע הזה בלבד.</p>
+      <details class="tpl-help"><summary>איך עורכים את התבנית?</summary><p class="hint">האזורים המסומנים בכחול יוחלפו בכל לוח. לוחצים על אזור כדי לערוך אותו: לכתוב בו טקסט משלכם ("טקסט שכותבים כאן"), או לבחור ערך שמתעדכן בכל לוח (תפילה, זמן, פרשה, תאריך). לוחצים על טקסט אפור כדי לסמן אותו ולשנות אותו. עם "עריכת טקסט" אפשר גם ללחוץ ישירות על כל טקסט בעמוד ולערוך, להוסיף או למחוק אותו – לתמיד או לשבוע הזה בלבד. כדי להזיז אזור או טקסט אפור – גוררים אותו למקום אחר בעמוד (בטלפון: קודם לוחצים עליו ואז גוררים), והוא יונח במקום הפנוי הקרוב, מיושר לשורה ולעמודה של הטקסט שסביבו.</p></details>
       <p class="hint" id="tplScanHint" hidden>לא זוהה טקסט בקובץ (מסמך סרוק, תמונה לא ברורה, או שאין חיבור לאינטרנט לזיהוי טקסט בתמונה). לחצו "סימון אזור" וגררו על כל שעה או תאריך שצריך להחליף.</p>
       <div class="tpl-fontfill" id="tplFontFill" hidden>
         <p class="hint" id="tplFontMsg"></p>
@@ -222,13 +222,13 @@
         <button type="button" id="tplFontUpload">העלאת קובץ גופן</button>
         <input type="file" id="tplFontFile" accept=".ttf,.otf,.ttc,.otc,font/ttf,font/otf,font/collection" hidden>
       </div>
-      <div class="actions left">
-        <button type="button" id="tplDraw" aria-pressed="false">סימון אזור</button>
-        <button type="button" id="tplEditText" aria-pressed="false">✎ עריכת טקסט</button>
-      </div>
     </div>
     <div class="tpl-layout">
       <div class="tpl-stage">
+        <div class="tpl-tools">
+          <button type="button" id="tplDraw" aria-pressed="false">סימון אזור</button>
+          <button type="button" id="tplEditText" aria-pressed="false">✎ עריכת טקסט</button>
+        </div>
         <div class="tpl-page" id="tplPage"><img id="tplImg" alt="הלוח הישן"><div id="tplBoxes"></div></div>
       </div>
       <div id="tplSlots" class="tpl-slots"></div>

@@ -9,9 +9,9 @@ import { findOccasion, templateFor, periodFor, occasionParts, buildLuach, buildD
 import { MOADIM } from './moadim.js';
 import { luachHtml, withEdits, esc } from './render.js';
 import { todayIn, toYmd, toDayNum } from './dates.js';
-import { luachCanvas, pngBlob, pdfBlob, stackCanvases } from './image.js';
+import { luachCanvas, luachTextCanvas, pngBlob, pdfBlob, stackCanvases } from './image.js';
 import { templateCanvas } from './template-render.js';
-import { editFromFile, editExisting, mergeRules, setKiddush } from './template-ui.js';
+import { editFromFile, editFromBoard, editExisting, mergeRules, setKiddush } from './template-ui.js';
 import { initCommunity } from './community.js';
 import { startSync } from './settings-sync.js';
 import { openTextEdit } from './text-edit.js';
@@ -321,8 +321,11 @@ function renderLuach() {
   applyDesign($('luach'), current.tpl);
   applyPage(current.tpl);
   renderMixOffer(p);
-  // עריכת טקסט בלחיצה זמינה רק בתבנית של האתר (בעיצוב מקובץ הלוח הוא תמונה)
-  $('luachEdit').hidden = !!current.design;
+  // עריכת טקסט בלחיצה על הלוח זמינה רק בתבנית של האתר; בעיצוב מקובץ (הלוח הוא תמונה) הכפתור פותח את עריכת התבנית,
+  // שם אפשר לסמן אזורים על התמונה ולכתוב בהם טקסט
+  $('luachEdit').hidden = false;
+  $('luachEdit').title = current.design ? 'הלוח הועלה מקובץ – לעריכת הטקסט שעליו פותחים את עריכת התבנית' : '';
+  $('luachEdit').setAttribute('aria-pressed', String(boardEditing && !current.design));
   $('luach').classList.toggle('editing', boardEditing && !current.design);
   if (current.design) {
     const l = current;
@@ -368,7 +371,13 @@ function deleteBoardEdit(key) {
   renderLuach();
 }
 
-$('luachEdit').addEventListener('click', () => {
+$('luachEdit').addEventListener('click', async () => {
+  // בלוח שהועלה מקובץ (תמונה) אין עריכת טקסט בלחיצה על הלוח עצמו – פותחים את עריכת התבנית, ששם מסמנים אזורים על התמונה
+  if (current && current.design) {
+    try { await editExisting(current.tpl, cfg, templateDone); showTab('template'); }
+    catch (e) { toast('לא ניתן לפתוח את התבנית לעריכה', true); }
+    return;
+  }
   boardEditing = !boardEditing;
   $('luachEdit').setAttribute('aria-pressed', String(boardEditing));
   renderLuach();
@@ -1072,7 +1081,6 @@ function renderTemplateStatus() {
     ? (shared ? 'הלוח של "' + src.name + '"' : 'הלוח שהועלה לתבנית הזו') + ' – לוח שהועלה בקהילה'
     : lay[1] + ' – לוח של המערכת');
   $('tplStatus').hidden = !d;
-  $('tplEdit').hidden = !d;
   $('tplRemove').hidden = !d;
   $('designShared').hidden = !(d && shared);
   $('tplUpload').textContent = d ? 'העלאת לוח אחר' : 'העלאת לוח ישן (PDF או תמונה)';
@@ -1084,9 +1092,13 @@ function renderTemplateStatus() {
   }
 }
 
-async function templateDone(result) {
+/** fromBoard – העיצוב נוצר מלוח של המערכת, ולוח שהועלה לתבנית קודם עובר לתבניות שמשתמשות בו */
+async function templateDone(result, fromBoard) {
   if (result) {
     const t = result.tpl, prev = { design: t.design, rules: t.rules };
+    if (fromBoard && t.design && !t.design.ref) {
+      for (const x of cfg.templates) if (x.design && x.design.ref === t.id) x.design = { ...t.design, enabled: x.design.enabled !== false };
+    }
     t.design = result.template;
     t.rules = mergeRules(t.rules, result.rules, result.replace, t.kind);
     if (!store()) {
@@ -1139,9 +1151,26 @@ $('tplFile').onchange = async () => {
     toast(navigator.onLine ? 'לא ניתן לקרוא את הקובץ' : 'קריאת PDF דורשת חיבור לאינטרנט בפעם הראשונה', true);
   }
 };
+/** פתיחת לוח של המערכת בעורך, בלוח הקרוב של התבנית t. השמירה יוצרת לתבנית לוח משלה */
+async function editSystemBoard(t) {
+  const p = periodFor(cfg, t, todayIn(cfg.tz));
+  if (!p) throw new Error('no period');
+  if (t.design && !t.design.ref && !await SiteDialog.confirm('לתבנית "' + t.name + '" יש לוח שהועלה אליה. שמירה של הלוח הזה תחליף אותו. להמשיך?', { ok: 'המשך' })) return false;
+  const c = { ...cfg, rules: t.rules };
+  const l = withEdits(p.mode === 'days' ? buildDaysLuach(c, p, comm) : buildLuach(c, p, comm), {}, t.edits || {});
+  const read = await luachTextCanvas(l, t.font, t.sizes, t.theme, t.layout, pageOf(t), t.cols);
+  const lay = LAYOUTS.find(x => x[0] === t.layout) || LAYOUTS[0];
+  editFromBoard(read, 'לוח המערכת – ' + lay[1], cfg, t, r => templateDone(r, true), p.first);
+  return true;
+}
+
 $('tplEdit').onclick = async () => {
-  try { await editExisting(selTpl(), cfg, templateDone); showTab('template'); }
-  catch (e) { toast('לא ניתן לפתוח את התבנית', true); }
+  const t = selTpl();
+  try {
+    if (activeDesign(cfg, t)) await editExisting(t, cfg, templateDone);
+    else if (!await editSystemBoard(t)) return;
+    showTab('template');
+  } catch (e) { console.error(e); toast('לא ניתן לפתוח את הלוח לעריכה', true); }
 };
 $('tplRemove').onclick = async () => {
   const t = selTpl();

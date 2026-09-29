@@ -516,10 +516,29 @@ export async function templateCanvas(tpl, values) {
   const src = document.createElement('canvas');
   src.width = canvas.width; src.height = canvas.height;
   src.getContext('2d', { willReadFrequently: true }).drawImage(img, 0, 0);
+  // אזור שהוזז בעורך (origin – המקום שלו בקובץ): הטקסט המקורי נמחק מהמקום הישן, והשם שליד השעה עובר יחד איתה
+  const sctx0 = src.getContext('2d');
+  const wipe = (b, bg) => {
+    const pad = Math.max(2, (b.size || b.h * 0.72) * 0.08);
+    sctx0.fillStyle = bg;
+    sctx0.fillRect(b.x - pad, b.y - pad, b.w + 2 * pad, b.h + 2 * pad);
+  };
+  for (const s of tpl.slots) {
+    if (!s.origin) continue;
+    const bg = (s.style || {}).bg || '#ffffff';
+    wipe(s.origin.box, bg);
+    if (s.origin.labelBox && s.labelBox) wipe(s.origin.labelBox, (s.labelStyle || {}).bg || bg);
+  }
+  for (const s of tpl.slots) {
+    const from = s.origin && s.origin.labelBox, to = s.labelBox;
+    if (from && to) sctx0.drawImage(img, from.x, from.y, from.w, from.h, to.x, to.y, to.w, to.h);
+  }
   const copy = b => b && { ...b }, given = tpl;
-  tpl = { ...tpl, slots: tpl.slots.map(s => ({ ...s, box: copy(s.box), labelBox: copy(s.labelBox) })),
+  tpl = { ...tpl, slots: tpl.slots.map(s => ({ ...s, box: copy(s.box), labelBox: copy(s.labelBox),
+    ...(s.origin ? { origin: { box: s.origin.box, labelBox: copy(s.origin.labelBox) } } : {}) })),
     candidates: (tpl.candidates || []).map(c => ({ ...c, box: copy(c.box) })) };
-  const allBoxes = [...tpl.slots.flatMap(s => [s.box, s.labelBox]), ...tpl.candidates.map(c => c.box)].filter(Boolean);
+  // המקום הישן של השם זז יחד עם הטקסט שבקובץ, כדי שיימצא לפיו הטקסט של השם (redrawLabel)
+  const allBoxes = [...tpl.slots.flatMap(s => [s.box, s.labelBox, s.origin && s.origin.labelBox]), ...tpl.candidates.map(c => c.box)].filter(Boolean);
   // כל ההזזות לפי הסדר: מהן יודעים איפה נקודה מהקובץ נמצאת בתמונה החדשה, ולהפך
   const moves = [];
   const shiftBoxes = (cut, end, k) => {
@@ -789,7 +808,8 @@ function sideBoxes(tpl, s) {
 function redrawLabel(ctx, tpl, s, fonts, timeStyle) {
   const lb = s.labelBox;
   if (!lb || !['rule', 'zman', 'kiddush'].includes(s.kind)) return;
-  const cand = (tpl.candidates || []).find(c => c.box.x === lb.x && c.box.y === lb.y);
+  const at = (s.origin && s.origin.labelBox) || lb;
+  const cand = (tpl.candidates || []).find(c => c.box.x === at.x && c.box.y === at.y);
   const text = cand ? cand.old : s.label;
   if (!text) return;
   // טקסט רחוק מהשעה או גדול ממנה בהרבה הוא כותרת ולא השם שלה – נשאר כמו שהוא בקובץ

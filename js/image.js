@@ -14,6 +14,17 @@ let COLS = 1;   // מספר העמודות של קטעי השבת/החג
 const px = (n, k) => Math.round(n * SZ[k] * 10) / 10;
 const M = 56, SCALE = 2;   // שוליים, רזולוציה (בדף גדול יותר – באותו יחס, כדי שהדפסה של ה-PDF תהיה חדה)
 let W = 800;   // רוחב לוגי (1600 פיקסלים), ובדף לרוחב רחב יותר לפי היחס של הדף
+let CAP = null, CAPK = 1;   // איסוף הטקסט שנכתב על הלוח (לעורך התבנית), והיחס בין הרוחב הלוגי לפיקסלים
+
+/** רישום טקסט שנכתב, באותה צורה כמו פריט טקסט מקובץ PDF (readFile ב-template-read.js) */
+function capture(ctx, s, x, y, font, align) {
+  const str = String(s).trim(), w = ctx.measureText(s).width, size = parseFloat(/([\d.]+)px/.exec(font)[1]);
+  const left = align === 'right' ? x - w : align === 'center' ? x - w / 2 : x;
+  const weight = +/^\s*(\d+)/.exec(font)[1], family = (/"([^"]+)"/.exec(font) || [])[1] || '', key = weight + ' ' + family;
+  CAP.fonts[key] = CAP.fonts[key] || { family, ps: family, bold: weight >= 700, italic: false, serif: /Georgia/.test(font), data: null, map: null };
+  CAP.items.push({ str, x: left * CAPK, w: w * CAPK, baseline: y * CAPK, size: size * CAPK, y: (y - size * 0.92) * CAPK, h: size * 1.2 * CAPK,
+    rtl: /[א-ת]/.test(str), font: key });
+}
 
 /** פירוק טקסט לשורות לפי רוחב */
 function wrap(ctx, text, width) {
@@ -60,6 +71,7 @@ function layout(ctx, l, draw, H) {
   const text = (s, x, y, font, color, align) => {
     if (!draw) return;
     ctx.font = font; ctx.fillStyle = color; ctx.textAlign = align; ctx.fillText(s, x, y);
+    if (CAP && String(s).trim()) capture(ctx, s, x, y, font, align);
   };
   const rect = (x, y, w, h, color) => { if (draw) { ctx.fillStyle = color; ctx.fillRect(x, y, w, h); } };
   const round = (x, y, w, h, r, color) => {
@@ -275,7 +287,7 @@ async function loadFonts(font) {
  * מצייר את הלוח ומחזיר canvas. font/theme/layout – מזהי הגופן, ערכת הצבעים ותבנית התצוגה של התבנית,
  * sizes – הגדלים שלה באחוזים, page – הדף שלה (pageOf ב-config.js), cols – מספר העמודות
  */
-export async function luachCanvas(l, font, sizes = {}, theme, lay, page, cols = 1) {
+export async function luachCanvas(l, font, sizes = {}, theme, lay, page, cols = 1, cap = null) {
   COLS = cols;
   ({ title: SERIF, body: SANS } = fontFamilies(font));
   W = page && page.landscape ? Math.round(800 * page.w / page.h) : 800;
@@ -300,8 +312,20 @@ export async function luachCanvas(l, font, sizes = {}, theme, lay, page, cols = 
   ctx.direction = 'rtl';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, h);
-  layout(ctx, l, true, h);
+  // הציור עצמו סינכרוני, ולכן ציור אחר של לוח לא נכנס לאיסוף
+  CAP = cap; CAPK = canvas.width / W;
+  try { layout(ctx, l, true, h); } finally { CAP = null; }
   return canvas;
+}
+
+/**
+ * הלוח כתמונה ברוחב של תבנית מקובץ (1600 פיקסלים), עם פריטי הטקסט והגופנים שלו –
+ * כדי לפתוח לוח של המערכת בעורך התבנית כמו קובץ PDF
+ */
+export async function luachTextCanvas(l, font, sizes, theme, lay, page, cols) {
+  const w = page && page.landscape ? Math.round(800 * page.w / page.h) : 800, cap = { items: [], fonts: {} };
+  const canvas = await luachCanvas(l, font, sizes, theme, lay, page && { ...page, k: 800 / w }, cols, cap);
+  return { canvas, items: cap.items, fonts: cap.fonts, docDayNum: null };
 }
 
 const toBlob = (canvas, type, q) => new Promise((ok, fail) =>

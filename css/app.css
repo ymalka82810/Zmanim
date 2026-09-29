@@ -316,11 +316,34 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .luach:has(.luach-img) { padding: 10px; background: #fff; }
 /* שבת/חג רב-יומי בעיצוב מקובץ: עמוד לכל יום */
 .lp + .lp { margin-top: 16px; }
-.tpl-layout { display: grid; gap: 14px; }
+.tpl-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.tpl-help { margin: 4px 0 0; }
+.tpl-help > summary { cursor: pointer; font-weight: 700; font-size: .9rem; color: var(--blue); width: fit-content; }
+.tpl-tools { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 0 8px; background: var(--bg); }
+.slot-ed { scroll-margin: 12px 0 80px; }
 @media (min-width: 900px) {
   main.wrap:has(#view-template:not([hidden])) { max-width: 1200px; }
   .tpl-layout { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: start; }
   .tpl-stage { position: sticky; top: calc(8px + var(--sm-top, 0px)); }
+}
+/* טלפון (ובעיקר האפליקציה): הדף נשאר צמוד למעלה בגובה מוגבל, והרשימה נגללת מתחתיו */
+@media (max-width: 899px) {
+  #view-template .panel { padding: 14px; margin-bottom: 12px; }
+  #view-template h2 { margin-bottom: 8px; }
+  .tpl-head { grid-template-columns: 1fr; gap: 0; margin-bottom: 4px; }
+  .tpl-occ { margin: 0 0 6px; }
+  .tpl-layout { gap: 10px; }
+  .tpl-tools button { flex: 1 1 0; padding: 8px 10px; }
+  #view-template .actions.sticky { margin: 12px 0 0; padding: 8px 0 calc(8px + env(safe-area-inset-bottom, 0px)); gap: 8px; flex-wrap: nowrap; }
+  .actions.sticky button { flex: 1 1 auto; min-width: 0; padding: 10px 8px; white-space: nowrap; font-size: .95rem; }
+  .actions.sticky #tplCancel { flex: 0 1 auto; padding-inline: 14px; }
+}
+/* כשיש מספיק גובה (לא כשהמקלדת פתוחה) הדף צמוד למעלה ונגלל בתוכו */
+@media (max-width: 899px) and (min-height: 560px) {
+  .tpl-stage { position: sticky; top: var(--sm-top, calc(54px + env(safe-area-inset-top, 0px))); z-index: 5; max-height: 46dvh; overflow-y: auto; overscroll-behavior: contain;
+    background: var(--bg); margin: 0 -4px; padding: 0 4px 6px; border-bottom: 1px solid var(--line); box-shadow: 0 8px 12px -10px rgba(0, 0, 0, .25); }
+  .tpl-tools { position: sticky; top: 0; z-index: 3; padding-top: 6px; }
+  .slot-ed { scroll-margin-top: calc(var(--sm-top, calc(54px + env(safe-area-inset-top, 0px))) + 46dvh + 12px); }
 }
 .tpl-page { position: relative; border: 1px solid var(--line); background: #fff; touch-action: pan-y; border-radius: 10px; overflow: hidden; }
 .tpl-page img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; }
@@ -332,6 +355,10 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .tb.slot span { position: absolute; top: -9px; right: -9px; background: var(--blue); color: var(--on-accent); font-size: 11px; line-height: 16px; min-width: 16px; border-radius: 8px; padding: 0 3px; }
 .tb.val { border: 1px dashed var(--blue); background: rgba(44, 74, 124, .14); pointer-events: none; }
 .tb.drag { pointer-events: none; }
+.tb.slot, .tb.cand { cursor: grab; user-select: none; -webkit-user-select: none; }
+/* בטלפון גוררים אזור אחרי שבוחרים בו, כדי שגלילה בעמוד לא תזיז אזורים */
+.tb.slot.sel { touch-action: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 30%, transparent); }
+.tb.ghost { border: 2px dashed var(--blue); background: transparent; opacity: .6; }
 .rh { position: absolute; width: 14px; height: 14px; margin: -7px -7px 0 0; border-radius: 50%; background: var(--blue); border: 2px solid #fff; box-shadow: 0 0 0 1px var(--blue); touch-action: none; z-index: 2; }
 .rh-l, .rh-r { cursor: ew-resize; }
 .rh-t, .rh-b { cursor: ns-resize; }
