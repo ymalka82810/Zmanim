@@ -118,10 +118,11 @@ function renderTabs(){
   if (!S.board){ t.hidden = true; return; }
   t.hidden = false;
   const pend = isManager() ? S.board.bookings.filter(b => b.status === 'pending').length : 0;
+  const rej = (S.board.rejections || []).length;
   const tabs = [['cal','לוח',ICON.cal],['mine','הקידושים שלי',ICON.cup],['terms','הנחיות',ICON.doc]];
   if (isManager()) tabs.push(['manage','ניהול',ICON.gear]);
   t.innerHTML = '<div class="in">'+tabs.map(([k,l,i]) =>
-    `<button data-act="view" data-v="${k}" ${S.view===k?'aria-current="page"':''}>${i}<span>${l}</span>${k==='manage'&&pend?`<span class="dot">${pend}</span>`:''}</button>`).join('')+'</div>';
+    `<button data-act="view" data-v="${k}" ${S.view===k?'aria-current="page"':''}>${i}<span>${l}</span>${k==='manage'&&pend?`<span class="dot">${pend}</span>`:''}${k==='mine'&&rej?`<span class="dot">${rej}</span>`:''}</button>`).join('')+'</div>';
 }
 function hero(text, button){
   return `<div class="hero"><h1>לוח קידושים</h1><p class="muted">${text}</p></div>${button || ''}`;
@@ -216,8 +217,21 @@ function mineHTML(){
         <button class="btn danger" data-act="cancelMine" data-k="${k}">ביטול הרישום</button></div>`:''}
     </div>`;
   };
+  const rejections = S.board.rejections || [];
+  const rejItem = r => {
+    const sl = slotFor(r.dateKey, !!s.il);
+    return `<div class="card">
+      <div class="row" style="justify-content:space-between"><div><div class="meta">${esc(heFull(sl.hd))} | ${esc(gFull(sl.date))}</div><h3>${esc(slotTitle(sl))}</h3></div>
+      <span class="chip block">נדחה</span></div>
+      <div class="small">${esc(s.kiddushBy)} ${esc(r.sponsorLine)}${r.occasionLine?' | '+esc(r.occasionLine):''}</div>
+      ${r.reason ? `<div class="warn">סיבת הדחייה: ${esc(r.reason)}</div>` : ''}
+      <div class="meta">נדחה ב${esc(fmtTime(r.rejectedAt))}</div>
+      <div class="row" style="margin-top:10px"><button class="btn sec" data-act="dismissRejection" data-id="${r._id}">הבנתי, הסתרה</button></div>
+    </div>`;
+  };
   return `<div class="sechead"><h2>הקידושים שלי</h2></div>
     ${up.length ? up.map(item).join('') : '<div class="card empty">אין לך קידושים קרובים. בחרו שבת פנויה בלוח כדי להירשם.<div style="margin-top:12px"><button class="btn" data-act="view" data-v="cal">ללוח השבתות</button></div></div>'}
+    ${rejections.length ? `<div class="sechead"><h2>בקשות שנדחו</h2></div>`+rejections.map(rejItem).join('') : ''}
     ${past.length ? `<div class="sechead"><h2>קידושים קודמים</h2></div>`+past.map(item).join('') : ''}`;
 }
 
@@ -489,6 +503,7 @@ const A = {
   block: d => reasonSheet(d.k, 'block'),
   manual: d => reasonSheet(d.k, 'manual'),
   unblock: guard(async d => { await call('kiddush:unblock', { dateKey:d.k }); closeSheet(); toast('התאריך שוחרר'); }),
+  dismissRejection: guard(async d => { await call('kiddush:dismissRejection', { rejectionId:d.id }); }),
   doReason: guard(async d => {
     const k = d.k, kind = d.kind;
     if (kind === 'manual'){

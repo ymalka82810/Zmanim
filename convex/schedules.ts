@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
-import { isManager, requireManager, requireMember } from "./roles";
+import { displayName, isManager, requireManager, requireMember } from "./roles";
 import { acceptUpload, MAX_SCHEDULE_BYTES, TRASH_DAYS } from "./storage";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -65,7 +65,7 @@ export const list = query({
             url: await ctx.storage.getUrl(f.storageId),
             submittedAt: f.submittedAt,
             approvedAt: f.approvedAt ?? null,
-            submittedBy: submitter ? submitter.name ?? submitter.email ?? "משתמש" : null,
+            submittedBy: submitter ? displayName(submitter) : null,
           };
         }),
       ),

@@ -60,6 +60,7 @@ export const mine = query({
           address: synagogue.address ?? "",
           publicCode: synagogue.publicCode ?? null,
           role: membership.role,
+          isFounder: synagogue.createdBy === userId,
         };
       }),
     );

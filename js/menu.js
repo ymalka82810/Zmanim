@@ -9,14 +9,17 @@
 (function(){
 "use strict";
 const ROOT = new URL('..', document.currentScript.src);
+/* "לוח זמנים" ו"יומן קהילה" מוצגים לסירוגין לפי תפקיד המשתמש בקהילה הפעילה (menu:counts, שדה manager):
+ * חבר קהילה רגיל רואה את יומן הקהילה במקום לשונית עריכת לוח הזמנים, שנטו לגבאי/רב. אורח או גבאי/רב
+ * רואים את לוח הזמנים כרגיל, ויומן הקהילה נשאר מחוץ למגירה (ברירת המחדל עד שידוע תפקיד המשתמש) */
 const PAGES = [
-  { path: '',                   title: 'לוח זמנים' },
+  { path: '',                   title: 'לוח זמנים', hideForMember: true },
   { path: 'week/',              title: 'השבוע שלי' },
   { path: 'kiddush/',          title: 'לוח קידושים' },
   { path: 'gabbai/',            title: 'קופת בית הכנסת' },
   { path: 'aliyot/',            title: 'חלוקת עליות' },
   { path: 'account/',           title: 'החשבון שלי' },
-  { path: 'community-calendar/', title: 'יומן קהילה', hidden: true } /* לא במגירה, רק כותרת הפס */
+  { path: 'community-calendar/', title: 'יומן קהילה', showForMember: true }
 ];
 const here = location.pathname.replace(/index\.html$/, '');
 const current = PAGES.slice().reverse().find(p => here === new URL(p.path, ROOT).pathname) || PAGES[0];
@@ -27,13 +30,18 @@ const css = `
 .sm-btn{display:flex;align-items:center;justify-content:center;flex:none;width:40px;height:40px;padding:0;border:0;border-radius:10px;background:none;color:inherit;cursor:pointer;box-shadow:none;transform:none}
 .sm-btn:hover,.sm-btn:focus-visible{background:rgba(255,255,255,.15)}
 .sm-btn svg{width:24px;height:24px}
+.sm-btn{position:relative}
+.sm-count{flex:none;box-sizing:border-box;min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:#c62828;color:#fff;font-size:.8rem;font-weight:700;line-height:22px;text-align:center}
+.sm-btn .sm-count{position:absolute;top:1px;left:0;min-width:18px;height:18px;padding:0 4px;font-size:.7rem;line-height:18px;box-shadow:0 0 0 2px #2c4a7c}
+:root[data-theme="dark"] .sm-count{background:#e5534b}
+:root[data-theme="dark"] .sm-btn .sm-count{box-shadow:0 0 0 2px #1b2d56}
 .sm-title{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-weight:700;font-size:1.05rem}
 .sm-shade{position:fixed;inset:0;background:rgba(10,14,20,.45);z-index:900;opacity:0;transition:opacity .2s}
 .sm-drawer{position:fixed;top:0;bottom:0;right:0;width:min(280px,82vw);background:#fff;color:#1d2b45;z-index:901;transform:translateX(100%);transition:transform .2s;padding:calc(12px + env(safe-area-inset-top,0px)) 10px 12px;box-shadow:-6px 0 24px rgba(10,20,40,.2);font-family:"Assistant",Arial,sans-serif;direction:rtl}
 .sm-open .sm-shade{opacity:1}
 .sm-open .sm-drawer{transform:none}
 .sm-drawer h2{margin:4px 10px 12px;font-size:.85rem;font-weight:600;color:#5d6b82}
-.sm-drawer a{display:block;padding:12px 14px;border-radius:10px;color:inherit;text-decoration:none;font-size:1.05rem;font-weight:600}
+.sm-drawer a{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 14px;border-radius:10px;color:inherit;text-decoration:none;font-size:1.05rem;font-weight:600}
 .sm-drawer a:hover{background:#eef3fa}
 .sm-drawer a[aria-current="page"]{background:#e3e9f2;color:#2c4a7c}
 .sm-theme{display:flex;margin:0 10px;padding:3px;border:1px solid #d6dce8;border-radius:999px}
@@ -107,11 +115,56 @@ function loadHebcal(){
   document.head.appendChild(s);
 }
 
+/* ---------- מספר הדברים שלא טופלו בכל דף (menu:counts) ----------
+ * auth.js נטען אחרי הקובץ הזה, ולכן המעקב מתחיל רק כשהדף סיים להיטען, ומתחדש כשהקהילה הפעילה מתחלפת */
+const badges = { links: [], btn: null, total: null, data: null, sid: null, stop: null };
+
+function renderCounts(){
+  const d = badges.data || {};
+  const member = badges.data && badges.data.manager === false;
+  let total = 0;
+  for (const l of badges.links){
+    if (l.hideForMember) l.a.hidden = member;
+    else if (l.showForMember) l.a.hidden = !member;
+    const n = d[l.path] || 0;
+    total += n;
+    l.count.hidden = !n;
+    l.count.textContent = n > 99 ? '99+' : String(n);
+    l.a.setAttribute('aria-label', n ? `${l.title}, ${n} ממתינים לטיפול` : l.title);
+  }
+  if (!badges.total) return;
+  badges.total.hidden = !total;
+  badges.total.textContent = total > 99 ? '99+' : String(total);
+  badges.btn.setAttribute('aria-label', total ? `תפריט, ${total} ממתינים לטיפול` : 'תפריט');
+}
+
+function watchCounts(){
+  const Auth = window.SiteAuth;
+  const sid = Auth && Auth.isAuthenticated() ? Auth.activeSynagogueId() : null;
+  if (sid === badges.sid) return;
+  if (badges.stop) badges.stop();
+  badges.stop = null;
+  badges.sid = sid;
+  badges.data = null;
+  renderCounts();
+  if (!sid) return;
+  badges.stop = Auth.watch('menu:counts', { synagogueId: sid }, d => { badges.data = d; renderCounts(); }, () => {});
+}
+
+function startCounts(){
+  if (!window.SiteAuth) return;
+  SiteAuth.onChange(() => setTimeout(watchCounts));
+  watchCounts();
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startCounts);
+else setTimeout(startCounts);
+
 window.SiteMenu = {
   /* s: { _id, name, il } של הקהילה הפעילה, או null כשאין */
   setCommunity(s){
     write(COMMUNITY_KEY, s && s.name ? { _id: s._id, name: s.name, il: !!s.il } : null);
     renderDay();
+    watchCounts();
   },
   /* c: { w: רוחב ה-WebView בפיקסלים של המסך, rects: [[left, top, right, bottom], ...] } – נקרא מ-MainActivity */
   setCutout(c){
@@ -157,12 +210,18 @@ function build(){
   layer.innerHTML = `<div class="sm-shade"></div><nav class="sm-drawer" id="sm-drawer" aria-label="דפי האתר"><h2>בית הכנסת</h2></nav>`;
   const nav = layer.querySelector('nav');
   for (const p of PAGES){
-    if (p.hidden) continue;
     const a = document.createElement('a');
     a.href = new URL(p.path, ROOT).href;
-    a.textContent = p.title;
+    const label = document.createElement('span');
+    label.textContent = p.title;
+    const count = document.createElement('span');
+    count.className = 'sm-count';
+    count.hidden = true;
+    a.append(label, count);
     if (p === current) a.setAttribute('aria-current', 'page');
+    a.hidden = !!p.showForMember; /* ברירת מחדל עד שידוע תפקיד המשתמש: ראו renderCounts */
     nav.appendChild(a);
+    badges.links.push({ path: p.path, title: p.title, a, count, hideForMember: !!p.hideForMember, showForMember: !!p.showForMember });
   }
 
   if (window.SiteTheme){
@@ -189,6 +248,13 @@ function build(){
   }
 
   const btn = bar.querySelector('.sm-btn');
+  badges.btn = btn;
+  badges.total = document.createElement('span');
+  badges.total.className = 'sm-count';
+  badges.total.hidden = true;
+  badges.total.setAttribute('aria-hidden', 'true');
+  btn.appendChild(badges.total);
+  renderCounts();
   function open(){
     layer.hidden = false;
     btn.setAttribute('aria-expanded', 'true');

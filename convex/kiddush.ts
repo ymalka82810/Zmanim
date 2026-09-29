@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { isManager, requireManager, requireMember } from "./roles";
+import { displayName, isManager, requireManager, requireMember } from "./roles";
 import { hebrewYearOf } from "./hebrewDate";
 import * as Notifications from "./notifications";
 
@@ -121,7 +121,7 @@ async function notify(
 
 async function userName(ctx: QueryCtx, userId: Id<"users">) {
   const user = await ctx.db.get(userId);
-  return user?.name ?? user?.email ?? "משתמש";
+  return displayName(user);
 }
 
 /** כל מה שהלוח צריך, בשאילתה אחת שמתעדכנת בזמן אמת. פרטי קשר של אחרים חשופים לגבאי ולרב בלבד. */
@@ -182,6 +182,20 @@ export const board = query({
 
     const notifications = await Notifications.listVisible(ctx, args.synagogueId, "kiddush", userId, manager);
 
+    const rejectionDocs = await ctx.db
+      .query("kiddushRejections")
+      .withIndex("by_synagogue_user", (q) => q.eq("synagogueId", args.synagogueId).eq("userId", userId))
+      .order("desc")
+      .take(30);
+    const rejections = rejectionDocs.map((r) => ({
+      _id: r._id,
+      dateKey: r.dateKey,
+      sponsorLine: r.sponsorLine,
+      occasionLine: r.occasionLine,
+      reason: r.reason,
+      rejectedAt: r.rejectedAt,
+    }));
+
     return {
       synagogue: {
         name: synagogue.name,
@@ -195,6 +209,7 @@ export const board = query({
       bookings,
       terms,
       notifications,
+      rejections,
     };
   },
 });
@@ -313,7 +328,30 @@ export const reject = mutation({
       const reason = clip(args.reason, 160);
       await notify(ctx, args.synagogueId, userId, booking.userId, args.dateKey,
         `הרישום שלך לקידוש ב${clip(args.label, 80)} בוטל על ידי הגבאי.${reason ? " סיבה: " + reason : ""}`);
+      await ctx.db.insert("kiddushRejections", {
+        synagogueId: args.synagogueId,
+        userId: booking.userId,
+        dateKey: args.dateKey,
+        sponsorLine: sponsorLine(booking),
+        occasionLine: occasionLine(booking),
+        reason,
+        rejectedBy: userId,
+        rejectedAt: Date.now(),
+      });
     }
+  },
+});
+
+/** מחיקת בקשה שנדחתה מהרשימה של המבקש, אחרי שראה אותה */
+export const dismissRejection = mutation({
+  args: { synagogueId: v.id("synagogues"), rejectionId: v.id("kiddushRejections") },
+  handler: async (ctx, args) => {
+    const { userId } = await requireMember(ctx, args.synagogueId);
+    const rejection = await ctx.db.get(args.rejectionId);
+    if (rejection === null || rejection.synagogueId !== args.synagogueId || rejection.userId !== userId) {
+      throw new ConvexError("הבקשה לא נמצאה");
+    }
+    await ctx.db.delete(rejection._id);
   },
 });
 

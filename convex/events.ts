@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import { requireManager, requireMember } from "./roles";
+import { displayName, requireManager, requireMember } from "./roles";
 
 const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** איך האירוע מוצג בלוח הזמנים: שורה בלוח (board), מודעה נפרדת (poster), או שניהם (both) */
@@ -17,7 +17,7 @@ function checkDateKey(dateKey: string) {
 
 async function userName(ctx: QueryCtx, userId: Id<"users">) {
   const user = await ctx.db.get(userId);
-  return user?.name ?? user?.email ?? "משתמש";
+  return displayName(user);
 }
 
 /** כל האירועים הקהילתיים של הקהילה: לא רק שבתות וחגים, אלא כל תאריך שהגבאי או הרב בחרו להוסיף לו אירוע חופשי. */

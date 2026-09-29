@@ -3,7 +3,7 @@ import { internalMutation, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import { assertRabbiAvailable, getMembership, normalizeEmail, requireManager, requireUser, roleValidator } from "./roles";
+import { assertRabbiAvailable, displayName, getMembership, normalizeEmail, requireManager, requireUser, roleValidator } from "./roles";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -66,7 +66,7 @@ export const create = mutation({
       email,
       role: args.role,
       synagogueName: synagogue?.name ?? "",
-      invitedByName: inviter?.name ?? inviter?.email ?? "מנהל הקהילה",
+      invitedByName: displayName(inviter),
     });
 
     return invitationId;
@@ -143,7 +143,7 @@ export const mine = query({
           role: i.role,
           synagogueName: synagogue.name,
           city: synagogue.city,
-          invitedByName: inviter?.name ?? inviter?.email ?? null,
+          invitedByName: displayName(inviter),
         };
       }),
     );

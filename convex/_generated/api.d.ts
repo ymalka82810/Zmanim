@@ -23,6 +23,7 @@ import type * as inviteCode from "../inviteCode.js";
 import type * as invites from "../invites.js";
 import type * as kiddush from "../kiddush.js";
 import type * as members from "../members.js";
+import type * as menu from "../menu.js";
 import type * as minyan from "../minyan.js";
 import type * as notifications from "../notifications.js";
 import type * as roles from "../roles.js";
@@ -57,6 +58,7 @@ declare const fullApi: ApiFromModules<{
   invites: typeof invites;
   kiddush: typeof kiddush;
   members: typeof members;
+  menu: typeof menu;
   minyan: typeof minyan;
   notifications: typeof notifications;
   roles: typeof roles;

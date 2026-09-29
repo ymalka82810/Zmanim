@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import { requireManager } from "./roles";
+import { displayName, requireManager } from "./roles";
 import { checkConfig, designUrls } from "./zmanimSettings";
 
 const MAX_NAME = 60;
@@ -51,7 +51,7 @@ export const list = query({
         _id: d._id,
         name: d.name,
         updatedAt: d.updatedAt,
-        updatedBy: user?.name ?? user?.email ?? "משתמש",
+        updatedBy: displayName(user),
       });
     }
     return out.sort((a, b) => a.name.localeCompare(b.name, "he"));

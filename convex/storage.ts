@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { requireManager } from "./roles";
+import { displayName, requireManager } from "./roles";
 
 // תמונת לוח נפתחת אצל כל חברי הקהילה, ולכן היא מוגבלת יותר מעיצוב שרק הגבאי מעלה
 export const MAX_SCHEDULE_BYTES = 7 * 1024 * 1024;
@@ -117,7 +117,7 @@ export const overview = query({
       if (userId === undefined) return null;
       if (!names.has(userId)) {
         const u = await ctx.db.get(userId);
-        names.set(userId, u?.name ?? u?.email ?? "משתמש");
+        names.set(userId, displayName(u));
       }
       return names.get(userId)!;
     };

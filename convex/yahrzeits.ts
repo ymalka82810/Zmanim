@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import { isManager, requireMember } from "./roles";
+import { displayName, isManager, requireMember } from "./roles";
 import { logError } from "./errorLog";
 import * as Notifications from "./notifications";
 import { addDays, daysBetween, hebrewDateText, isValidHebrewDate, nextYahrzeit, todayKey } from "./hebrewDate";
@@ -14,7 +14,7 @@ const clip = (s: string, max: number) => s.trim().slice(0, max);
 
 async function userName(ctx: QueryCtx, userId: Id<"users">) {
   const user = await ctx.db.get(userId);
-  return user?.name ?? user?.email ?? "משתמש";
+  return displayName(user);
 }
 
 /**

@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { getMembership, isManager, requireManager, requireMember } from "./roles";
+import { displayName, getMembership, isManager, requireManager, requireMember } from "./roles";
 import { fundTypeValidator } from "./schema";
 import { logError } from "./errorLog";
 import * as Notifications from "./notifications";
@@ -150,7 +150,7 @@ export const ledger = query({
     const members = await Promise.all(
       memberships.map(async (m) => {
         const user = await ctx.db.get(m.userId);
-        return { userId: m.userId, name: user?.name ?? user?.email ?? "משתמש" };
+        return { userId: m.userId, name: displayName(user) };
       }),
     );
     return {
@@ -181,7 +181,7 @@ export const pledgeMine = mutation({
       amount: args.amount,
       date: args.date,
       donorId: userId,
-      name: user?.name ?? user?.email ?? "חבר קהילה",
+      name: displayName(user),
       desc: args.desc,
       mitzvah: args.mitzvah,
       paid: false,

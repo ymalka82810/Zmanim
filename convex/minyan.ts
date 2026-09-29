@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import { isManager, requireManager, requireMember } from "./roles";
+import { displayName, isManager, requireManager, requireMember } from "./roles";
 import * as Notifications from "./notifications";
 import { addDays, todayKey } from "./hebrewDate";
 
@@ -26,7 +26,7 @@ function checkDateKey(dateKey: string) {
 
 async function userName(ctx: QueryCtx, userId: Id<"users">) {
   const user = await ctx.db.get(userId);
-  return user?.name ?? user?.email ?? "משתמש";
+  return displayName(user);
 }
 
 async function getMinyan(ctx: QueryCtx, synagogueId: Id<"synagogues">, id: Id<"minyanim">) {

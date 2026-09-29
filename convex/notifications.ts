@@ -57,7 +57,7 @@ export async function listVisible(
   return notes
     .filter((n) => visibleTo(n, userId, manager))
     .slice(0, limit)
-    .map((n) => ({ _id: n._id, text: n.text, at: n.at, read: n.readBy.includes(userId) }));
+    .map((n) => ({ _id: n._id, text: n.text, at: n.at, dateKey: n.dateKey, read: n.readBy.includes(userId) }));
 }
 
 /** סימון כנקרא של כל ההתראות הנראות למשתמש, ומחיקת ישנות אם הוא גבאי/רב וניתן ttlMs. לשימוש קידוש */

@@ -16,6 +16,20 @@ export const fundTypeValidator = v.union(
 export default defineSchema({
   ...authTables,
 
+  // מרחיב את טבלת המשתמשים של @convex-dev/auth בשם בעברית, שמתבקש ממשתמש שחשבון הגוגל שלו לא הביא שם בעברית
+  users: defineTable({
+    name: v.optional(v.string()),
+    image: v.optional(v.string()),
+    email: v.optional(v.string()),
+    emailVerificationTime: v.optional(v.number()),
+    phone: v.optional(v.string()),
+    phoneVerificationTime: v.optional(v.number()),
+    isAnonymous: v.optional(v.boolean()),
+    hebrewName: v.optional(v.string()),
+  })
+    .index("email", ["email"])
+    .index("phone", ["phone"]),
+
   synagogues: defineTable({
     name: v.string(),
     city: v.string(),
@@ -84,6 +98,18 @@ export default defineSchema({
   })
     .index("by_synagogue_date", ["synagogueId", "dateKey"])
     .index("by_synagogue_hebrewYear", ["synagogueId", "hebrewYear"]),
+
+  // בקשות קידוש שנדחו על ידי גבאי/רב, כדי שהמבקש יראה מה נדחה גם אחרי שהרישום עצמו נמחק
+  kiddushRejections: defineTable({
+    synagogueId: v.id("synagogues"),
+    userId: v.id("users"),
+    dateKey: v.string(),
+    sponsorLine: v.string(),
+    occasionLine: v.string(),
+    reason: v.string(),
+    rejectedBy: v.id("users"),
+    rejectedAt: v.number(),
+  }).index("by_synagogue_user", ["synagogueId", "userId"]),
 
   kiddushTerms: defineTable({
     synagogueId: v.id("synagogues"),

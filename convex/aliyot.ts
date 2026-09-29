@@ -3,7 +3,7 @@ import { mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { addDays, hebrewYearOf, nextYahrzeit, todayKey } from "./hebrewDate";
-import { getMembership, isManager, requireManager, requireMember } from "./roles";
+import { displayName, getMembership, isManager, requireManager, requireMember } from "./roles";
 
 /** סוגי חיוב לעלייה, לפי סדר הקדימות: הראשון ברשימה קודם לכל האחרים */
 export const REASONS = {
@@ -28,7 +28,7 @@ function checkDateKey(dateKey: string) {
 
 async function userName(ctx: QueryCtx, userId: Id<"users">) {
   const user = await ctx.db.get(userId);
-  return user?.name ?? user?.email ?? "משתמש";
+  return displayName(user);
 }
 
 /** אזכרות שחלות מהתאריך עד שישה ימים אחריו: מי שיש לו אזכרה בשבוע הקרוב עולה בשבת שלפניה. */

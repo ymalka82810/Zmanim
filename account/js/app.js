@@ -11,6 +11,8 @@ const isManager = role => role === 'gabbai' || role === 'rabbi';
 const roleOptions = (selected, disableRabbi) => Object.entries(ROLE)
   .filter(([v]) => v !== 'rabbi' || !disableRabbi || v === selected)
   .map(([v, t]) => `<option value="${v}" ${v === selected ? 'selected' : ''}>${t}</option>`).join('');
+/* גבאי לא יכול לשנות תפקיד של גבאי אחר או של הרב; רק הרב יכול. */
+const canManageMember = (myRole, isSelf, targetRole) => isSelf || myRole === 'rabbi' || !isManager(targetRole);
 
 const S = { ready:false, isAuthenticated:false, me:null, synagogues:[], invitations:[], joinCode:null, joinInfo:undefined, detail:null, members:null, pending:null, errorLogs:null, membersSheetOpen:false, membersSearch:'' };
 
@@ -160,6 +162,19 @@ async function createSynagogue(form){
     }
     toast(errMsg(e)); btn.disabled = false;
   }
+}
+
+async function saveHebrewName(form){
+  const firstName = form.firstName.value.trim(), lastName = form.lastName.value.trim();
+  if (!firstName || !lastName) return toast('נא למלא שם פרטי ושם משפחה');
+  const btn = form.querySelector('button[type=submit]');
+  btn.disabled = true;
+  try {
+    await client.mutation('users:setHebrewName', { firstName, lastName });
+    S.me = await A.query('users:me', {});
+    toast('השם נשמר');
+    render();
+  } catch(e){ toast(errMsg(e)); btn.disabled = false; }
 }
 
 async function loadManagerData(id){
@@ -361,6 +376,18 @@ function renderSignedOut(app){
   $('#btnSignIn').addEventListener('click', signIn);
 }
 
+function renderHebrewNameCard(){
+  return `<div class="card">
+    <h3>מילוי שם בעברית</h3>
+    <p class="muted small">חשבון הגוגל שלך לא הביא שם בעברית. נא למלא שם פרטי ושם משפחה בעברית - כך תופיע/י בקהילה.</p>
+    <form id="hebrewNameForm">
+      <label class="f">שם פרטי</label><input type="text" name="firstName" dir="rtl" required>
+      <label class="f">שם משפחה</label><input type="text" name="lastName" dir="rtl" required>
+      <button class="btn" type="submit">שמירה</button>
+    </form>
+  </div>`;
+}
+
 function renderInvitations(){
   if (!S.invitations.length) return '';
   return `<div class="sechead"><h2>הזמנות שממתינות לך</h2></div>
@@ -391,6 +418,7 @@ function renderSignedIn(app){
     </div>
     <button class="btn sec" id="btnSignOut">יציאה</button>
   </div>
+  ${me.needsHebrewName ? renderHebrewNameCard() : ''}
   ${renderInvitations()}
   <div class="sechead"><h2>הקהילות שלי</h2></div>
   <div class="card">`;
@@ -408,6 +436,7 @@ function renderSignedIn(app){
   if (me.isOwner) html += renderErrorLogs();
   app.innerHTML = html;
   $('#btnSignOut').addEventListener('click', signOut);
+  if (me.needsHebrewName) $('#hebrewNameForm').addEventListener('submit', e => { e.preventDefault(); saveHebrewName(e.target); });
   $('#btnNewSyn').addEventListener('click', sheetCreateSynagogue);
   app.querySelectorAll('[data-accept]').forEach(b => b.addEventListener('click', () => acceptInvitation(b.dataset.accept)));
   app.querySelectorAll('[data-decline]').forEach(b => b.addEventListener('click', () => declineInvitation(b.dataset.decline)));
@@ -596,15 +625,22 @@ function renderPending(pending){
 
 function renderMembers(members){
   if (!members.length) return '<p class="muted">אין חברים עדיין.</p>';
-  // הרב יכול לבחור "רב" ליד חבר אחר כדי להעביר אליו את התפקיד.
-  const hasRabbi = members.some(m => m.role === 'rabbi') && !(S.detail && S.detail.role === 'rabbi');
-  return members.map(m => `
+  const myRole = S.detail ? S.detail.role : null;
+  const myUserId = S.me ? S.me.userId : null;
+  const isFounder = S.detail ? !!S.detail.isFounder : false;
+  return members.map(m => {
+    const isSelf = myUserId === m.userId;
+    const canManage = canManageMember(myRole, isSelf, m.role);
+    // הרב יכול לבחור "רב" ליד חבר אחר כדי להעביר אליו את התפקיד. גבאי יכול למנות את עצמו לרב רק אם הוא הגבאי שפתח את הקהילה.
+    const disableRabbi = (isSelf ? myRole === 'gabbai' && !isFounder : myRole !== 'rabbi') && m.role !== 'rabbi';
+    return `
     <div class="member-row">
       ${m.image ? `<img src="${esc(m.image)}" alt="">` : ''}
       <div class="info"><div class="n">${esc(m.name || m.email || 'משתמש')}</div><div class="e">${esc(m.email || '')}</div></div>
-      <select data-role="${m.userId}" aria-label="תפקיד">${roleOptions(m.role, hasRabbi)}</select>
-      <button class="btn ghost" data-remove="${m.userId}" aria-label="הסרה" title="הסרה">✕</button>
-    </div>`).join('');
+      <select data-role="${m.userId}" aria-label="תפקיד" ${canManage ? '' : 'disabled'}>${roleOptions(m.role, disableRabbi)}</select>
+      <button class="btn ghost" data-remove="${m.userId}" aria-label="הסרה" title="הסרה" ${canManage ? '' : 'disabled'}>✕</button>
+    </div>`;
+  }).join('');
 }
 
 boot();

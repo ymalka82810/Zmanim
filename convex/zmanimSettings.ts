@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import { requireManager } from "./roles";
+import { displayName, requireManager } from "./roles";
 import { acceptUpload, addDesignUsers, designUsers, MAX_DESIGN_BYTES } from "./storage";
 
 const MAX_CONFIG = 500 * 1024;
@@ -62,7 +62,7 @@ export const get = query({
       rev: doc.rev,
       designs: await designUrls(ctx, args.synagogueId, doc.config),
       updatedAt: doc.updatedAt,
-      updatedBy: user?.name ?? user?.email ?? "משתמש",
+      updatedBy: displayName(user),
     };
   },
 });

@@ -74,6 +74,27 @@ export async function assertRabbiAvailable(
   }
 }
 
+const HEBREW_LETTERS = /[֐-׿]/;
+export const hasHebrewLetters = (text: string) => HEBREW_LETTERS.test(text);
+
+type NamedUser = { name?: string | null; email?: string | null; hebrewName?: string | null } | null | undefined;
+
+/** השם שיוצג למשתמש: השם בעברית שמילא, ואם אין - השם מהחשבון או המייל. */
+export function displayName(user: NamedUser) {
+  const hebrewName = user?.hebrewName?.trim();
+  if (hebrewName) return hebrewName;
+  const name = user?.name?.trim();
+  if (name) return name;
+  return user?.email ?? "משתמש";
+}
+
+/** אין למשתמש שם בעברית, והשם שהגיע מחשבון הגוגל שלו אינו בעברית - יש לבקש ממנו למלא שם. */
+export function needsHebrewName(user: NamedUser) {
+  if (user?.hebrewName?.trim()) return false;
+  const name = user?.name?.trim();
+  return !name || !hasHebrewLetters(name);
+}
+
 export const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
 export function isOwnerEmail(email: string | undefined) {

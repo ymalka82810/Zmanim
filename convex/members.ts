@@ -6,6 +6,7 @@ import {
   assertRabbiAvailable,
   countManagers,
   countRole,
+  displayName,
   getMembership,
   isManager,
   requireManager,
@@ -29,7 +30,7 @@ export const list = query({
           userId: membership.userId,
           role: membership.role,
           joinedAt: membership.joinedAt,
-          name: user?.name ?? null,
+          name: displayName(user),
           email: user?.email ?? null,
           image: user?.image ?? null,
         };
@@ -75,6 +76,16 @@ export const setRole = mutation({
       await ctx.db.patch(callerMembership._id, { role: "gabbai" });
       return;
     }
+    // גבאי לא יכול לשנות את תפקידו של גבאי אחר או של הרב - זה מותר לרב בלבד.
+    if (!isSelf && callerMembership.role === "gabbai" && isManager(membership.role)) {
+      throw new ConvexError("גבאי אינו יכול לשנות את תפקידו של גבאי אחר או של הרב");
+    }
+    if (isSelf && args.role === "rabbi" && callerMembership.role === "gabbai") {
+      const synagogue = await ctx.db.get(args.synagogueId);
+      if (synagogue === null || synagogue.createdBy !== callerId) {
+        throw new ConvexError("רק הגבאי שפתח את הקהילה יכול למנות את עצמו לרב");
+      }
+    }
     if (isSelf) {
       await assertNotSoleInRole(ctx, args.synagogueId, membership.role, "שינוי התפקיד");
     } else if (isManager(membership.role) && !isManager(args.role)) {
@@ -93,10 +104,14 @@ export const remove = mutation({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    await requireManager(ctx, args.synagogueId);
+    const { userId: callerId, membership: callerMembership } = await requireManager(ctx, args.synagogueId);
     const membership = await getMembership(ctx, args.synagogueId, args.userId);
     if (membership === null) {
       return;
+    }
+    // גבאי לא יכול להסיר גבאי אחר או את הרב מהקהילה - זה מותר לרב בלבד.
+    if (args.userId !== callerId && callerMembership.role === "gabbai" && isManager(membership.role)) {
+      throw new ConvexError("גבאי אינו יכול להסיר גבאי אחר או את הרב מהקהילה");
     }
     if (isManager(membership.role)) {
       await assertNotLastManager(ctx, args.synagogueId, "צריך להישאר לפחות גבאי או רב אחד");
