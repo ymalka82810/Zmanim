@@ -52,6 +52,8 @@ function clearCache(){
     const keys = [];
     for (let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); if (k && k.startsWith(CACHE_PREFIX)) keys.push(k); }
     keys.forEach(k => localStorage.removeItem(k));
+    // מסך הפתיחה (index.html) יטען מחדש את הנתונים של המשתמש הנוכחי בכניסה הבאה לדף הראשי
+    sessionStorage.removeItem('site.booted');
   } catch(e){ /* אין גישה לאחסון */ }
 }
 

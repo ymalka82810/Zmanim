@@ -14,12 +14,18 @@
 <link href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@400;700;900&family=Assistant:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/app.css">
 <script src="js/theme.js"></script>
+<script>
+/* מסך הפתיחה מוצג ונתוני הקהילה נטענים פעם אחת בפתיחת האתר או האפליקציה (לכל session), ושוב אחרי כניסה לחשבון
+ * (js/auth.js מוחק את הסימון). במעבר בין הדפים הם מוצגים מהמטמון, ולכן אין צורך במסך פתיחה נוסף */
+try { if (sessionStorage.getItem('site.booted') && !/[?&]code=/.test(location.search)) document.documentElement.classList.add('booted'); } catch(e){}
+</script>
 <style>
   /* מסך פתיחה: קריטי inline כדי שיצויר מיד, לפני שאר ה-CSS נטען */
   #boot-splash{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
     background:radial-gradient(circle at 50% 42%,#2c4d80 0%,#1e3a63 55%,#162c4d 100%);color:#f7f4ee;
     transition:opacity .45s ease;padding:24px;box-sizing:border-box}
   #boot-splash.hide{opacity:0;pointer-events:none}
+  .booted #boot-splash{display:none}
   #boot-splash .boot-logo{width:104px;height:104px;filter:drop-shadow(0 8px 22px rgba(0,0,0,.35))}
   #boot-splash .boot-title{font-family:"Frank Ruhl Libre",Georgia,serif;font-weight:700;font-size:1.3rem;text-align:center;letter-spacing:.2px}
   #boot-splash .boot-progress{width:min(220px,60vw);height:6px;border-radius:999px;background:rgba(247,244,238,.18);overflow:hidden}
@@ -29,40 +35,66 @@
 </style>
 </head>
 <body>
-<div id="boot-splash" role="status" aria-live="polite">
+<div id="boot-splash">
   <img class="boot-logo" src="icons/icon.svg" alt="" width="104" height="104">
   <div class="boot-title">לוח זמנים לבית הכנסת</div>
-  <div class="boot-progress"><div class="boot-bar" id="bootBar"></div></div>
-  <div class="boot-pct" id="bootPct">0%</div>
+  <div class="boot-progress" id="bootProgress" role="progressbar" aria-label="טוען" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="boot-bar" id="bootBar"></div></div>
+  <div class="boot-pct" id="bootPct" aria-hidden="true">0%</div>
 </div>
 <script>
+/* פס הטעינה משקף את מה שבאמת נטען: 10% כשהדף נקרא, 10% כשכל הקבצים שלו נטענו (load),
+ * ו-80% לנתוני הקהילה שנטענים מראש לכל הדפים (js/preload.js). ההחלקה רק ממלאת את הפער עד הערך האמיתי */
 (function(){
   "use strict";
-  var bar = document.getElementById('bootBar'), pct = document.getElementById('bootPct'), splash = document.getElementById('boot-splash');
+  var splash = document.getElementById('boot-splash');
+  if (document.documentElement.classList.contains('booted')) { splash.remove(); return; }
+  var bar = document.getElementById('bootBar'), pct = document.getElementById('bootPct'), prog = document.getElementById('bootProgress');
   var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var shown = Date.now(), val = 0, done = false, raf = null;
-  function set(v){ val = v; bar.style.width = v + '%'; pct.textContent = Math.round(v) + '%'; }
-  function tick(){
-    if (done) return;
-    // מתקרב ל-92% במהירות פוחתת, ולא ננעל שם עד שהדף באמת מוכן
-    set(val + (92 - val) * 0.045);
-    raf = requestAnimationFrame(tick);
+  var signingIn = /[?&]code=/.test(location.search);   // נקרא לפני ש-auth.js מנקה את הקוד מהכתובת
+  var shown = Date.now(), val = 0, raf = null, closing = false;
+  var domReady = false, loaded = false, data = 0, dataDone = false, gaveUp = false;
+
+  function target(){
+    if (gaveUp || (loaded && dataDone)) return 100;
+    return Math.min(99, (domReady ? 10 : 0) + (loaded ? 10 : 0) + 80 * data);
   }
-  function finish(){
-    if (done) return;
-    done = true;
-    if (raf) cancelAnimationFrame(raf);
-    var elapsed = Date.now() - shown, wait = Math.max(0, 300 - elapsed);
+  function draw(v){
+    val = v;
+    bar.style.width = v + '%';
+    pct.textContent = Math.floor(v) + '%';
+    prog.setAttribute('aria-valuenow', Math.floor(v));
+  }
+  function frame(){
+    raf = null;
+    var t = target();
+    if (t > val) draw(reduced ? t : Math.min(t, val + Math.max((t - val) * 0.2, 0.5)));
+    if (val < t) raf = requestAnimationFrame(frame);
+    else if (val >= 100) close();
+  }
+  function kick(){ if (!raf && !closing) raf = requestAnimationFrame(frame); }
+  function close(){
+    if (closing) return;
+    closing = true;
+    try { sessionStorage.setItem('site.booted', '1'); } catch(e){}
     setTimeout(function(){
-      set(100);
-      setTimeout(function(){ splash.classList.add('hide'); setTimeout(function(){ splash.remove(); }, 500); }, 180);
-    }, wait);
+      splash.classList.add('hide');
+      setTimeout(function(){ splash.remove(); }, 500);
+    }, Math.max(150, 300 - (Date.now() - shown)));
   }
-  if (reduced) { set(100); }
-  else raf = requestAnimationFrame(tick);
-  if (document.readyState === 'complete') finish();
-  else addEventListener('load', finish);
-  setTimeout(finish, 4000); // רשת איטית: לא נועלים את המשתמש מאחורי מסך הפתיחה
+
+  function startData(){
+    domReady = true;
+    kick();
+    var finish = function(){ dataDone = true; data = 1; kick(); };
+    // בלי רשת השאילתות יחכו עד שהחיבור יחזור; הדפים יציגו את מה שכבר שמור במכשיר
+    if (!window.SitePreload || navigator.onLine === false) return finish();
+    SitePreload.run(function(f){ data = Math.max(data, f); kick(); }, { signingIn: signingIn }).then(finish, finish);
+  }
+  if (document.readyState === 'loading') addEventListener('DOMContentLoaded', startData); else startData();
+  if (document.readyState === 'complete') loaded = true; else addEventListener('load', function(){ loaded = true; kick(); });
+  // רשת איטית: לא נועלים את המשתמש מאחורי מסך הפתיחה. הנתונים ממשיכים להיטען ברקע
+  setTimeout(function(){ gaveUp = true; kick(); }, 10000);
+  kick();
 })();
 </script>
 <header class="wrap top">
@@ -303,6 +335,7 @@
 <script src="js/convex-config.js"></script>
 <script src="vendor/convex/convex-browser-1.46.0.js"></script>
 <script src="js/auth.js"></script>
+<script src="js/preload.js"></script>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>
