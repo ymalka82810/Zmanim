@@ -5,7 +5,7 @@
  */
 (function(){
 "use strict";
-const { H, esc, dkey, pkey, gShort, gFull, heMonth, heYear, heDay, heFull, getSlots, slotFor, slotTitle, monthRange } = window.KiddushCalendar || {};
+const { H, esc, dkey, pkey, gShort, gFull, heMonth, heYear, heDay, heFull, slotFor, slotTitle, monthRange } = window.KiddushCalendar || {};
 const $ = s => document.querySelector(s);
 const Auth = window.SiteAuth;
 const ROLE_LABEL = { gabbai: 'גבאי', rabbi: 'רב', member: 'חבר קהילה' };
@@ -171,23 +171,21 @@ function bannersHTML(){
 }
 
 function calendarHTML(){
-  const s = S.board.synagogue, { start, end } = monthRange(S.anchor, 'heb');
-  const slots = getSlots(start, end, !!s.il);
-  const slotKeys = new Set(slots.map(sl => sl.key));
+  const { start, end } = monthRange(S.anchor, 'heb');
   const extra = [];
   for (const e of S.events){
     const d = pkey(e.dateKey);
-    if (d < start || d > end || slotKeys.has(e.dateKey) || extra.some(x => x.key === e.dateKey)) continue;
-    extra.push({ key: e.dateKey, date: d, hd: new H.HDate(d), kind: 'אירוע קהילתי', name: '', subs: [] });
+    if (d < start || d > end || extra.some(x => x.key === e.dateKey)) continue;
+    extra.push({ key: e.dateKey, date: d, hd: new H.HDate(d) });
   }
   const yz = yahrzeitsIn(start, end);
   for (const { key } of yz){
-    if (slotKeys.has(key) || extra.some(x => x.key === key)) continue;
+    if (extra.some(x => x.key === key)) continue;
     const d = pkey(key);
-    extra.push({ key, date: d, hd: new H.HDate(d), kind: 'אזכרה', name: '', subs: [] });
+    extra.push({ key, date: d, hd: new H.HDate(d) });
   }
   const yzOf = k => yz.filter(x => x.key === k).map(x => x.y);
-  const rows = [...slots, ...extra].sort((a, b) => a.date - b.date);
+  const rows = extra.sort((a, b) => a.date - b.date);
   const hs = new H.HDate(start);
   const title = heMonth(hs) + ' ' + heYear(hs.getFullYear());
   const alt = (function(){
@@ -195,20 +193,19 @@ function calendarHTML(){
     return (m1 === m2 ? m1 : m1 + ' – ' + m2) + ' ' + end.getFullYear();
   })();
   const rowsHtml = rows.map(sl => {
-    const b = bookingOf(sl.key), past = sl.date < today0(), isToday = +sl.date === +today0();
+    const past = sl.date < today0(), isToday = +sl.date === +today0();
     const big = heDay(sl.hd), small = gShort(sl.date);
     const evts = eventsOf(sl.key), yzs = yzOf(sl.key);
-    const kind = !slotKeys.has(sl.key) && evts.length ? 'אירוע קהילתי' : sl.kind;
-    const name = sl.name || evts[0]?.title || (yzs.length ? 'אזכרה ל' + yzs[0].name : '');
-    const evtLine = evts.length ? (sl.name ? evts.map(e => e.title).join(' · ') : (evts.length > 1 ? `+${evts.length - 1} אירועים נוספים` : '')) : '';
-    const yzNames = (sl.name || evts.length ? yzs : yzs.slice(1)).map(y => y.name);
+    const kind = evts.length ? 'אירוע קהילתי' : 'אזכרה';
+    const name = evts[0]?.title || (yzs.length ? 'אזכרה ל' + yzs[0].name : '');
+    const evtLine = evts.length > 1 ? `+${evts.length - 1} אירועים נוספים` : '';
+    const yzNames = (evts.length ? yzs : yzs.slice(1)).map(y => y.name);
     const yzLine = yzNames.length ? 'אזכרה: ' + yzNames.join(', ') : '';
-    const chip = slotKeys.has(sl.key) ? kiddushChip(b, past)
-      : evts.length ? `<span class="chip appr">${evts.length} אירוע${evts.length > 1 ? 'ים' : ''}</span>`
+    const chip = evts.length ? `<span class="chip appr">${evts.length} אירוע${evts.length > 1 ? 'ים' : ''}</span>`
       : `<span class="chip block">${yzs.length} אזכר${yzs.length > 1 ? 'ות' : 'ה'}</span>`;
     return `<button type="button" class="slot${past ? ' past' : ''}${isToday ? ' today' : ''}" data-act="day" data-k="${sl.key}">
       <div class="date"><div class="big">${big}</div><div class="small">${esc(small)}</div></div>
-      <div><div class="kind">${esc(kind)}</div><h3>${esc(name)}</h3>${sl.subs.length ? `<div class="sub">${esc(sl.subs.join(', '))}</div>` : ''}${evtLine ? `<div class="sub">${esc(evtLine)}</div>` : ''}${yzLine ? `<div class="sub">${esc(yzLine)}</div>` : ''}</div>
+      <div><div class="kind">${esc(kind)}</div><h3>${esc(name)}</h3>${evtLine ? `<div class="sub">${esc(evtLine)}</div>` : ''}${yzLine ? `<div class="sub">${esc(yzLine)}</div>` : ''}</div>
       <div class="stcol">${chip}</div></button>`;
   }).join('');
   const addBtn = isManager() ? `<div class="row" style="margin:10px 0"><button class="btn sec" type="button" data-act="addEventAny">+ הוספת אירוע</button></div>` : '';
@@ -219,7 +216,7 @@ function calendarHTML(){
   </div>
   <div class="modebar"><button class="link" type="button" data-act="today">היום</button></div>
   ${addBtn}
-  <div class="slots">${rowsHtml || '<div class="empty">אין שבתות, חגים או אירועים בחודש הזה.</div>'}</div>`;
+  <div class="slots">${rowsHtml || '<div class="empty">אין אירועים או אזכרות בחודש הזה.</div>'}</div>`;
 }
 
 /* ---------- Sheets ---------- */
@@ -267,13 +264,6 @@ function eventFormSheet(k, existing){
      <label class="f" for="evShow">הצגה בלוח הזמנים</label><select id="evShow">${Object.entries(SHOW_LABEL).map(([v, l]) =>
        `<option value="${v}"${(existing?.show || 'board') === v ? ' selected' : ''}>${l}</option>`).join('')}</select>
      <div class="row" style="margin-top:16px"><button class="btn" type="button" data-act="saveEvent" data-id="${existing?._id || ''}" data-k="${k || ''}">שמירה</button><button class="btn ghost" type="button" data-act="close">ביטול</button></div>`);
-}
-
-function kiddushChip(b, past){
-  if (!b) return past ? '<span class="chip block">עבר</span>' : '<span class="chip free">אין קידוש</span>';
-  if (b.status === 'blocked') return `<span class="chip block">${esc(b.blockLabel || 'לא זמין')}</span>`;
-  if (b.status === 'approved') return `<span class="chip appr">קידוש</span><span class="by">${esc(b.sponsorLine)}${b.occasionLine ? ' · ' + esc(b.occasionLine) : ''}</span>`;
-  return isManager() ? '<span class="chip pend">ממתין לאישור</span>' : (past ? '<span class="chip block">עבר</span>' : '<span class="chip free">אין קידוש</span>');
 }
 
 /* ---------- Actions ---------- */
