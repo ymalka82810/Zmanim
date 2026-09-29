@@ -210,7 +210,7 @@ async function cancelInvitation(synagogueId, invitationId){
 function inviteUrl(code){
   const url = new URL(location.pathname, location.origin);
   url.searchParams.set('join', code);
-  return url.toString();
+  return A.publicUrl(url.toString());
 }
 async function rotateInvite(id){
   try {
@@ -224,8 +224,9 @@ async function copyInvite(code){
   catch(e){ toast('העתקה נכשלה'); }
 }
 async function shareInvite(code, name){
-  if (navigator.share){ try { await navigator.share({ title: name, url: inviteUrl(code) }); } catch(e){ /* המשתמש ביטל */ } }
-  else copyInvite(code);
+  let r;
+  try { r = await NativeFiles.share({ title: name, url: inviteUrl(code) }); } catch(e){ r = 'unsupported'; }
+  if (r === 'unsupported') copyInvite(code);
 }
 
 /* הרב היחיד או הגבאי היחיד לא יכול לעזוב או לרדת מתפקידו לפני שמינה מישהו אחר במקומו. */

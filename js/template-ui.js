@@ -222,7 +222,12 @@ $('tplFontLocal').onclick = async () => {
   if (res.filled.length) { renderFontFill('הושלמו האותיות מהגופן ' + [...new Set(res.filled)].join(', ') + '.'); schedulePreviewRefresh(); }
   if (problems.length) SiteDialog.alert(problems.join('\n'));
 };
-$('tplFontUpload').onclick = () => $('tplFontFile').click();
+$('tplFontUpload').onclick = () => {
+  // באפליקציה ה-accept הופך לסוגי MIME, ובהרבה מכשירים קובצי גופן מסומנים application/octet-stream ולא מופיעים לבחירה.
+  // סוג הקובץ נבדק ממילא בקריאת הגופן (fillFromFile).
+  if (window.NativeFiles && NativeFiles.isApp()) $('tplFontFile').removeAttribute('accept');
+  $('tplFontFile').click();
+};
 $('tplFontFile').onchange = async e => {
   const file = e.target.files[0];
   e.target.value = '';

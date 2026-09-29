@@ -29,8 +29,8 @@ button:hover:not(:disabled){box-shadow:var(--sh-md);transform:translateY(-1px)}
 button:active:not(:disabled){transform:translateY(0);box-shadow:var(--sh-sm)}
 button:disabled{box-shadow:none;transform:none;opacity:.55}
 :focus-visible{outline:2px solid var(--wine);outline-offset:2px}
-:root{--page-width:640px}
-.wrap{max-width:640px;margin:0 auto;padding:0 16px 48px}
+:root{--page-width:980px}
+.wrap{max-width:980px;margin:0 auto;padding:0 16px 48px}
 .empty{text-align:center;color:var(--muted);padding:40px 12px}
 /* כותרת הדף – כמו בלוח הזמנים */
 .hero{padding:8px 0 4px}

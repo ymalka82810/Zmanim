@@ -46,4 +46,8 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- מיקום משוער לערכת נושא "אוטומטי" (js/theme.js). Capacitor מבקש גם FINE; מאנדרואיד 12 מספיק COARSE,
+         ועד אנדרואיד 11 הבקשה נכשלת אם FINE לא מוצהר -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
 </manifest>

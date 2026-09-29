@@ -48,8 +48,8 @@ const css = `
 :root[data-theme="dark"] .sm-theme button[aria-pressed="true"]{background:#8fb0ec;color:#0f1524}
 .sm-day{direction:rtl;color:#202a3f;font-family:"Assistant",Arial,sans-serif}
 .sm-day-in{box-sizing:border-box;max-width:var(--page-width,760px);margin:0 auto;padding:22px var(--page-gutter,16px) 0}
-.sm-day-syn{font-size:.92rem;font-weight:600;color:#726c59}
-.sm-day-dates{font-size:.95rem;color:#726c59}
+.sm-day-syn{font-size:1.15rem;font-weight:700;color:#726c59}
+.sm-day-dates{font-size:1.2rem;color:#726c59}
 .sm-day-dates b{font-family:"Frank Ruhl Libre",Georgia,serif;font-weight:700;color:#202a3f}
 :root[data-theme="dark"] .sm-day,:root[data-theme="dark"] .sm-day-dates b{color:#e9ecf5}
 :root[data-theme="dark"] .sm-day-syn,:root[data-theme="dark"] .sm-day-dates{color:#98a2c0}
@@ -187,6 +187,7 @@ function build(){
     btn.focus();
   }
   btn.addEventListener('click', open);
+  closeMenu = () => { if (layer.hidden) return false; close(); return true; };
   layer.querySelector('.sm-shade').addEventListener('click', close);
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !layer.hidden) close(); });
 
@@ -204,6 +205,30 @@ function build(){
   document.body.prepend(bar, stripe, dayBox);
   document.body.appendChild(layer);
 }
+
+/* כפתור "חזרה" של אנדרואיד באפליקציה: MainActivity קורא ל-SiteBack.handle(), שסוגר את מה שפתוח בדף (חלון,
+ * מגירה, או מה שהדף רשם ב-SiteBack.add), ומחזיר true. false – אין מה לסגור, והאפליקציה חוזרת לדף הקודם. */
+let closeMenu = () => false;
+const backHandlers = [];
+window.SiteBack = {
+  add(fn){ backHandlers.push(fn); },
+  handle(){
+    const dialogs = document.querySelectorAll('dialog[open]');
+    if (dialogs.length){
+      const d = dialogs[dialogs.length - 1];
+      if (d.dispatchEvent(new Event('cancel', { cancelable: true }))) d.close();
+      return true;
+    }
+    const panel = document.querySelector('.sd-panel');
+    if (panel){ (panel.querySelector('.sd-cancel') || panel.querySelector('.sd-ok')).click(); return true; }
+    if (closeMenu()) return true;
+    // לחיצה על הרקע של המגירה סוגרת אותה בכל הדפים
+    const sheet = document.querySelector('.sheet-wrap:not([hidden])');
+    if (sheet){ sheet.click(); return true; }
+    for (let i = backHandlers.length - 1; i >= 0; i--) if (backHandlers[i]()) return true;
+    return false;
+  }
+};
 
 if (document.body) build(); else document.addEventListener('DOMContentLoaded', build);
 })();

@@ -387,7 +387,7 @@ function calEvent(k){
 // באפליקציית Capacitor window.open/target="_blank" לא נתמך ב-WebView; ניווט רגיל נפתח אוטומטית בדפדפן החיצוני
 const isNativeApp = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 function calUrl(kind, k){
-  const ev = calEvent(k), body = ev.details + '\n' + location.href;
+  const ev = calEvent(k), body = ev.details + '\n' + Auth.publicUrl();
   const iso = x => x.slice(0,4)+'-'+x.slice(4,6)+'-'+x.slice(6);
   const q = o => new URLSearchParams(o).toString();
   const outlook = host => 'https://'+host+'/calendar/0/deeplink/compose?' + q({ path: '/calendar/action/compose',

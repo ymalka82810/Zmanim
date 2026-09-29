@@ -55,6 +55,12 @@ function showTab(name) {
 $('tab-luach').onclick = () => showTab('luach');
 $('tab-settings').onclick = () => showTab('settings');
 $('goSettings').onclick = () => showTab('settings');
+// "חזרה" באפליקציה: מעורך התבנית (עם אישור לביטול), ומההגדרות ללוח
+SiteBack.add(() => {
+  if (!$('view-template').hidden) { $('tplCancel').click(); return true; }
+  if (!$('view-settings').hidden) { showTab('luach'); return true; }
+  return false;
+});
 
 /* לשוניות בתוך ההגדרות. לוח התבניות מופיע בכל לשונית שתלויה בתבנית שנבחרה */
 const PANE_KEY = 'zmanim.settingsPane';
@@ -299,11 +305,9 @@ async function shareFile(kind) {
   let file;
   try { file = (await getFiles())[kind]; }
   catch (e) { toast('יצירת הקובץ נכשלה', true); return; }
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: current.title }); return; }
-    catch (e) { if (e.name === 'AbortError') return; }
-  }
-  download(file, file.name);
+  let r;
+  try { r = await NativeFiles.share({ file, title: current.title }); } catch (e) { r = 'unsupported'; }
+  if (r === 'unsupported') download(file, file.name);
 }
 $('shareImg').onclick = () => shareFile('png');
 $('sharePdf').onclick = () => shareFile('pdf');

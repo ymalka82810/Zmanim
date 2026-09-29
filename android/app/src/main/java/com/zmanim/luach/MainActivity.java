@@ -10,6 +10,7 @@ import android.webkit.ServiceWorkerController;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
+import androidx.activity.OnBackPressedCallback;
 import com.getcapacitor.BridgeActivity;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -32,6 +33,19 @@ public class MainActivity extends BridgeActivity {
         }
         hideStatusBar();
         if (bridge == null) return;
+        // בלי תוסף @capacitor/app כפתור "חזרה" סוגר את האפליקציה. קודם הדף סוגר חלון/מגירה פתוחים (SiteBack ב-js/menu.js),
+        // אחר כך חוזרים לדף הקודם, ורק בדף הראשון האפליקציה עוברת לרקע.
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                WebView web = bridge.getWebView();
+                web.evaluateJavascript("!!(window.SiteBack && SiteBack.handle())", handled -> {
+                    if ("true".equals(handled)) return;
+                    if (web.canGoBack()) web.goBack();
+                    else moveTaskToBack(true);
+                });
+            }
+        });
         bridge.setWebViewClient(new BridgeWebViewClient(bridge) {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {

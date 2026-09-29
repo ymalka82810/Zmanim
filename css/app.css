@@ -18,10 +18,10 @@
 }
 * { box-sizing: border-box; }
 body { margin: 0; padding-bottom: env(safe-area-inset-bottom, 0px); background: var(--bg); color: var(--ink); font-family: "Assistant", Arial, sans-serif; font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
-.wrap { max-width: 760px; margin: 0 auto; padding: 0 18px; }
+.wrap { max-width: 980px; margin: 0 auto; padding: 0 18px; }
 main.wrap { padding-bottom: 48px; }
 header.top { padding-top: 8px; padding-bottom: 4px; }
-:root { --page-gutter: 18px; }
+:root { --page-gutter: 18px; --page-width: 980px; }
 h1 { font-family: "Frank Ruhl Libre", Georgia, serif; font-weight: 900; font-size: 1.85rem; margin: 6px 0 4px; letter-spacing: .2px; }
 h2 { font-family: "Frank Ruhl Libre", Georgia, serif; font-size: 1.25rem; margin: 0 0 12px; color: var(--ink); }
 

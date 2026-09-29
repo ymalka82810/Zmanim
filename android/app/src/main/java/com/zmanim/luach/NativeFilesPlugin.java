@@ -57,7 +57,8 @@ public class NativeFilesPlugin extends Plugin {
     }
 
     // mode: "save" – לתיקיית ההורדות (באנדרואיד 9 ומטה, שבו זה דורש הרשאה, נפתח חלון שיתוף במקום);
-    // "open" – פתיחה באפליקציה שמטפלת בסוג הקובץ (למשל .ics ביומן), ואם אין כזו – חלון שיתוף.
+    // "open" – פתיחה באפליקציה שמטפלת בסוג הקובץ (למשל .ics ביומן), ואם אין כזו – חלון שיתוף;
+    // "share" – חלון שיתוף (וואטסאפ, מייל וכו'), כי navigator.share לא נתמך ב-WebView.
     @PluginMethod
     public void save(PluginCall call) {
         String name = call.getString("name", "file").replaceAll("[\\\\/:*?\"<>|]", "");
@@ -93,12 +94,33 @@ public class NativeFilesPlugin extends Plugin {
                     return;
                 } catch (ActivityNotFoundException ignored) {}
             }
-            Intent send = new Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            getActivity().startActivity(Intent.createChooser(send, name));
+            String title = call.getString("title", name);
+            Intent send = new Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM, uri)
+                .putExtra(Intent.EXTRA_SUBJECT, title).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            getActivity().startActivity(Intent.createChooser(send, title));
             ret.put("result", "shared");
             call.resolve(ret);
         } catch (Exception e) {
             call.reject("save failed", e);
         }
+    }
+
+    // שיתוף טקסט או קישור (למשל קישור ההזמנה לקהילה) בחלון השיתוף של אנדרואיד
+    @PluginMethod
+    public void shareText(PluginCall call) {
+        String text = call.getString("text", "");
+        String title = call.getString("title", "");
+        Intent send = new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text);
+        if (!title.isEmpty()) send.putExtra(Intent.EXTRA_SUBJECT, title);
+        getActivity().runOnUiThread(() -> {
+            try {
+                getActivity().startActivity(Intent.createChooser(send, title.isEmpty() ? null : title));
+                JSObject ret = new JSObject();
+                ret.put("result", "shared");
+                call.resolve(ret);
+            } catch (ActivityNotFoundException e) {
+                call.reject("share failed", e);
+            }
+        });
     }
 }

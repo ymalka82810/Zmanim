@@ -173,6 +173,14 @@ function returnUrl(redirectTo){
   return APP_RETURN_ORIGIN + url.slice(location.origin.length);
 }
 
+/* קישור שנשלח לאחרים (הזמנה, אירוע ביומן) מצביע על האתר הציבורי, כי כתובת localhost של האפליקציה לא תיפתח אצלם */
+const PUBLIC_SITE = 'https://ymalka82810.github.io/Zmanim/';
+function publicUrl(url){
+  url = url || location.href;
+  if (!isNativeApp() || !url.startsWith(location.origin + '/')) return url;
+  return PUBLIC_SITE + url.slice(location.origin.length + 1);
+}
+
 async function signInWithGoogle(redirectTo){
   const result = await getClient().action('auth:signIn', {
     provider: 'google',
@@ -226,6 +234,7 @@ window.SiteAuth = {
   watch,
   signInWithGoogle,
   completeSignInFromRedirect,
+  publicUrl,
   signOut,
   clearAuth,
 };
