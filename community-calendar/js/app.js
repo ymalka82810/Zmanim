@@ -11,6 +11,8 @@ const Auth = window.SiteAuth;
 const ROLE_LABEL = { gabbai: 'גבאי', rabbi: 'רב', member: 'חבר קהילה' };
 const ACCOUNT_URL = '../account/';
 const MODE_LABEL = { holy: 'שבתות וחגים', days: 'ימות השבוע' };
+/** איך אירוע מוצג בלוח הזמנים: שורת "אירועים" בלוח, מודעה משלו תחת "אירועים", או שניהם */
+const SHOW_LABEL = { board: 'שורה בלוח הזמנים', poster: 'מודעה נפרדת', both: 'גם שורה בלוח וגם מודעה' };
 
 const ICON = {
   right: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>',
@@ -83,7 +85,8 @@ function eventsOf(k){ return S.events.filter(e => e.dateKey === k); }
 /* ---------- Derived data ---------- */
 function currentScheduleFile(){
   if (!S.schedule) return undefined; // עדיין בטעינה
-  const approved = S.schedule.files.filter(f => f.status === 'approved').sort((a, b) => a.firstDate < b.firstDate ? -1 : 1);
+  // מודעות אירועים הן לא לוח זמנים
+  const approved = S.schedule.files.filter(f => f.status === 'approved' && f.mode !== 'events').sort((a, b) => a.firstDate < b.firstDate ? -1 : 1);
   return approved[approved.length - 1] || null;
 }
 function fundSummary(){
@@ -205,7 +208,7 @@ function kiddushStatusLine(b, past){
 }
 function eventLine(e){
   const canEdit = isManager();
-  return `<div class="li"><div class="grow"><div class="t">${esc(e.title)}</div>${e.details ? `<div class="meta">${esc(e.details)}</div>` : ''}<div class="meta">נוסף ע״י ${esc(e.createdBy)}</div></div>
+  return `<div class="li"><div class="grow"><div class="t">${esc(e.title)}</div>${e.details ? `<div class="meta">${esc(e.details)}</div>` : ''}<div class="meta">${canEdit ? SHOW_LABEL[e.show] + ' · ' : ''}נוסף ע״י ${esc(e.createdBy)}</div></div>
     ${canEdit ? `<button class="btn sec" type="button" data-act="editEvent" data-id="${e._id}">עריכה</button><button class="btn danger" type="button" data-act="delEvent" data-id="${e._id}">מחיקה</button>` : ''}</div>`;
 }
 function daySheet(k){
@@ -226,6 +229,8 @@ function eventFormSheet(k, existing){
   openSheet(sheetHead(title) + dateField +
     `<label class="f" for="evTitle">כותרת</label><input type="text" id="evTitle" maxlength="80" placeholder="לדוגמה: מדורת ל״ג בעומר, שיעור לנשים…" value="${esc(existing?.title || '')}">
      <label class="f" for="evDetails">פרטים (לא חובה)</label><textarea id="evDetails" maxlength="300">${esc(existing?.details || '')}</textarea>
+     <label class="f" for="evShow">הצגה בלוח הזמנים</label><select id="evShow">${Object.entries(SHOW_LABEL).map(([v, l]) =>
+       `<option value="${v}"${(existing?.show || 'board') === v ? ' selected' : ''}>${l}</option>`).join('')}</select>
      <div class="row" style="margin-top:16px"><button class="btn" type="button" data-act="saveEvent" data-id="${existing?._id || ''}" data-k="${k || ''}">שמירה</button><button class="btn ghost" type="button" data-act="close">ביטול</button></div>`);
 }
 
@@ -252,14 +257,14 @@ const A = {
     await call('events:remove', { id: d.id }); toast('האירוע נמחק'); closeSheet();
   }),
   saveEvent: guard(async d => {
-    const title = $('#evTitle').value, details = $('#evDetails').value;
+    const title = $('#evTitle').value, details = $('#evDetails').value, show = $('#evShow').value;
     if (!title.trim()) return toast('נא למלא כותרת לאירוע');
     if (d.id){
-      await call('events:update', { id: d.id, title, details });
+      await call('events:update', { id: d.id, title, details, show });
     } else {
       const dateEl = $('#evDate'), k = dateEl ? dateEl.value : d.k;
       if (!k) return toast('נא לבחור תאריך');
-      await call('events:add', { dateKey: k, title, details });
+      await call('events:add', { dateKey: k, title, details, show });
     }
     closeSheet(); toast('נשמר');
   }),

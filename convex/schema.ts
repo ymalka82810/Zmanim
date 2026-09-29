@@ -132,7 +132,7 @@ export default defineSchema({
     storageId: v.id("_storage"),
     title: v.string(),
     firstDate: v.string(),
-    mode: v.union(v.literal("holy"), v.literal("days")),
+    mode: v.union(v.literal("holy"), v.literal("days"), v.literal("events")),
     // התבנית שהלוח נוצר בה. חג שחל בשבת יכול להישלח כשני לוחות נפרדים לאותו תאריך
     kind: v.optional(v.string()),
     status: v.union(v.literal("pending"), v.literal("approved")),
@@ -153,6 +153,8 @@ export default defineSchema({
     dateKey: v.string(),
     title: v.string(),
     details: v.string(),
+    // איך האירוע מוצג בלוח הזמנים: שורה בלוח, מודעה נפרדת, או שניהם. בלי – שורה בלוח
+    show: v.optional(v.union(v.literal("board"), v.literal("poster"), v.literal("both"))),
     createdBy: v.id("users"),
     createdAt: v.number(),
     editedBy: v.optional(v.id("users")),
@@ -173,6 +175,17 @@ export default defineSchema({
     updatedBy: v.id("users"),
     updatedAt: v.number(),
   }).index("by_synagogue", ["synagogueId"]),
+
+  // הגדרות לוח ששמרו בשם, כדי לעבור ביניהן. בנויות כמו config של zmanimSettings
+  zmanimProfiles: defineTable({
+    synagogueId: v.id("synagogues"),
+    name: v.string(),
+    config: v.string(),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+    updatedBy: v.id("users"),
+    updatedAt: v.number(),
+  }).index("by_synagogue_name", ["synagogueId", "name"]),
 
   // עיצוב מקובץ (תמונה וגופנים, יכול להגיע לכמה מגה) כקובץ JSON באחסון, לפי גיבוב התוכן שלו
   zmanimDesigns: defineTable({

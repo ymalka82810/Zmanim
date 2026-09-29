@@ -21,7 +21,10 @@ export const BASES = {
   'חצות': 'chatzot', 'מנחה גדולה': 'minchaGedola', 'מנחה קטנה': 'minchaKetana',
   'פלג המנחה': 'plagHaMincha', 'שעה קבועה': 'fixed',
   'קידוש (מלוח הקידושים)': 'kiddush',
+  'אירועים (מיומן הקהילה)': 'events',
 };
+/** בסיסים שהערך שלהם הוא טקסט מהקהילה ולא שעה: אין להם הפרש ועיגול, ותפילה אחרת לא יכולה להיות תלויה בהם */
+export const TEXT_BASES = ['kiddush', 'events'];
 export const WHEN = ['כניסה', 'כל יום', 'יציאה'];
 /** תוויות ברורות לבחירת "מתי", לתפריטי הבחירה */
 export const WHEN_LABELS = [['כניסה', 'כניסה – ערב שבת/חג'], ['כל יום', 'כל יום – יום השבת/החג עצמו'], ['יציאה', 'יציאה – מוצאי שבת/חג']];
@@ -81,8 +84,15 @@ export const LAYOUTS = [
   ['classic', 'קלאסי', 'פסים בראש הלוח וכותרת במרכז'],
   ['banner', 'פס צבעוני', 'כותרת בתוך פס צבעוני, ושורות בצבעים מתחלפים'],
   ['framed', 'מסגרת מעוטרת', 'מסגרת כפולה סביב הלוח וקישוט מתחת לכותרת'],
-  ['minimal', 'נקי ומודרני', 'כותרת בצד, בלי פסים וקישוטים']
+  ['minimal', 'נקי ומודרני', 'כותרת בצד, בלי פסים וקישוטים'],
+  // אלה מוצגות רק אחרי לחיצה על "הצג עוד תבניות" (LAYOUTS_SHOWN)
+  ['cards', 'כרטיסים', 'כל קטע בכרטיס צבעוני משלו'],
+  ['dark', 'כותרת כהה', 'כותרת רחבה בצבע כהה, וכותרות קטעים צבועות'],
+  ['pills', 'שעות מודגשות', 'השעות בתוך תגיות צבעוניות, בלי קווים בין השורות'],
+  ['outline', 'מסגרת מעוגלת', 'מסגרת עבה ומעוגלת, ושם כל קטע בתוך תגית']
 ];
+/** כמה תבניות תצוגה מוצגות תמיד, לפני "הצג עוד תבניות" */
+export const LAYOUTS_SHOWN = 4;
 
 /** צבעי ערכת הצבעים שנבחרה */
 export function themeColors(key) {
@@ -173,7 +183,7 @@ const builtinTemplate = b => ({ id: b.id, name: b.name, kind: b.kind, rules: clo
 export const DEFAULT_CONFIG = {
   version: 3,
   shul: '', address: '', city: 'jerusalem', lat: 31.769, lng: 35.2163, tz: 'Asia/Jerusalem', il: true,
-  candle: 40, havdalah: '8.5', notes: '',
+  candle: 40, havdalah: '8.5',
   templates: BUILTIN.map(builtinTemplate),
   merged: {},
   edits: {}
@@ -293,7 +303,7 @@ export function prayerBases(rules, self) {
   const own = String(self && self.name || '').trim(), out = [];
   for (const r of rules || []) {
     const n = String(r && r.name || '').trim();
-    if (n && n !== own && !(n in BASES) && out.indexOf(n) < 0) out.push(n);
+    if (n && n !== own && !(n in BASES) && !TEXT_BASES.includes(BASES[r.base]) && out.indexOf(n) < 0) out.push(n);
   }
   return out;
 }

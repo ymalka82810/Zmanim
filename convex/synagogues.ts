@@ -121,6 +121,7 @@ export const purgeData = internalMutation({
       ...(await ctx.db.query("notifications").withIndex("by_synagogue_type_at", (q) => q.eq("synagogueId", id)).take(PURGE_BATCH)),
       ...(await ctx.db.query("communityEvents").withIndex("by_synagogue_date", (q) => q.eq("synagogueId", id)).take(PURGE_BATCH)),
       ...(await ctx.db.query("zmanimSettings").withIndex("by_synagogue", (q) => q.eq("synagogueId", id)).take(PURGE_BATCH)),
+      ...(await ctx.db.query("zmanimProfiles").withIndex("by_synagogue_name", (q) => q.eq("synagogueId", id)).take(PURGE_BATCH)),
     ];
     const files = [
       ...(await ctx.db.query("scheduleFiles").withIndex("by_synagogue_first", (q) => q.eq("synagogueId", id)).take(PURGE_BATCH)),

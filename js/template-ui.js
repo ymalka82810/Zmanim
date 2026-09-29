@@ -3,22 +3,22 @@
  * מה ייכתב בכל אזור (תפילה, זמן היום, כותרת, תאריך). במסמך סרוק מסמנים אזורים ידנית.
  */
 
-import { BASES, WHEN, WHEN_LABELS, ROUND, SIZES, DAY_APPLIES, appliesOnDay, prayerBases, designOf } from './config.js';
+import { BASES, TEXT_BASES, WHEN, WHEN_LABELS, ROUND, SIZES, DAY_APPLIES, appliesOnDay, prayerBases, designOf } from './config.js';
 import { readFile, tokenize, detectDate, detectHebDate, detectShulAddress, suggestSlots, textCandidates, ruleOptions, agreeRules, printedTimes, approxStart, guessOldDay } from './template-read.js';
 import { analyzeSlot, refineBox, inkLines, templateCanvas, specialHost, slotText, slotLook, wordLine, slotKey, slotRanks as pageRanks } from './template-render.js';
 import { findOccasion, findPeriod, periodFor, buildLuach, buildDaysLuach, timesFor, dayPages } from './luach.js';
 import { toDayNum, toYmd, todayIn, dow } from './dates.js';
 import { esc } from './render.js';
 import { fontsToFill, fontLabel, isUnnamed, canReadLocalFonts, isPhone, localFontsPermission, fillFromLocal, fillFromFile } from './font-fill.js';
+import { openTextEdit } from './text-edit.js';
 
 const $ = id => document.getElementById(id);
 const KINDS = [['text', 'טקסט שכותבים כאן'], ['rule', 'תפילה או שיעור'], ['kiddush', 'קידוש (מלוח הקידושים)'], ['zman', 'זמן היום'], ['title', 'כותרת (שבת פרשת…)'], ['parasha', 'פרשת…'],
-  ['parashaName', 'שם הפרשה בלבד'], ['special', 'שבת מיוחדת (נחמו, זכור…) – רק כשיש'], ['hebDate', 'תאריך עברי'], ['gregDate', 'תאריך לועזי'], ['address', 'כתובת בית הכנסת'],
-  ['notes', 'הודעה בתחתית הלוח']];
+  ['parashaName', 'שם הפרשה בלבד'], ['special', 'שבת מיוחדת (נחמו, זכור…) – רק כשיש'], ['hebDate', 'תאריך עברי'], ['gregDate', 'תאריך לועזי'], ['address', 'כתובת בית הכנסת']];
 const KIND_LABEL = Object.fromEntries(KINDS);
 const BASE_LABELS = Object.keys(BASES);
-const ZMANIM = BASE_LABELS.filter(l => BASES[l] !== 'fixed' && BASES[l] !== 'kiddush');
-const RULE_BASE_LABELS = BASE_LABELS.filter(l => BASES[l] !== 'kiddush');
+const ZMANIM = BASE_LABELS.filter(l => BASES[l] !== 'fixed' && !TEXT_BASES.includes(BASES[l]));
+const RULE_BASE_LABELS = BASE_LABELS.filter(l => BASES[l] !== 'kiddush');   // אירועים נשארים: שורת אירועים מהלוח יכולה להיות אזור בקובץ
 const KIDDUSH_LABEL = BASE_LABELS.find(l => BASES[l] === 'kiddush');
 const zmanKey = label => BASES[label];
 const zmanLabel = key => ZMANIM.find(l => BASES[l] === key) || ZMANIM[0];
@@ -456,11 +456,71 @@ $('tplBoxes').addEventListener('click', e => {
   if (!st || st.drawing) return;
   const b = e.target.closest('.tb');
   if (!b) return;
+  if (st.textEditing) {
+    if (b.dataset.s != null) {
+      const s = st.slots[+b.dataset.s];
+      if (s.kind === 'text') { editSlotText(s); return; }
+    } else { editCandidateText(+b.dataset.c); return; }
+  }
   if (b.dataset.s != null) { focusSlot(+b.dataset.s); return; }
   const c = st.candidates[+b.dataset.c];
   st.slots.push({ box: c.box, kind: 'text', text: c.old, old: c.old });
   renderBoxes(); focusSlot(st.slots.length - 1);
 });
+
+/** יצירת אזור טקסט קבוע, בלחיצה על טקסט אפור שזוהה במצב "עריכת טקסט" */
+function editCandidateText(i) {
+  const c = st.candidates[i];
+  openTextEdit({
+    text: c.old,
+    onSave: text => {
+      if (!text) return;
+      st.slots.push({ box: c.box, kind: 'text', text, old: c.old });
+      renderBoxes(); renderSlots(); schedulePreviewRefresh();
+    }
+  });
+}
+
+/** עריכת אזור טקסט קיים במצב "עריכת טקסט": לתמיד (בתבנית עצמה), או רק לשבוע שבתצוגה המקדימה */
+function editSlotText(s) {
+  const idx = st.slots.indexOf(s), built = builtSlots(), b = built[idx], k = slotKey(b), host = specialHost(built);
+  const canWeek = !!st.previewData;
+  let weekOverridden = false;
+  if (canWeek) {
+    const edits = weekEditsFor(weekKey());
+    weekOverridden = Object.keys(edits).some(key => key.replace(/^p\d+\|/, '') === k);
+  }
+  openTextEdit({
+    text: s.text || '',
+    weekLabel: canWeek && st.weekShown ? weekLabel(st.weekShown) : null,
+    hasOverride: !!s.text || weekOverridden,
+    onSave: (text, scope) => {
+      if (scope === 'week' && canWeek) saveWeekText(b, k, host, text);
+      else {
+        s.text = text;
+        if (!s.text) { st.slots.splice(idx, 1); st.sel = null; }
+      }
+      renderSlots(); renderBoxes(); schedulePreviewRefresh();
+    },
+    onDelete: () => {
+      if (weekOverridden) resetWeek(s);
+      else { st.slots.splice(idx, 1); st.sel = null; }
+      renderSlots(); renderBoxes(); schedulePreviewRefresh();
+    }
+  });
+}
+
+/** שמירת טקסט לשבוע שבתצוגה המקדימה בלבד, כמו saveWeekLine אבל בלי פיצול לשורות */
+function saveWeekText(b, k, host, text) {
+  const { values, pages } = st.previewData;
+  const plain = slotText(b, { ...values, edits: null }, host);
+  const edits = weekEditsFor(weekKey());
+  const hit = pages.map((v, i) => i).filter(i => { const t = slotText(b, { ...pages[i], edits: null }, host); return t != null && t === plain; });
+  for (const i of hit.length ? hit : [0]) {
+    if (text === plain || !text) delete edits['p' + i + '|' + k];
+    else edits['p' + i + '|' + k] = text;
+  }
+}
 
 function focusSlot(i) {
   const s = st.slots[i];
@@ -481,6 +541,13 @@ $('tplDraw').onclick = () => {
   st.drawing = !st.drawing;
   $('tplDraw').setAttribute('aria-pressed', String(st.drawing));
   $('tplPage').classList.toggle('drawing', st.drawing);
+};
+
+/* עריכת טקסט בלחיצה: על טקסט שזוהה אוטומטית (יוצר אזור טקסט קבוע), או על אזור טקסט קיים */
+$('tplEditText').onclick = () => {
+  st.textEditing = !st.textEditing;
+  $('tplEditText').setAttribute('aria-pressed', String(st.textEditing));
+  $('tplPage').classList.toggle('text-editing', st.textEditing);
 };
 let drag = null;
 const toImg = (e) => {
@@ -584,10 +651,6 @@ function slotFields(s) {
       '<p class="hint">האזור יתמלא בהודעה בנוסח שהגבאי קבע בלוח הקידושים של הקהילה – השורה הראשונה, "ע״י", ' +
       'בעל הקידוש והסיבה – לפי מי שאושר לקידוש בתאריך הזה. בלי קידוש מאושר, האזור לא יתמלא. ' +
       'כאן בעורך, כשאין קידוש מאושר, מוצג קידוש לדוגמה.</p>';
-  }
-  if (s.kind === 'notes') {
-    return '<p class="hint">האזור יתמלא בהודעה שנקבעה בהגדרות ("בית הכנסת ← הודעה בתחתית הלוח"). בלי הודעה בהגדרות – האזור יימחק. ' +
-      'אפשר גם לערוך את הנוסח כאן, לשבוע הזה בלבד או לתמיד: מסמנים "לאפשר גלישה לכמה שורות" ולוחצים על ✎ ליד השורה בתצוגה למטה.</p>';
   }
   if (s.kind === 'parasha' || s.kind === 'parashaName') {
     return '<div class="rgrid"><div class="wide"><label>טקסט לפני הפרשה</label><input data-k="prefix" value="' + esc(s.prefix || '') +

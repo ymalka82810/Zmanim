@@ -12,7 +12,7 @@ const roleOptions = (selected, disableRabbi) => Object.entries(ROLE)
   .filter(([v]) => v !== 'rabbi' || !disableRabbi || v === selected)
   .map(([v, t]) => `<option value="${v}" ${v === selected ? 'selected' : ''}>${t}</option>`).join('');
 
-const S = { ready:false, isAuthenticated:false, me:null, synagogues:[], invitations:[], joinCode:null, joinInfo:undefined, detail:null, members:null, pending:null, errorLogs:null };
+const S = { ready:false, isAuthenticated:false, me:null, synagogues:[], invitations:[], joinCode:null, joinInfo:undefined, detail:null, members:null, pending:null, errorLogs:null, membersSheetOpen:false, membersSearch:'' };
 
 let toastT;
 function toast(msg){ let t = $('.toast'); if (!t){ t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role','status'); document.body.appendChild(t); } t.textContent = msg; clearTimeout(toastT); toastT = setTimeout(() => t.remove(), 3600); }
@@ -23,8 +23,17 @@ function openSheet(html){
   $('#sheetWrap').hidden = false;
   requestAnimationFrame(() => $('#sheetWrap').classList.add('open'));
 }
-function closeSheet(){ $('#sheetWrap').hidden = true; $('#sheet').innerHTML = ''; S.detail = null; }
+function closeSheet(){ $('#sheetWrap').hidden = true; $('#sheet').innerHTML = ''; S.detail = null; closeSheet2(); }
 $('#sheetWrap').addEventListener('click', e => { if (e.target.id === 'sheetWrap') closeSheet(); });
+
+function openSheet2(html){
+  $('#sheet2').innerHTML = html;
+  $('#sheetWrap2').hidden = false;
+  requestAnimationFrame(() => $('#sheetWrap2').classList.add('open'));
+}
+function closeSheet2(){ $('#sheetWrap2').hidden = true; $('#sheet2').innerHTML = ''; S.membersSheetOpen = false; S.membersSearch = ''; }
+$('#sheetWrap2').addEventListener('click', e => { if (e.target.id === 'sheetWrap2') closeSheet2(); });
+function activeSheetEl(){ return S.membersSheetOpen ? $('#sheet2') : $('#sheet'); }
 
 /* ---------- Boot ---------- */
 async function boot(){
@@ -248,17 +257,17 @@ async function setRole(synagogueId, userId, role){
   const myRole = S.detail ? S.detail.role : null;
   const name = current ? (current.name || current.email || 'החבר') : 'החבר';
   if (isSelf && isSoleInRole(previousRole)){
-    await SiteDialog.alert(soleInRoleMessage(previousRole, 'שינוי התפקיד'), { within: $('#sheet') });
+    await SiteDialog.alert(soleInRoleMessage(previousRole, 'שינוי התפקיד'), { within: activeSheetEl() });
     render(); return;
   }
   const transferRabbi = role === 'rabbi' && !isSelf && myRole === 'rabbi';
   if (transferRabbi){
-    if (!await SiteDialog.confirm(`להעביר את תפקיד הרב ל${name}? אתה תישאר בקהילה כגבאי.`, { within: $('#sheet') })){ render(); return; }
+    if (!await SiteDialog.confirm(`להעביר את תפקיד הרב ל${name}? אתה תישאר בקהילה כגבאי.`, { within: activeSheetEl() })){ render(); return; }
   } else if (isSelf && isManager(previousRole) && !isManager(role)){
     const warn = 'שים לב: לאחר שתרד לחבר קהילה לא תוכל להחזיר לעצמך את התפקיד. רק גבאי או רב אחר בקהילה יוכלו להחזיר לך אותו. בטוח שרוצה להמשיך?';
-    if (!await SiteDialog.confirm(warn, { ok: 'המשך', danger: true, within: $('#sheet') })){ render(); return; }
+    if (!await SiteDialog.confirm(warn, { ok: 'המשך', danger: true, within: activeSheetEl() })){ render(); return; }
   } else if (isManager(role)){
-    if (!await SiteDialog.confirm(`לתת ל${name} תפקיד ${ROLE[role]}?`, { within: $('#sheet') })){ render(); return; }
+    if (!await SiteDialog.confirm(`לתת ל${name} תפקיד ${ROLE[role]}?`, { within: activeSheetEl() })){ render(); return; }
   }
   try {
     await client.mutation('members:setRole', { synagogueId, userId, role });
@@ -268,7 +277,7 @@ async function setRole(synagogueId, userId, role){
   } catch(e){ toast(errMsg(e)); render(); }
 }
 async function removeMember(synagogueId, userId){
-  if (!await SiteDialog.confirm('להסיר את החבר מהקהילה?', { ok: 'הסרה', danger: true, within: $('#sheet') })) return;
+  if (!await SiteDialog.confirm('להסיר את החבר מהקהילה?', { ok: 'הסרה', danger: true, within: activeSheetEl() })) return;
   try {
     await client.mutation('members:remove', { synagogueId, userId });
     await loadManagerData(synagogueId);
@@ -446,7 +455,9 @@ function renderDetailSheet(){
     </div>
 
     <h3 style="margin-top:18px">חברים</h3>
-    <div id="membersList">${S.members ? renderMembers(S.members) : '<p class="muted">טוען…</p>'}</div>
+    <button class="btn sec members-btn" type="button" id="btnOpenMembers">
+      <span>${S.members ? S.members.length + ' חברים בקהילה' : 'טוען…'}</span><span>‹</span>
+    </button>
 
     <h3 style="margin-top:18px">פרטי הקהילה</h3>
     <form id="editSynForm">
@@ -475,9 +486,51 @@ function renderDetailSheet(){
     $('#btnRotateInvite').addEventListener('click', () => rotateInvite(s._id));
     $('#editSynForm').addEventListener('submit', e => { e.preventDefault(); saveSynagogue(e.target, s._id); });
     $('#sheet').querySelectorAll('[data-cancel-invite]').forEach(b => b.addEventListener('click', () => cancelInvitation(s._id, b.dataset.cancelInvite)));
-    $('#sheet').querySelectorAll('[data-role]').forEach(sel => sel.addEventListener('change', () => setRole(s._id, sel.dataset.role, sel.value)));
-    $('#sheet').querySelectorAll('[data-remove]').forEach(b => b.addEventListener('click', () => removeMember(s._id, b.dataset.remove)));
+    $('#btnOpenMembers').addEventListener('click', () => openMembersSheet(s._id));
   }
+  if (S.membersSheetOpen) renderMembersSheet(s._id);
+}
+
+function filteredMembers(){
+  const q = S.membersSearch.trim().toLowerCase();
+  const members = S.members || [];
+  if (!q) return members;
+  return members.filter(m => (m.name || '').toLowerCase().includes(q) || (m.email || '').toLowerCase().includes(q));
+}
+
+function renderMembersListInner(){
+  if (!S.members) return '<p class="muted">טוען…</p>';
+  const list = filteredMembers();
+  if (!S.members.length) return renderMembers(S.members);
+  if (!list.length) return '<p class="muted members-empty">לא נמצא חבר קהילה בשם או במייל הזה.</p>';
+  return renderMembers(list);
+}
+
+function bindMembersListEvents(synagogueId){
+  $('#sheet2').querySelectorAll('[data-role]').forEach(sel => sel.addEventListener('change', () => setRole(synagogueId, sel.dataset.role, sel.value)));
+  $('#sheet2').querySelectorAll('[data-remove]').forEach(b => b.addEventListener('click', () => removeMember(synagogueId, b.dataset.remove)));
+}
+
+function updateMembersListInner(synagogueId){
+  $('#membersListInner').innerHTML = renderMembersListInner();
+  bindMembersListEvents(synagogueId);
+}
+
+function openMembersSheet(synagogueId){
+  S.membersSheetOpen = true;
+  S.membersSearch = '';
+  renderMembersSheet(synagogueId);
+}
+
+function renderMembersSheet(synagogueId){
+  const html = `
+    <div class="sh"><h2>חברי הקהילה</h2><button class="x" data-close>✕</button></div>
+    <input type="search" id="memberSearch" placeholder="חיפוש לפי שם או מייל" value="${esc(S.membersSearch)}">
+    <div id="membersListInner" style="margin-top:8px">${renderMembersListInner()}</div>`;
+  openSheet2(html);
+  $('#sheet2 [data-close]').addEventListener('click', closeSheet2);
+  $('#memberSearch').addEventListener('input', e => { S.membersSearch = e.target.value; updateMembersListInner(synagogueId); });
+  bindMembersListEvents(synagogueId);
 }
 
 function emailStatusBadge(p){

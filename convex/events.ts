@@ -5,6 +5,8 @@ import type { QueryCtx } from "./_generated/server";
 import { requireManager, requireMember } from "./roles";
 
 const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+/** איך האירוע מוצג בלוח הזמנים: שורה בלוח (board), מודעה נפרדת (poster), או שניהם (both) */
+const showValidator = v.optional(v.union(v.literal("board"), v.literal("poster"), v.literal("both")));
 const clip = (s: string, max: number) => s.trim().slice(0, max);
 
 function checkDateKey(dateKey: string) {
@@ -35,6 +37,7 @@ export const list = query({
           dateKey: e.dateKey,
           title: e.title,
           details: e.details,
+          show: e.show ?? "board",
           createdBy: await userName(ctx, e.createdBy),
           createdAt: e.createdAt,
         })),
@@ -43,7 +46,7 @@ export const list = query({
 });
 
 export const add = mutation({
-  args: { synagogueId: v.id("synagogues"), dateKey: v.string(), title: v.string(), details: v.string() },
+  args: { synagogueId: v.id("synagogues"), dateKey: v.string(), title: v.string(), details: v.string(), show: showValidator },
   handler: async (ctx, args) => {
     const { userId } = await requireManager(ctx, args.synagogueId);
     checkDateKey(args.dateKey);
@@ -56,6 +59,7 @@ export const add = mutation({
       dateKey: args.dateKey,
       title,
       details: clip(args.details, 300),
+      show: args.show ?? "board",
       createdBy: userId,
       createdAt: Date.now(),
     });
@@ -63,7 +67,7 @@ export const add = mutation({
 });
 
 export const update = mutation({
-  args: { synagogueId: v.id("synagogues"), id: v.id("communityEvents"), title: v.string(), details: v.string() },
+  args: { synagogueId: v.id("synagogues"), id: v.id("communityEvents"), title: v.string(), details: v.string(), show: showValidator },
   handler: async (ctx, args) => {
     const { userId } = await requireManager(ctx, args.synagogueId);
     const event = await ctx.db.get(args.id);
@@ -74,7 +78,9 @@ export const update = mutation({
     if (!title) {
       throw new ConvexError("נא למלא כותרת לאירוע");
     }
-    await ctx.db.patch(args.id, { title, details: clip(args.details, 300), editedBy: userId, editedAt: Date.now() });
+    await ctx.db.patch(args.id, {
+      title, details: clip(args.details, 300), ...(args.show ? { show: args.show } : {}), editedBy: userId, editedAt: Date.now(),
+    });
   },
 });
 

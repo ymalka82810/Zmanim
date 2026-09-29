@@ -1,9 +1,12 @@
 package com.zmanim.luach;
 
 import android.content.Intent;
+import android.graphics.Rect;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.DisplayCutout;
+import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.webkit.ServiceWorkerClient;
 import android.webkit.ServiceWorkerController;
@@ -51,6 +54,16 @@ public class MainActivity extends BridgeActivity {
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 return super.shouldInterceptRequest(view, withDirectoryIndex(request));
             }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                sendCutout();
+            }
+        });
+        // בסיבוב המסך המצלמה עוברת צד
+        bridge.getWebView().addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            if (r - l != or - ol || b - t != ob - ot) sendCutout();
         });
         ServiceWorkerController.getInstance().setServiceWorkerClient(new ServiceWorkerClient() {
             @Override
@@ -72,6 +85,28 @@ public class MainActivity extends BridgeActivity {
         WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
         controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
         controller.hide(WindowInsetsCompat.Type.statusBars());
+    }
+
+    // הדף יודע רק את גובה אזור המצלמה (safe-area-inset-top), לא איפה היא לרוחב. שולחים ל-js/menu.js את
+    // המלבנים של המצלמה ביחס ל-WebView, כדי שהפס העליון יסדר את כפתור התפריט והכותרת לצידה.
+    private void sendCutout() {
+        if (bridge == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return;
+        WebView web = bridge.getWebView();
+        WindowInsets insets = web.getRootWindowInsets();
+        if (insets == null || web.getWidth() == 0) return;
+        DisplayCutout cutout = insets.getDisplayCutout();
+        int[] at = new int[2];
+        web.getLocationInWindow(at);
+        StringBuilder rects = new StringBuilder();
+        if (cutout != null) {
+            for (Rect r : cutout.getBoundingRects()) {
+                if (rects.length() > 0) rects.append(',');
+                rects.append('[').append(r.left - at[0]).append(',').append(r.top - at[1])
+                     .append(',').append(r.right - at[0]).append(',').append(r.bottom - at[1]).append(']');
+            }
+        }
+        web.evaluateJavascript("window.SiteMenu && SiteMenu.setCutout && SiteMenu.setCutout({w:" + web.getWidth()
+                + ",rects:[" + rects + "]})", null);
     }
 
     private WebResourceRequest withDirectoryIndex(WebResourceRequest request) {

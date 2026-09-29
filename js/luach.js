@@ -2,7 +2,7 @@
  * בניית לוח לשבת/חג: מציאת האירוע, חישוב הכללים, ומבנה נתונים לתצוגה.
  */
 
-import { dow, hm, gDate, toYmd } from './dates.js';
+import { dow, hm, gDate, toYmd, toDayNum } from './dates.js';
 import { yomTov, cholHamoed, parasha, hebDateString, toHebrew, fromHebrew, gematria, monthName, TISHREI } from './hebrew.js';
 import { zmanim, roundZman } from './zmanim.js';
 import { BASES, DAY_APPLIES, appliesOnDay, isBuiltin } from './config.js';
@@ -191,6 +191,7 @@ function ruleTime(rule, ctx, seen = new Set()) {
     return { text: ('0' + m[1]).slice(-2) + ':' + m[2], key: +m[1] * 60 + +m[2] };
   }
   if (base === 'kiddush') return kiddushRow(rule, ctx);
+  if (base === 'events') return eventsRow(rule, ctx);
   if (!base && String(rule.base || '').trim()) {
     const p = parentTime(rule, ctx, seen);
     if (!p) return null;
@@ -220,6 +221,18 @@ function kiddushRow(rule, ctx) {
   return { text, key: 9998 };
 }
 
+/**
+ * ערך "אירועים": האירועים מיומן הקהילה שהגבאי בחר להציג כשורה בלוח, בתאריך של הקטע –
+ * ב"כניסה" היום שלפני השבת/החג, ובשאר הקטעים היום עצמו. ctx.kiddush.events: dateKey ← [{ title, details }].
+ * אין אירוע – אין ערך, והשורה לא מופיעה.
+ */
+function eventsRow(rule, ctx) {
+  const d = ctx.day.day - (ctx.when === 'כניסה' ? 1 : 0);
+  const list = ctx.kiddush && ctx.kiddush.events && ctx.kiddush.events.get(toYmd(d));
+  if (!list || !list.length) return null;
+  return { text: list.map(e => e.details ? e.title + ' – ' + e.details : e.title).join(' · '), key: 9997 };
+}
+
 function fromMs(ms, tz) {
   const text = hm(ms, tz), p = text.split(':');
   return { text, key: +p[0] * 60 + +p[1], ms };
@@ -244,7 +257,10 @@ function applies(rule, day) {
 function rowsFor(cfg, when, day, t, kiddush) {
   return (cfg.rules || [])
     .filter(r => r && String(r.name || '').trim() && r.when === when && applies(r, day))
-    .map(r => Object.assign({ name: String(r.name).trim() }, ruleTime(r, { cfg, when, day, t, kiddush }) || { text: '—', key: 9999 }))
+    .map(r => [r, ruleTime(r, { cfg, when, day, t, kiddush })])
+    // שורת אירועים בלי אירוע ביום הזה לא מופיעה
+    .filter(([r, v]) => v || BASES[r.base] !== 'events')
+    .map(([r, v]) => Object.assign({ name: String(r.name).trim() }, v || { text: '—', key: 9999 }))
     .map(({ ms, ...r }) => r)
     .sort((a, b) => a.key - b.key);
 }
@@ -299,7 +315,6 @@ export function buildLuach(cfg, occ, kiddush) {
     title: occ.title,
     dates: hebDateString(first.day) + ', ' + gDate(first.day, true),
     sections,
-    notes: String(cfg.notes || '').trim(),
     values: {
       address: String(cfg.address || '').trim(),
       zmanim: { 'כניסה': texts(te), 'כל יום': texts(t1), 'יציאה': texts(tl) },
@@ -309,7 +324,6 @@ export function buildLuach(cfg, occ, kiddush) {
       parashaName: first.parasha || noParasha,
       // בשבת בלי שם מיוחד – ריק, כדי ש"שבת נחמו" מהלוח הישן לא יופיע בה
       special: occ.days.map(d => d.special).find(Boolean) || '',
-      notes: String(cfg.notes || '').trim(),
       hebDay: first.day,
       firstDay: first.day,
       multiDay: occ.days.length > 1
@@ -352,6 +366,8 @@ export function buildDaysLuach(cfg, p, kiddush) {
         .sort((a, b) => DAY_APPLIES.indexOf(b.applies) - DAY_APPLIES.indexOf(a.applies))[0];
       if (!r) return null;
       const v = ruleTime(r, { cfg, when: 'כל יום', day: c, t: c.t, kiddush });
+      // אירועים: תא ריק ביום בלי אירוע, וכשאין אירוע באף יום השורה לא מופיעה
+      if (!v && BASES[r.base] === 'events') return null;
       if (v) key = Math.min(key, v.key);
       return v ? v.text : '—';
     });
@@ -372,7 +388,6 @@ export function buildDaysLuach(cfg, p, kiddush) {
     address: String(cfg.address || '').trim(),
     title: p.title, parasha: shabbat ? 'פרשת ' + shabbat : p.title, parashaName: shabbat || p.title,
     special: p.kind === 'week' ? specialShabbat(first.day - first.dow + 6, cfg.il) : '',
-    notes: String(cfg.notes || '').trim(),
     hebDay: first.day, firstDay: first.day, multiDay: false
   });
 
@@ -383,8 +398,27 @@ export function buildDaysLuach(cfg, p, kiddush) {
     dates: rangeDates(first.day, p.days[p.days.length - 1].day),
     days: p.days.map(({ name, date, special }) => ({ name, date, special })),
     rows, zmanim,
-    notes: String(cfg.notes || '').trim(),
     values
+  };
+}
+
+/* ---------- מודעת אירוע ---------- */
+
+/**
+ * מודעה לאירוע מיומן הקהילה (ev: { dateKey, title, details }): כותרת האירוע, היום והתאריך העברי והלועזי,
+ * והפרטים בגוף המודעה. { type: 'poster', shul, title, dates, body } – בלי קטעים, כדי שעריכת הטקסט תעבוד כמו בלוח.
+ */
+export function buildPoster(cfg, ev) {
+  const d = toDayNum(ev.dateKey), il = cfg.il, p = dow(d) === 6 ? parasha(d, il) : null;
+  const day = yomTov(d, il) || (dow(d) === 6 ? (p ? 'שבת פרשת ' + p : 'שבת') : 'יום ' + DAY_NAMES[dow(d)]);
+  return {
+    type: 'poster',
+    shul: String(cfg.shul || '').trim(),
+    title: ev.title,
+    dates: day + ', ' + hebDateString(d) + ' · ' + gDate(d, true),
+    body: String(ev.details || '').trim(),
+    sections: [],
+    values: {}
   };
 }
 

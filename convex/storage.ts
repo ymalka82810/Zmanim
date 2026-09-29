@@ -70,19 +70,38 @@ export async function acceptUpload(
   return { size: meta.size };
 }
 
-/** שמות התבניות שמשתמשות בכל עיצוב (design: { blob }) */
-function designUsers(config: string | undefined) {
-  const out = new Map<string, string[]>();
+/** מוסיף ל-out, לכל עיצוב (design: { blob }) שבהגדרות, את label של התבנית שמשתמשת בו */
+export function addDesignUsers(
+  out: Map<string, string[]>,
+  config: string | undefined,
+  label: (templateName: string) => string = (n) => n,
+) {
   try {
     const cfg = JSON.parse(config ?? "{}");
     for (const t of Array.isArray(cfg?.templates) ? cfg.templates : []) {
       const blob = t?.design?.blob;
       if (typeof blob !== "string") continue;
-      out.set(blob, [...(out.get(blob) ?? []), String(t.name || "תבנית")]);
+      out.set(blob, [...(out.get(blob) ?? []), label(String(t.name || "תבנית"))]);
     }
   } catch {
     // ההגדרות נבדקות בשמירה
   }
+  return out;
+}
+
+/** לכל עיצוב: התבניות שמשתמשות בו, בהגדרות הפעילות ובהגדרות השמורות */
+export async function designUsers(ctx: QueryCtx, synagogueId: Id<"synagogues">) {
+  const out = new Map<string, string[]>();
+  const settings = await ctx.db
+    .query("zmanimSettings")
+    .withIndex("by_synagogue", (q) => q.eq("synagogueId", synagogueId))
+    .unique();
+  addDesignUsers(out, settings?.config);
+  const profiles = await ctx.db
+    .query("zmanimProfiles")
+    .withIndex("by_synagogue_name", (q) => q.eq("synagogueId", synagogueId))
+    .collect();
+  for (const p of profiles) addDesignUsers(out, p.config, (n) => `${n} (בהגדרות השמורות "${p.name}")`);
   return out;
 }
 
@@ -92,11 +111,7 @@ export const overview = query({
   handler: async (ctx, args) => {
     await requireManager(ctx, args.synagogueId);
     const { schedules, designs } = await communityFiles(ctx, args.synagogueId);
-    const settings = await ctx.db
-      .query("zmanimSettings")
-      .withIndex("by_synagogue", (q) => q.eq("synagogueId", args.synagogueId))
-      .unique();
-    const users = designUsers(settings?.config);
+    const users = await designUsers(ctx, args.synagogueId);
     const names = new Map<string, string>();
     const nameOf = async (userId: Id<"users"> | undefined) => {
       if (userId === undefined) return null;
@@ -161,12 +176,10 @@ export const purgeDesign = mutation({
     if (design === null || design.synagogueId !== args.synagogueId) {
       throw new ConvexError("הקובץ לא נמצא");
     }
-    const settings = await ctx.db
-      .query("zmanimSettings")
-      .withIndex("by_synagogue", (q) => q.eq("synagogueId", args.synagogueId))
-      .unique();
-    if (designUsers(settings?.config).has(design.hash)) {
-      throw new ConvexError("העיצוב בשימוש בתבנית. כדי למחוק אותו יש להסיר אותו מהתבנית בהגדרות הלוח");
+    if ((await designUsers(ctx, args.synagogueId)).has(design.hash)) {
+      throw new ConvexError(
+        "העיצוב בשימוש בתבנית. כדי למחוק אותו יש להסיר אותו מהתבנית בהגדרות הלוח, או למחוק את ההגדרות השמורות שמשתמשות בו",
+      );
     }
     await ctx.storage.delete(design.storageId);
     await ctx.db.delete(design._id);

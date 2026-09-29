@@ -11,7 +11,8 @@ export const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&l
 function fields(l) {
   const f = [];
   const add = (key, obj, prop) => f.push({ key, obj, prop });
-  for (const k of ['shul', 'title', 'dates', 'notes']) add(k, l, k);
+  for (const k of ['shul', 'title', 'dates']) add(k, l, k);
+  if (l.type === 'poster') add('body', l, 'body');
   if (l.type === 'days') {
     l.days.forEach((d, i) => { for (const k of ['name', 'date', 'special']) add('d' + i + '.' + k, d, k); });
     for (const [g, list] of [['r', l.rows], ['z', l.zmanim]]) for (const r of list) {
@@ -106,14 +107,17 @@ export function splitColumns(sections, n) {
 }
 
 /**
- * l – לוח אחרי withEdits. editing – מצב עריכה: מוצגים גם שדות ריקים (שם בית הכנסת, הודעה) כדי שאפשר יהיה לכתוב בהם.
+ * l – לוח אחרי withEdits. editing – מצב עריכה: מוצגים גם שדות ריקים (שם בית הכנסת) כדי שאפשר יהיה לכתוב בהם.
  * cols – מספר העמודות שהקטעים של לוח שבת/חג מחולקים ביניהן
  */
 export function luachHtml(l, editing, cols = 1) {
   let h = '<div class="l-head"><div class="stripe"></div><div class="stripe s"></div><div class="stripe"></div>';
   if (l.shul || editing) h += '<div class="l-shul">' + E(l, 'shul', l.shul, 'שם בית הכנסת') + '</div>';
   h += '<h2 class="l-title">' + E(l, 'title', l.title) + '</h2><div class="l-dates">' + E(l, 'dates', l.dates) + '</div></div>';
-  if (l.type === 'days') h += daysHtml(l, editing);
+  if (l.type === 'poster') {
+    // מודעת אירוע: הפרטים בגוף המודעה
+    if (l.body || editing) h += '<div class="l-poster">' + E(l, 'body', l.body, 'פרטי האירוע') + '</div>';
+  } else if (l.type === 'days') h += daysHtml(l, editing);
   else {
     const sec = s => {
       const i = l.sections.indexOf(s);
@@ -129,7 +133,6 @@ export function luachHtml(l, editing, cols = 1) {
     h += columns.length > 1 ? '<div class="l-cols">' + columns.map(c => '<div class="l-col">' + c.map(sec).join('') + '</div>').join('') + '</div>'
       : l.sections.map(sec).join('');
   }
-  if (l.notes || editing) h += '<div class="l-notes">' + E(l, 'notes', l.notes, 'הודעה בתחתית הלוח') + '</div>';
   return h;
 }
 
@@ -137,7 +140,8 @@ export function luachText(l) {
   const lines = ['*' + l.title + '*'];
   if (l.shul) lines.push(l.shul);
   lines.push(l.dates);
-  if (l.type === 'days') {
+  if (l.type === 'poster') { if (l.body) lines.push('', l.body); }
+  else if (l.type === 'days') {
     l.days.forEach((d, i) => {
       const items = r => r.filter(x => x.cells[i] != null).map(x => x.name + ' ' + x.cells[i]);
       lines.push('', '*' + d.name + ' ' + d.date + '*' + (d.special ? ' – ' + d.special : ''));
@@ -150,6 +154,5 @@ export function luachText(l) {
     for (const r of s.rows) lines.push(r.name + ' ' + r.text);
     if (s.zmanim.length) lines.push('_' + s.zmanim.map(z => z[0] + ' ' + z[1]).join(' · ') + '_');
   }
-  if (l.notes) lines.push('', l.notes);
   return lines.join('\n');
 }

@@ -37,7 +37,8 @@ async function hashDesign(design) {
  * client – ConvexClient. sid – הקהילה.
  * getCfg() – ההגדרות הנוכחיות. hasLocal – האם יש במכשיר הגדרות שנשמרו.
  * apply(cfg, by) – הגדרות חדשות מהענן. by – מי שמר אותן. toast(text, err).
- * מחזיר { push(cfg), stop() }.
+ * מחזיר { push(cfg), stop(), lighten(cfg), resolve({ config, designs }) }.
+ * lighten/resolve – המרה לטקסט שנשמר בענן ובחזרה, גם להגדרות השמורות בשם.
  */
 export function startSync({ client, sid, getCfg, hasLocal, apply, toast }) {
   const meta = readMeta();
@@ -57,8 +58,8 @@ export function startSync({ client, sid, getCfg, hasLocal, apply, toast }) {
     known.add(hash);
   }
 
-  /** ההגדרות לענן: כל עיצוב מקובץ מוחלף בגיבוב שלו, ועיצוב שעוד לא בקהילה עולה קודם */
-  async function send(cfg) {
+  /** ההגדרות כטקסט לענן: כל עיצוב מקובץ מוחלף בגיבוב שלו, ועיצוב שעוד לא בקהילה עולה קודם */
+  async function lighten(cfg) {
     const light = JSON.parse(JSON.stringify(cfg));
     for (const t of light.templates) {
       if (!t.design || t.design.ref) continue;
@@ -66,7 +67,11 @@ export function startSync({ client, sid, getCfg, hasLocal, apply, toast }) {
       if (!known.has(hash)) await upload(hash, text);
       t.design = { blob: hash, enabled: t.design.enabled !== false };
     }
-    setRev(await client.mutation('zmanimSettings:save', { synagogueId: sid, config: JSON.stringify(light) }));
+    return JSON.stringify(light);
+  }
+
+  async function send(cfg) {
+    setRev(await client.mutation('zmanimSettings:save', { synagogueId: sid, config: await lighten(cfg) }));
   }
 
   async function push(cfg) {
@@ -136,6 +141,8 @@ export function startSync({ client, sid, getCfg, hasLocal, apply, toast }) {
 
   return {
     push,
+    lighten,
+    resolve,
     stop() { stopped = true; unsub(); unsubDesigns(); }
   };
 }

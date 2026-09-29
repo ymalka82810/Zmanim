@@ -44,6 +44,9 @@
       <button type="button" id="todayOcc">הקרוב</button>
       <button type="button" id="nextOcc" aria-label="הלוח הבא">הבא ‹</button>
     </div>
+    <div class="luach-tools">
+      <button type="button" id="luachEdit" aria-pressed="false">✎ עריכת טקסט</button>
+    </div>
     <article id="luach" class="luach" aria-live="polite"></article>
     <div class="actions">
       <button type="button" class="primary" id="shareImg">שיתוף תמונה</button>
@@ -68,7 +71,7 @@
       <button role="tab" data-pane="rules" aria-selected="false">זמני התפילות</button>
       <button role="tab" data-pane="design" aria-selected="false">עיצוב מלוח קיים</button>
       <button role="tab" data-pane="font" aria-selected="false">גופן וגדלים</button>
-      <button role="tab" data-pane="backup" aria-selected="false">גיבוי</button>
+      <button role="tab" data-pane="backup" aria-selected="false">שמירה וגיבוי</button>
     </nav>
 
     <div class="panel" data-panes="shul">
@@ -169,6 +172,7 @@
       <h2>עיצוב, גופן וגדלים – <span id="fontTplName"></span></h2>
       <label id="layoutsLabel">תבנית תצוגה</label>
       <div class="lay-pick" id="layouts" role="group" aria-labelledby="layoutsLabel"></div>
+      <button type="button" class="link lay-more" id="layoutsMore" aria-controls="layouts" aria-expanded="false">הצג עוד תבניות</button>
       <div class="field"><label for="theme">ערכת צבעים</label><select id="theme"></select></div>
       <div class="field"><label for="font">גופן הלוח</label><select id="font"></select></div>
       <div class="sizes" id="sizes"></div>
@@ -191,14 +195,18 @@
       </div>
     </div>
 
-    <div class="panel" data-panes="shul">
-      <h2>הודעה בתחתית הלוח</h2>
-      <textarea id="notes" rows="2" aria-label="הודעה בתחתית הלוח"></textarea>
+    <div class="panel" data-panes="backup">
+      <h2>הגדרות שמורות</h2>
+      <p class="hint" id="profilesHint"></p>
+      <ul class="profiles" id="profiles" hidden></ul>
+      <div class="actions left">
+        <button type="button" class="primary" id="profileNew" hidden>שמירת ההגדרות הנוכחיות בשם</button>
+      </div>
     </div>
 
     <div class="panel" data-panes="backup">
-      <h2>גיבוי</h2>
-      <p class="hint">ההגדרות נשמרות בקהילה, ומתעדכנות אצל כל הגבאים והרב בכל מכשיר ודפדפן. אפשר גם לשמור קובץ גיבוי.</p>
+      <h2>גיבוי לקובץ</h2>
+      <p class="hint">ההגדרות נשמרות בקהילה, ומתעדכנות אצל כל הגבאים והרב בכל מכשיר ודפדפן. קובץ גיבוי שומר עותק במחשב, ואפשר להעביר אותו גם לקהילה אחרת. לא צריך לפתוח אותו – רק לטעון אותו כאן.</p>
       <div class="actions left">
         <button type="button" id="export">שמירת קובץ הגדרות</button>
         <button type="button" id="import">טעינת קובץ הגדרות</button>
@@ -216,7 +224,7 @@
         <p id="tplOcc" class="hint tpl-occ"></p>
       </div>
       <label class="check"><input type="checkbox" id="tplRules" checked> לעדכן את זמני התפילות של התבנית לפי הקובץ</label>
-      <p class="hint">האזורים המסומנים בכחול יוחלפו בכל לוח. לוחצים על אזור כדי לערוך אותו: לכתוב בו טקסט משלכם ("טקסט שכותבים כאן"), או לבחור ערך שמתעדכן בכל לוח (תפילה, זמן, פרשה, תאריך). לוחצים על טקסט אפור כדי לסמן אותו ולשנות אותו.</p>
+      <p class="hint">האזורים המסומנים בכחול יוחלפו בכל לוח. לוחצים על אזור כדי לערוך אותו: לכתוב בו טקסט משלכם ("טקסט שכותבים כאן"), או לבחור ערך שמתעדכן בכל לוח (תפילה, זמן, פרשה, תאריך). לוחצים על טקסט אפור כדי לסמן אותו ולשנות אותו. עם "עריכת טקסט" אפשר גם ללחוץ ישירות על כל טקסט בעמוד ולערוך, להוסיף או למחוק אותו – לתמיד או לשבוע הזה בלבד.</p>
       <p class="hint" id="tplScanHint" hidden>לא זוהה טקסט בקובץ (מסמך סרוק, תמונה לא ברורה, או שאין חיבור לאינטרנט לזיהוי טקסט בתמונה). לחצו "סימון אזור" וגררו על כל שעה או תאריך שצריך להחליף.</p>
       <div class="tpl-fontfill" id="tplFontFill" hidden>
         <p class="hint" id="tplFontMsg"></p>
@@ -224,7 +232,10 @@
         <button type="button" id="tplFontUpload">העלאת קובץ גופן</button>
         <input type="file" id="tplFontFile" accept=".ttf,.otf,.ttc,.otc,font/ttf,font/otf,font/collection" hidden>
       </div>
-      <button type="button" id="tplDraw" aria-pressed="false">סימון אזור</button>
+      <div class="actions left">
+        <button type="button" id="tplDraw" aria-pressed="false">סימון אזור</button>
+        <button type="button" id="tplEditText" aria-pressed="false">✎ עריכת טקסט</button>
+      </div>
     </div>
     <div class="tpl-layout">
       <div class="tpl-stage">

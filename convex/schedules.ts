@@ -6,7 +6,7 @@ import { isManager, requireManager, requireMember } from "./roles";
 import { acceptUpload, MAX_SCHEDULE_BYTES, TRASH_DAYS } from "./storage";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const modeValidator = v.union(v.literal("holy"), v.literal("days"));
+const modeValidator = v.union(v.literal("holy"), v.literal("days"), v.literal("events"));
 const fileArgs = { synagogueId: v.id("synagogues"), fileId: v.id("scheduleFiles") };
 
 // לוחות ישנים נשמרו בלי kind, ואז סוג הלוח הוא הזהות

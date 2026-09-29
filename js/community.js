@@ -6,11 +6,20 @@ const $ = id => document.getElementById(id);
 const Auth = window.SiteAuth;
 const ACCOUNT_URL = 'account/';
 const ROLE = { gabbai: 'גבאי', rabbi: 'רב', member: 'חבר קהילה' };
-const MODE = { holy: 'שבתות וחגים', days: 'ימות השבוע' };
+const MODE = { holy: 'שבתות וחגים', days: 'ימות השבוע', events: 'מודעת אירוע' };
 const MAX_FILE_BYTES = 7 * 1024 * 1024;
 const fmtDate =ymd => { const [y, m, d] = ymd.split('-'); return `${d}/${m}/${y}`; };
 
-let sid = null, role = null, files = [], unsubscribe = null, unsubscribeKiddush = null, getLuachFile = null, toast = () => {}, onKiddush = () => {}, onManager = () => {};
+let sid = null, role = null, files = [], unsubscribe = null, unsubscribeKiddush = null, unsubscribeEvents = null, getLuachFile = null, toast = () => {}, onKiddush = () => {}, onEvents = () => {}, onManager = () => {};
+
+/* מצב הדגמה מקומי: כשמריצים את האתר ב-localhost בלי להתחבר, מציגים את הלוח בלי קהילה (בלי סנכרון),
+ * כדי שאפשר יהיה לבדוק את הכלי בלי חשבון Google אמיתי. לא פעיל בשום כתובת אחרת */
+const isLocalHost = () => location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+function showLocalDemo(){
+  $('communityName').textContent = 'מצב הדגמה מקומי (לא מסונכרן)';
+  $('memberCommunityName').textContent = 'מצב הדגמה מקומי (לא מסונכרן)';
+  show('app');
+}
 
 function show(view){
   const manager = view === 'app';
@@ -167,6 +176,7 @@ function subscribe(id){
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
   watchStorage(false);
   if (unsubscribeKiddush) { unsubscribeKiddush(); unsubscribeKiddush = null; }
+  if (unsubscribeEvents) { unsubscribeEvents(); unsubscribeEvents = null; }
   sid = id;
   unsubscribe = Auth.watch('schedules:list', { synagogueId: id }, data => {
     role = data.role; files = data.files;
@@ -184,6 +194,8 @@ function subscribe(id){
     for (const b of data.bookings) if (b.status === 'approved') map.set(b.dateKey, { sponsorName: b.sponsorLine, occasion: b.occasionLine, ...wording });
     onKiddush(map);
   }, () => {});
+  // אירועים מיומן הקהילה – לשורת "אירועים" בלוח ולמודעות האירועים
+  unsubscribeEvents = Auth.watch('events:list', { synagogueId: id }, list => onEvents(list), () => onEvents([]));
 }
 
 async function load(){
@@ -191,7 +203,10 @@ async function load(){
     onManager(null);
     if (unsubscribe) { unsubscribe(); unsubscribe = null; }
     if (unsubscribeKiddush) { unsubscribeKiddush(); unsubscribeKiddush = null; }
+    if (unsubscribeEvents) { unsubscribeEvents(); unsubscribeEvents = null; }
+    onEvents([]);
     watchStorage(false);
+    if (isLocalHost()) return showLocalDemo();
     return gate('כדי לראות את לוח הזמנים של הקהילה יש להתחבר עם חשבון Google.', '<button type="button" class="primary btn-google" id="gateSignIn">כניסה עם Google</button>');
   }
   // הקהילות מהכניסה הקודמת מוצגות מיד, והרשימה מהשרת מחליפה אותן כשהיא מגיעה
@@ -220,11 +235,13 @@ function useSynagogues(synagogues){
 /**
  * getLuachFile: מחזירה { file, title, firstDate, mode, kind } של הלוח המוצג, או null.
  * onManager(sid): הקהילה שהמשתמש גבאי או רב בה, או null – לסנכרון ההגדרות.
+ * onEvents(list): האירועים מיומן הקהילה, { _id, dateKey, title, details, show } ממוינים לפי תאריך.
  */
 export async function initCommunity(options){
   getLuachFile = options.getLuachFile;
   toast = options.toast;
   onKiddush = options.onKiddush || (() => {});
+  onEvents = options.onEvents || (() => {});
   onManager = options.onManager || (() => {});
   $('submitLuach').onclick = submitCurrent;
   try { await Auth.completeSignInFromRedirect(); } catch (e) { console.warn(e); toast('ההתחברות נכשלה. נסו שוב.', true); }

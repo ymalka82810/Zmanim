@@ -20,12 +20,12 @@ const here = location.pathname.replace(/index\.html$/, '');
 const current = PAGES.slice().reverse().find(p => here === new URL(p.path, ROOT).pathname) || PAGES[0];
 
 const css = `
-.sm-bar{display:flex;align-items:center;gap:10px;box-sizing:border-box;height:calc(48px + env(safe-area-inset-top,0px));padding:0 10px;padding-top:env(safe-area-inset-top,0px);background:#2c4a7c;color:#fff;font-family:"Assistant",Arial,sans-serif;direction:rtl}
+.sm-bar{display:flex;align-items:center;gap:10px;box-sizing:border-box;height:calc(48px + env(safe-area-inset-top,0px));padding:0 max(10px,env(safe-area-inset-right,0px)) 0 max(10px,env(safe-area-inset-left,0px));padding-top:env(safe-area-inset-top,0px);background:#2c4a7c;color:#fff;font-family:"Assistant",Arial,sans-serif;direction:rtl}
 .sm-stripe{height:6px;background:linear-gradient(90deg,#1e3a63 0%,#ab7f2e 50%,#1e3a63 100%)}
 .sm-btn{display:flex;align-items:center;justify-content:center;flex:none;width:40px;height:40px;padding:0;border:0;border-radius:10px;background:none;color:inherit;cursor:pointer;box-shadow:none;transform:none}
 .sm-btn:hover,.sm-btn:focus-visible{background:rgba(255,255,255,.15)}
 .sm-btn svg{width:24px;height:24px}
-.sm-title{font-weight:700;font-size:1.05rem}
+.sm-title{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-weight:700;font-size:1.05rem}
 .sm-shade{position:fixed;inset:0;background:rgba(10,14,20,.45);z-index:900;opacity:0;transition:opacity .2s}
 .sm-drawer{position:fixed;top:0;bottom:0;right:0;width:min(280px,82vw);background:#fff;color:#1d2b45;z-index:901;transform:translateX(100%);transition:transform .2s;padding:calc(12px + env(safe-area-inset-top,0px)) 10px 12px;box-shadow:-6px 0 24px rgba(10,20,40,.2);font-family:"Assistant",Arial,sans-serif;direction:rtl}
 .sm-open .sm-shade{opacity:1}
@@ -53,6 +53,12 @@ const css = `
 .sm-day-dates b{font-family:"Frank Ruhl Libre",Georgia,serif;font-weight:700;color:#202a3f}
 :root[data-theme="dark"] .sm-day,:root[data-theme="dark"] .sm-day-dates b{color:#e9ecf5}
 :root[data-theme="dark"] .sm-day-syn,:root[data-theme="dark"] .sm-day-dates{color:#98a2c0}
+/* באפליקציה (כשיש אזור מצלמה למעלה): הפס תופס את אזור המצלמה בלי להוסיף לו גובה, ונשאר קבוע
+   עם כפתור התפריט ופס הזהב מתחתיו; רק הכותרת נגללת בתוכו והדף נכנס מתחת */
+.sm-pin{--sm-bar-h:max(48px,env(safe-area-inset-top,0px));--sm-top:calc(var(--sm-bar-h) + 6px)}
+.sm-pin .sm-bar{position:sticky;top:0;z-index:40;height:var(--sm-bar-h);padding-top:0;overflow:hidden}
+.sm-pin .sm-stripe{position:sticky;top:var(--sm-bar-h);z-index:40}
+.sm-pin .sm-title{will-change:transform}
 @media print{.sm-bar,.sm-stripe,.sm-day,.sm-layer{display:none!important}}
 `;
 
@@ -104,6 +110,12 @@ window.SiteMenu = {
   setCommunity(s){
     write(COMMUNITY_KEY, s && s.name ? { _id: s._id, name: s.name, il: !!s.il } : null);
     renderDay();
+  },
+  /* c: { w: רוחב ה-WebView בפיקסלים של המסך, rects: [[left, top, right, bottom], ...] } – נקרא מ-MainActivity */
+  setCutout(c){
+    cutout = c && Array.isArray(c.rects) ? { w: c.w, rects: c.rects } : null;
+    write(CUTOUT_KEY, cutout);
+    refit();
   }
 };
 
@@ -204,6 +216,81 @@ function build(){
 
   document.body.prepend(bar, stripe, dayBox);
   document.body.appendChild(layer);
+  pinTop(bar);
+}
+
+/* גובה אזור המצלמה/שורת הסטטוס; 0 בדפדפן רגיל, ואז הכותרת נגללת כרגיל */
+function topInset(){
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;top:0;height:env(safe-area-inset-top,0px);visibility:hidden;pointer-events:none';
+  document.body.appendChild(probe);
+  const h = probe.getBoundingClientRect().height;
+  probe.remove();
+  return h;
+}
+
+/* מיקום המצלמה בפיקסלים של הדף: [{ l, r, b }] מהקצה השמאלי והעליון. MainActivity שולח את המלבנים
+ * של המצלמה (בפיקסלים של המסך, יחד עם רוחב ה-WebView) ב-SiteMenu.setCutout; שומרים במכשיר כדי שבדף הבא
+ * הפס יהיה מסודר כבר מההתחלה. בלי מידע (דפדפן, או גרסה ישנה של האפליקציה) מניחים מצלמה באמצע. */
+const CUTOUT_KEY = 'site.cutout';
+let cutout = read(CUTOUT_KEY), refit = () => {};
+function cameras(){
+  const c = cutout, vw = window.innerWidth;
+  // מידע ממצב סיבוב אחר (רוחב אחר) לא מתאים למסך הנוכחי
+  if (!c || !c.w || !Array.isArray(c.rects) || Math.abs(vw * (window.devicePixelRatio || 1) / c.w - 1) > 0.03) return [];
+  const k = vw / c.w;
+  return c.rects.map(([l, t, r, b]) => ({ l: l * k, t: t * k, r: r * k, b: b * k })).filter(x => x.r > x.l && x.b > 0);
+}
+
+function pinTop(bar){
+  const title = bar.querySelector('.sm-title'), root = document.documentElement;
+  const PAD = 10, BTN = 40, GAP = 10, CLEAR = 8, MIN_TITLE = 80;
+  let pinned = false, queued = false;
+
+  /* הכותרת עולה יחד עם הדף ונעלמת מעל הפס, שנשאר במקומו */
+  function place(){
+    queued = false;
+    title.style.transform = pinned ? `translateY(${-Math.min(Math.max(0, window.scrollY), bar.offsetHeight)}px)` : '';
+  }
+
+  /* מסדרים את הפס סביב המצלמה. הכפתור והכותרת מתחילים מימין (RTL), ולכן מודדים מרחקים מהקצה הימני:
+   * מצלמה במקום הכפתור – מזיזים את שניהם אחריה; מצלמה בדרך של הכותרת – מקצרים אותה;
+   * ואם לא נשאר לכותרת מקום (מגרעת רחבה) – הכפתור והכותרת יורדים לשורה שמתחת למצלמה */
+  function setup(){
+    const inset = topInset();
+    pinned = inset > 0;
+    root.classList.toggle('sm-pin', pinned);
+    root.style.removeProperty('--sm-bar-h');
+    bar.style.paddingRight = bar.style.paddingTop = '';
+    title.style.maxWidth = '';
+    if (pinned){
+      const vw = window.innerWidth, cams = cameras().filter(c => c.t < inset + 1);
+      const want = title.scrollWidth;
+      let start = PAD, room = Infinity, under = 0;
+      for (const c of cams.slice().sort((a, b) => b.r - a.r)){
+        const near = vw - c.r, far = vw - c.l;
+        if (near < start + BTN + CLEAR) start = Math.max(start, far + CLEAR);
+        else room = Math.min(room, near - CLEAR - (start + BTN + GAP));
+      }
+      room = Math.min(room, vw - PAD - (start + BTN + GAP));
+      if (room < Math.min(want, MIN_TITLE)){
+        under = Math.ceil(Math.max(inset, ...cams.map(c => c.b)));
+        bar.style.paddingTop = under + 'px';
+        root.style.setProperty('--sm-bar-h', (under + 48) + 'px');
+      } else {
+        if (start > PAD) bar.style.paddingRight = Math.ceil(start) + 'px';
+        if (room < want) title.style.maxWidth = Math.floor(room) + 'px';
+        const low = Math.max(inset, ...cams.map(c => c.b));
+        root.style.setProperty('--sm-bar-h', Math.ceil(Math.max(48, low)) + 'px');
+      }
+    }
+    place();
+  }
+  refit = setup;
+  window.addEventListener('scroll', () => { if (!queued){ queued = true; requestAnimationFrame(place); } }, { passive: true });
+  window.addEventListener('resize', setup);
+  if (document.fonts) document.fonts.ready.then(setup);
+  setup();
 }
 
 /* כפתור "חזרה" של אנדרואיד באפליקציה: MainActivity קורא ל-SiteBack.handle(), שסוגר את מה שפתוח בדף (חלון,

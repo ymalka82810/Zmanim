@@ -3,7 +3,7 @@ import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { requireManager } from "./roles";
-import { acceptUpload, MAX_DESIGN_BYTES } from "./storage";
+import { acceptUpload, addDesignUsers, designUsers, MAX_DESIGN_BYTES } from "./storage";
 
 const MAX_CONFIG = 500 * 1024;
 const HASH_RE = /^[0-9a-f]{64}$/;
@@ -17,19 +17,34 @@ async function getSettings(ctx: QueryCtx, synagogueId: Id<"synagogues">) {
     .unique();
 }
 
-/** הגיבובים של העיצובים שההגדרות משתמשות בהם (design: { blob, enabled }) */
-function designHashes(config: string) {
-  const out = new Set<string>();
-  try {
-    const cfg = JSON.parse(config);
-    for (const t of Array.isArray(cfg?.templates) ? cfg.templates : []) {
-      const blob = t?.design?.blob;
-      if (typeof blob === "string") out.add(blob);
-    }
-  } catch {
-    // נבדק כבר בשמירה
+/** זורק שגיאה אם ההגדרות גדולות מדי או לא תקינות */
+export function checkConfig(config: string) {
+  if (config.length > MAX_CONFIG) {
+    throw new ConvexError("ההגדרות גדולות מדי");
   }
-  return out;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(config);
+  } catch {
+    parsed = null;
+  }
+  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { templates?: unknown }).templates)) {
+    throw new ConvexError("ההגדרות לא תקינות");
+  }
+}
+
+/** גיבוב ← כתובת להורדה, לכל עיצוב שההגדרות משתמשות בו */
+export async function designUrls(ctx: QueryCtx, synagogueId: Id<"synagogues">, config: string) {
+  const designs: Record<string, string> = {};
+  for (const hash of addDesignUsers(new Map(), config).keys()) {
+    const d = await ctx.db
+      .query("zmanimDesigns")
+      .withIndex("by_synagogue_hash", (q) => q.eq("synagogueId", synagogueId).eq("hash", hash))
+      .first();
+    const url = d ? await ctx.storage.getUrl(d.storageId) : null;
+    if (url) designs[hash] = url;
+  }
+  return designs;
 }
 
 /** ההגדרות של הקהילה, או null אם עוד לא נשמרו. designs: גיבוב ← כתובת להורדת העיצוב */
@@ -41,20 +56,11 @@ export const get = query({
     if (doc === null) {
       return null;
     }
-    const designs: Record<string, string> = {};
-    for (const hash of designHashes(doc.config)) {
-      const d = await ctx.db
-        .query("zmanimDesigns")
-        .withIndex("by_synagogue_hash", (q) => q.eq("synagogueId", args.synagogueId).eq("hash", hash))
-        .first();
-      const url = d ? await ctx.storage.getUrl(d.storageId) : null;
-      if (url) designs[hash] = url;
-    }
     const user = await ctx.db.get(doc.updatedBy);
     return {
       config: doc.config,
       rev: doc.rev,
-      designs,
+      designs: await designUrls(ctx, args.synagogueId, doc.config),
       updatedAt: doc.updatedAt,
       updatedBy: user?.name ?? user?.email ?? "משתמש",
     };
@@ -119,18 +125,7 @@ export const save = mutation({
   args: { synagogueId: v.id("synagogues"), config: v.string() },
   handler: async (ctx, args) => {
     const { userId } = await requireManager(ctx, args.synagogueId);
-    if (args.config.length > MAX_CONFIG) {
-      throw new ConvexError("ההגדרות גדולות מדי");
-    }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(args.config);
-    } catch {
-      parsed = null;
-    }
-    if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { templates?: unknown }).templates)) {
-      throw new ConvexError("ההגדרות לא תקינות");
-    }
+    checkConfig(args.config);
     const now = Date.now();
     const doc = await getSettings(ctx, args.synagogueId);
     const rev = (doc?.rev ?? 0) + 1;
@@ -146,7 +141,7 @@ export const save = mutation({
       await ctx.db.patch(doc._id, { config: args.config, rev, updatedBy: userId, updatedAt: now });
     }
 
-    const used = designHashes(args.config);
+    const used = await designUsers(ctx, args.synagogueId);
     const designs = await ctx.db
       .query("zmanimDesigns")
       .withIndex("by_synagogue_hash", (q) => q.eq("synagogueId", args.synagogueId))

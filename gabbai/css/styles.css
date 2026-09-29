@@ -18,7 +18,7 @@
   --tchelet:#8fb0ec; --tchelet-soft:#22325a; --gold:#dfb564; --gold-soft:#3c3320;
   --in:#6fd09c; --in-soft:#173a2a; --out:#f08c80; --out-soft:#44211e;
   --sh-sm:0 1px 2px rgba(0,0,0,.35); --sh-md:0 10px 26px rgba(0,0,0,.42); }
-html{scroll-padding-top:env(safe-area-inset-top,0px)}
+html{scroll-padding-top:var(--sm-top,env(safe-area-inset-top,0px))}
 *,*::before,*::after{box-sizing:inherit}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.5}
 button,input,select,textarea{font:inherit;color:inherit}
@@ -38,7 +38,7 @@ header.day h1{font-family:var(--serif);font-weight:900;font-size:1.85rem;line-he
 .iconbtn{background:var(--paper);border:1px solid var(--line);color:var(--tchelet);font-weight:700;border-radius:9px;padding:9px 16px;cursor:pointer;white-space:nowrap}
 .iconbtn:hover:not(:disabled){border-color:var(--tchelet)}
 
-nav.tabs{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding:0 16px}
+nav.tabs{position:sticky;top:var(--sm-top,env(safe-area-inset-top,0px));z-index:5;background:var(--bg);padding:0 16px}
 nav.tabs .in{max-width:948px;margin:0 auto;display:flex;gap:6px;overflow-x:auto;box-shadow:inset 0 -1px 0 var(--line)}
 nav.tabs button{flex:0 0 auto;background:transparent;border:0;border-bottom:2px solid transparent;border-radius:8px 8px 0 0;box-shadow:none;transform:none;padding:9px 20px;cursor:pointer;color:var(--muted);font-weight:600;transition:color .15s ease,background-color .15s ease}
 nav.tabs button:hover:not(:disabled){color:var(--tchelet);background:color-mix(in srgb,var(--tchelet) 6%,transparent);box-shadow:none;transform:none}

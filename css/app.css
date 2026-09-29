@@ -99,6 +99,13 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 
 .nav-occ { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
 .nav-occ button { border-color: var(--line); }
+.luach-tools { display: flex; justify-content: flex-end; margin-bottom: 6px; }
+.luach-tools button { border-color: var(--line); font-size: .9rem; padding: 6px 12px; }
+.luach.editing [data-e] { cursor: pointer; border-radius: 4px; outline: 1px dashed color-mix(in srgb, var(--blue) 45%, transparent); outline-offset: 2px; }
+.luach.editing [data-e]:hover { background: color-mix(in srgb, var(--blue) 12%, transparent); }
+.luach.editing [data-e].ed { outline-style: solid; outline-color: var(--gold); }
+.luach.editing [data-e].fx { outline-style: solid; outline-color: var(--blue); }
+@media print { .luach-tools { display: none !important; } .luach [data-e] { outline: none !important; background: none !important; cursor: auto !important; } }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 16px 0; }
 .actions.left { justify-content: flex-start; }
 
@@ -118,6 +125,10 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .l-sec tr:hover td { background: color-mix(in srgb, var(--blue) 4%, transparent); }
 .l-sec th.d { text-align: left; white-space: nowrap; font-weight: 400; font-size: .85rem; color: var(--muted); }
 .l-sec td.t { text-align: left; font-weight: 700; width: calc(80px * var(--s-time, 1)); font-size: calc(1em * var(--s-time, 1)); font-variant-numeric: tabular-nums; color: var(--blue); }
+/* מודעת אירוע: הפרטים במרכז בגופן גדול, והמודעה בגובה של דף */
+.l-poster { text-align: center; white-space: pre-line; font-size: calc(1.35rem * var(--s-name, 1)); line-height: 1.6; margin: calc(56px * var(--fit-gap, 1)) 12px calc(40px * var(--fit-gap, 1)); }
+.luach.poster { min-height: min(120vw, 900px); }
+.luach.poster .l-title { font-size: calc(3.1rem * var(--s-title, 1)); }
 .l-sec td.z { font-size: calc(.8rem * var(--s-zman, 1)); color: var(--muted); border: none; }
 .l-sec td.z > span { display: inline-block; margin-left: 14px; }
 /* לוח ימי חול: עמודה לכל יום */
@@ -136,7 +147,6 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .l-cols { display: flex; gap: 28px; align-items: flex-start; }
 .l-col { flex: 1 1 0; min-width: 0; }
 @container (max-width: 520px) { .l-cols { display: block; } }
-.l-notes { margin-top: calc(20px * var(--fit-gap, 1)); padding: calc(12px * var(--fit-gap, 1)) 14px; background: var(--note); border-radius: 10px; font-size: .95rem; white-space: pre-line; }
 .luach-empty { text-align: center; color: var(--muted); }
 
 /* תבניות תצוגה (LAYOUTS ב-config.js). התבנית הקלאסית היא העיצוב שלמעלה; כל שינוי כאן צריך להתאים גם ל-image.js */
@@ -182,6 +192,49 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .luach[data-layout="minimal"] .l-grid thead th { font-family: var(--f-body); border-bottom: 1px solid var(--line); }
 .luach[data-layout="minimal"] .l-grid td { color: var(--ink); }
 .luach[data-layout="minimal"] .l-grid td, .luach[data-layout="minimal"] .l-grid tbody th { border-bottom-color: transparent; }
+/* כרטיסים */
+.luach[data-layout="cards"] .stripe { display: none; }
+.luach[data-layout="cards"] .l-shul { margin-top: 0; }
+.luach[data-layout="cards"] .l-sec { border-collapse: separate; border-spacing: 0; background: var(--note); border-radius: 14px; padding: 4px 14px 10px; }
+.luach[data-layout="cards"] .l-sec td:not(.z) { border-bottom-color: var(--paper); }
+.luach[data-layout="cards"] .l-grid-wrap { background: var(--note); border-radius: 14px; padding: 4px 12px 10px; }
+.luach[data-layout="cards"] .l-grid td, .luach[data-layout="cards"] .l-grid tbody th { border-bottom-color: var(--paper); }
+/* כותרת כהה */
+.luach[data-layout="dark"] .stripe { display: none; }
+.luach[data-layout="dark"] .l-head { background: var(--ink); margin: -22px -24px 0; padding: calc(20px * var(--fit-gap, 1)) 24px calc(16px * var(--fit-gap, 1)); border-bottom: 5px solid var(--blue); }
+.luach[data-layout="dark"] .l-shul { margin-top: 0; color: var(--paper); opacity: .85; }
+.luach[data-layout="dark"] .l-title { color: var(--paper); }
+.luach[data-layout="dark"] .l-dates { color: var(--line); margin-bottom: 0; padding-bottom: 0; }
+.luach[data-layout="dark"] .l-dates::after { display: none; }
+.luach[data-layout="dark"] .l-sec th { background: var(--blue); color: var(--paper); border-bottom: none; padding-inline: 10px; }
+.luach[data-layout="dark"] .l-sec th.d { color: color-mix(in srgb, var(--paper) 85%, var(--blue)); }
+.luach[data-layout="dark"] .l-sec th:first-child { border-radius: 0 8px 8px 0; }
+.luach[data-layout="dark"] .l-sec th:last-child { border-radius: 8px 0 0 8px; }
+.luach[data-layout="dark"] .l-sec td { padding-inline: 10px; }
+.luach[data-layout="dark"] .l-grid thead th { background: var(--blue); color: var(--paper); border-bottom: none; }
+.luach[data-layout="dark"] .l-grid thead small, .luach[data-layout="dark"] .l-grid thead small.sp { color: var(--paper); }
+.luach[data-layout="dark"].fit-measure .l-head { margin: 0 0 4px; }
+@media print { .luach[data-layout="dark"] .l-head { margin: 0 0 4px; } }
+/* שעות מודגשות */
+.luach[data-layout="pills"] .stripe { display: none; }
+.luach[data-layout="pills"] .l-shul { margin-top: 0; }
+.luach[data-layout="pills"] .l-dates { border-bottom: 1px solid var(--line); }
+.luach[data-layout="pills"] .l-dates::after { display: none; }
+.luach[data-layout="pills"] .l-sec th { color: var(--blue); border-bottom: none; }
+.luach[data-layout="pills"] .l-sec td { border-bottom: none; }
+.luach[data-layout="pills"] .l-sec td.t { width: calc(100px * var(--s-time, 1)); }
+.luach[data-layout="pills"] .l-sec td.t > span,
+.luach[data-layout="pills"] .l-grid tbody tr:not(.z) td > span:not(:empty) { display: inline-block; background: var(--soft); border-radius: 999px; padding: 1px 12px; }
+.luach[data-layout="pills"] .l-grid thead th { color: var(--blue); border-bottom: none; }
+.luach[data-layout="pills"] .l-grid td, .luach[data-layout="pills"] .l-grid tbody th { border-bottom: none; }
+/* מסגרת מעוגלת */
+.luach[data-layout="outline"] { padding: 34px 36px 36px; }
+.luach[data-layout="outline"]::before { content: ""; position: absolute; inset: 12px; border: 3px solid var(--blue); border-radius: 22px; pointer-events: none; }
+.luach[data-layout="outline"] .stripe { display: none; }
+.luach[data-layout="outline"] .l-shul { margin-top: 0; }
+.luach[data-layout="outline"] .l-sec th { border-bottom: 1px solid var(--line); }
+.luach[data-layout="outline"] .l-sec th:first-child > span { display: inline-block; background: var(--soft); color: var(--blue); border-radius: 999px; padding: 2px 14px; }
+.luach[data-layout="outline"] .l-grid thead th { border-bottom: 1px solid var(--line); }
 
 /* בחירת תבנית תצוגה בהגדרות: דוגמה מוקטנת של כל תבנית */
 .lay-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin: 8px 0 14px; }
@@ -195,6 +248,7 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .lay-card[data-upload] { border-style: dashed; }
 .lay-card[data-upload] .lay-thumb { display: grid; place-items: center; border-style: dashed; }
 .lay-plus { font-size: 2.6rem; line-height: 1; color: var(--blue); }
+.lay-more { display: block; margin: -6px 0 14px; }
 
 .lp { position: relative; }
 
@@ -247,6 +301,14 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .look-btns .look-italic { font-style: italic; font-weight: 400; }
 .wrap-no { font-size: .85rem; opacity: .7; margin-inline-end: 4px; }
 .tpl-status { margin: 0 0 6px; font-weight: 600; color: var(--ok); }
+.profiles { list-style: none; margin: 10px 0; padding: 0; }
+.profiles li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; background: var(--bg); }
+.profiles li.current { border-color: var(--ok); }
+.prof-name { font-weight: 700; overflow-wrap: anywhere; }
+.prof-meta { font-size: .8rem; color: var(--muted); }
+.prof-text { flex: 1 1 180px; min-width: 0; }
+.prof-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.prof-btns button { padding: 6px 12px; }
 .tpl-occ { align-self: end; margin: 0 0 8px; }
 .tpl-fontfill { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0 12px; }
 .tpl-fontfill .hint { flex-basis: 100%; margin: 0; }
@@ -258,7 +320,7 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 @media (min-width: 900px) {
   main.wrap:has(#view-template:not([hidden])) { max-width: 1200px; }
   .tpl-layout { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: start; }
-  .tpl-stage { position: sticky; top: 8px; }
+  .tpl-stage { position: sticky; top: calc(8px + var(--sm-top, 0px)); }
 }
 .tpl-page { position: relative; border: 1px solid var(--line); background: #fff; touch-action: pan-y; border-radius: 10px; overflow: hidden; }
 .tpl-page img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; }
@@ -274,6 +336,7 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .rh-l, .rh-r { cursor: ew-resize; }
 .rh-t, .rh-b { cursor: ns-resize; }
 .tpl-page.drawing .tb { pointer-events: none; }
+.tpl-page.text-editing .tb.cand, .tpl-page.text-editing .tb.slot { outline: 2px solid var(--gold); outline-offset: 1px; }
 .slot-ed.sel { border-color: var(--blue); box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 25%, transparent); }
 .slot-ed > summary { align-items: center; }
 .slot-ed .num { background: var(--blue); color: var(--on-accent); border-radius: 10px; min-width: 22px; text-align: center; font-size: .85rem; }
@@ -296,9 +359,9 @@ button[aria-pressed="true"] { background: linear-gradient(135deg, var(--blue), v
 /* מדידת הלוח ברוחב ובגודל של ההדפסה (הדף בלי השוליים), לפני ההדפסה */
 .luach.fit-measure { zoom: var(--zoom, 1); width: calc(var(--page-w, 182mm) / var(--zoom, 1)); max-width: none; border: none; box-shadow: none; padding: 0; font-size: 18px; border-radius: 0; }
 .luach.fit-measure .l-title { font-size: calc(2.4rem * var(--s-title, 1)); }
-/* המסגרת המעוטרת צריכה ריווח גם בהדפסה */
-.luach[data-layout="framed"].fit-measure { padding: 30px 32px; }
-@media print { .luach[data-layout="framed"] { padding: 30px 32px; } }
+/* המסגרות צריכות ריווח גם בהדפסה */
+.luach[data-layout="framed"].fit-measure, .luach[data-layout="outline"].fit-measure { padding: 30px 32px; }
+@media print { .luach[data-layout="framed"], .luach[data-layout="outline"] { padding: 30px 32px; } }
 
 /* קהילה */
 .gate { text-align: center; padding: 32px 18px; }

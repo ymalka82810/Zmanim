@@ -3,17 +3,18 @@
  * ועותק שלהן נשמר בדפדפן. הלוחות המאושרים נשמרים בקהילה (community.js).
  */
 
-import { CITIES, BASES, WHEN, WHEN_LABELS, APPLIES, ROUND, FONTS, THEMES, LAYOUTS, SIZE_PARTS, SIZES, PAPERS, ORIENTS, COLUMNS, pageOf, DEFAULT_CONFIG, DAY_APPLIES, BUILTIN, isBuiltin, newTemplate, designOf, activeDesign,
-  prayerBases, fontFamilies, fontsHref, themeColors, normalize, loadConfig, saveConfig, clearConfig } from './config.js';
-import { findOccasion, templateFor, periodFor, occasionParts, buildLuach, buildDaysLuach, dayPages } from './luach.js';
+import { CITIES, BASES, WHEN, WHEN_LABELS, APPLIES, ROUND, FONTS, THEMES, LAYOUTS, LAYOUTS_SHOWN, SIZE_PARTS, SIZES, PAPERS, ORIENTS, COLUMNS, pageOf, DEFAULT_CONFIG, DAY_APPLIES, BUILTIN, isBuiltin, newTemplate, designOf, activeDesign,
+  prayerBases, fontFamilies, fontsHref, themeColors, normalize, loadConfig, saveConfig, clearConfig, TEXT_BASES } from './config.js';
+import { findOccasion, templateFor, periodFor, occasionParts, buildLuach, buildDaysLuach, dayPages, buildPoster } from './luach.js';
 import { MOADIM } from './moadim.js';
 import { luachHtml, withEdits, esc } from './render.js';
-import { todayIn, toYmd } from './dates.js';
+import { todayIn, toYmd, toDayNum } from './dates.js';
 import { luachCanvas, pngBlob, pdfBlob, stackCanvases } from './image.js';
 import { templateCanvas } from './template-render.js';
 import { editFromFile, editExisting, mergeRules, setKiddush } from './template-ui.js';
 import { initCommunity } from './community.js';
 import { startSync } from './settings-sync.js';
+import { openTextEdit } from './text-edit.js';
 
 const $ = id => document.getElementById(id);
 const BASE_LABELS = Object.keys(BASES);
@@ -24,6 +25,10 @@ let period = null;       // השבת/החג או ימי החול של הלוח �
 let current = null;      // הלוח המוצג כרגע
 let sel = 'shabbat';     // התבנית שנבחרה בהגדרות
 let kiddush = null;      // dateKey ← קידוש מאושר, מהקהילה (community.js)
+let events = null;       // האירועים מיומן הקהילה (community.js), או null עד שנטענו
+let comm = null;         // הקידושים והאירועים לחישוב הלוח (communityData)
+let posterId = null;     // האירוע שהמודעה שלו מוצגת, או null למודעה הקרובה
+let boardEditing = false;   // מצב "עריכת טקסט" בלוח של האתר (לא זמין בעיצוב מקובץ, שהוא תמונה)
 
 /* התבנית שהלוח מוצג לפיה (שבתות, חגים, חול המועד, ימות השבוע או תבנית של המשתמש). נשמרת במכשיר */
 const MODE_KEY = 'zmanim.mode';
@@ -78,6 +83,27 @@ $('settingsTabs').onclick = e => { const b = e.target.closest('[data-pane]'); if
 
 const boardTpl = () => cfg.templates.find(t => t.id === board) || cfg.templates[0];
 
+/*
+ * אירועים מיומן הקהילה. בכל אירוע הגבאי בוחר איך הוא מוצג (show): שורה בלוח ("board") – בשורה שהבסיס שלה
+ * "אירועים (מיומן הקהילה)", מודעה נפרדת ("poster") – בלשונית "אירועים" בשורת התבניות, או שניהם ("both").
+ */
+const EVENTS_BOARD = '_events';   // הלשונית של מודעות האירועים (לא תבנית)
+const posterEvents = () => (events || []).filter(e => e.show === 'poster' || e.show === 'both');
+
+/** הקידושים לחישוב הלוח (dateKey ← קידוש, ו-wording), ובנוסף events: dateKey ← האירועים שמוצגים כשורה בלוח */
+function communityData() {
+  const m = new Map(kiddush || []);
+  m.wording = kiddush && kiddush.wording;
+  m.events = new Map();
+  for (const e of events || []) {
+    if (e.show === 'poster') continue;
+    if (!m.events.has(e.dateKey)) m.events.set(e.dateKey, []);
+    m.events.get(e.dateKey).push(e);
+  }
+  return m;
+}
+comm = communityData();
+
 /**
  * מעבר לתבנית אחרת בלוח. day – היום שממנו מחפשים את הלוח, או null ללוח הקרוב.
  * שורת התבניות זהה בלוח ובהגדרות, ולכן הבחירה בה מסונכרנת: מעבר כאן מעדכן גם איזו תבנית נבחרת לעריכה בהגדרות
@@ -105,6 +131,9 @@ function tplChips(el, id, host, join = null) {
     return '<button type="button" class="chip" data-t="' + esc(x.id) + '" aria-pressed="' +
       (x.id === id) + '">' + esc(x.name) + '</button>';
   }).join('') +
+    // מודעות האירועים – בלוח בלבד, כשיש אירוע שהגבאי בחר להציג כמודעה
+    (host === 'luach' && (posterEvents().length || id === EVENTS_BOARD)
+      ? '<button type="button" class="chip" data-t="' + EVENTS_BOARD + '" aria-pressed="' + (id === EVENTS_BOARD) + '">אירועים</button>' : '') +
     '<button type="button" class="chip add" data-add="' + host + '">+ תבנית חדשה</button>';
 }
 
@@ -139,7 +168,7 @@ function pageEdits(e, i) {
  */
 function build(p) {
   const t = templateFor(cfg, p), c = { ...cfg, rules: t.rules };
-  const base = p.mode === 'days' ? buildDaysLuach(c, p, kiddush) : buildLuach(c, p, kiddush);
+  const base = p.mode === 'days' ? buildDaysLuach(c, p, comm) : buildLuach(c, p, comm);
   const fixed = t.edits || {}, e = cfg.edits[editKey(t, p)] || {};
   const l = withEdits(base, e, fixed);
   l.base = base;
@@ -147,13 +176,69 @@ function build(p) {
   l.edits = e;
   l.fixedEdits = fixed;
   l.design = activeDesign(cfg, t);
-  l.pages = l.design ? (base.values.multiDay ? dayPages(c, p, kiddush) : [base.values]).map((v, i) => {
+  l.pages = l.design ? (base.values.multiDay ? dayPages(c, p, comm) : [base.values]).map((v, i) => {
     const once = pageEdits(e, i), fx = pageEdits(fixed, i);
     return { ...v, edits: { ...fx, ...once }, once, fixed: fx };
   }) : null;
   l.tpl = t;
   return l;
 }
+
+/**
+ * מודעה לאירוע ev, בעיצוב (גופן, צבעים, תבנית תצוגה ודף) של תבנית השבתות. טקסט שהגבאי שינה במודעה
+ * נשמר למודעה הזאת בלבד, ב-cfg.edits לפי "ev-מזהה האירוע:היום". l.poster – סימן שזו מודעה ולא לוח.
+ */
+function buildPosterLuach(ev, p) {
+  const shabbat = cfg.templates.find(t => t.id === 'shabbat') || cfg.templates[0];
+  const t = { ...shabbat, id: 'ev-' + ev._id, edits: {}, cols: 1 };
+  const base = buildPoster(cfg, ev), e = cfg.edits[editKey(t, p)] || {};
+  const l = withEdits(base, e);
+  Object.assign(l, { base, fixedBase: withEdits(base, {}), edits: e, fixedEdits: {}, design: null, pages: null, tpl: t, poster: true });
+  return l;
+}
+
+/** המודעה הקרובה: האירוע הראשון מהיום והלאה, או האחרון כשכל האירועים עברו */
+function nearestPoster() {
+  const list = posterEvents(), today = toYmd(todayIn(cfg.tz));
+  return list.find(e => e.dateKey >= today) || list[list.length - 1] || null;
+}
+/** האירוע שהמודעה שלו מוצגת: posterId, ואם אין – המודעה הקרובה */
+const shownPoster = () => posterEvents().find(e => e._id === posterId) || nearestPoster();
+
+/** לשונית "אירועים": המודעה של האירוע המוצג, עם מעבר בין האירועים ב"הקודם" ו"הבא" */
+function renderPoster() {
+  tplChips($('luachTpls'), EVENTS_BOARD, 'luach');
+  renderMixOffer(null);
+  const ev = shownPoster();
+  $('luach').classList.toggle('poster', !!ev);
+  if (!ev) {
+    current = period = null;
+    $('luachEdit').hidden = true;
+    delete $('luach').dataset.layout;
+    $('luach').innerHTML = '<p class="luach-empty">' + (events ? 'אין אירועים שמוצגים כמודעה. ' +
+      'ביומן הקהילה, בהוספה או בעריכה של אירוע, בוחרים "מודעה נפרדת" או "גם שורה בלוח וגם מודעה".' : 'טוען את האירועים…') + '</p>';
+    $('todayOcc').disabled = true;
+    return;
+  }
+  posterId = ev._id;
+  const d = toDayNum(ev.dateKey);
+  period = { mode: 'poster', first: d, last: d, title: ev.title };
+  current = buildPosterLuach(ev, period);
+  applyDesign($('luach'), current.tpl);
+  applyPage(current.tpl);
+  $('luachEdit').hidden = false;
+  $('luach').classList.toggle('editing', boardEditing);
+  $('luach').innerHTML = luachHtml(current, boardEditing);
+  $('todayOcc').disabled = nearestPoster() === ev;
+}
+
+/** מעבר למודעה הבאה (dir=1) או הקודמת (dir=-1) לפי התאריך */
+function stepPoster(dir) {
+  const list = posterEvents(), i = list.findIndex(e => e._id === posterId);
+  const next = list[i + dir];
+  if (next) { posterId = next._id; renderLuach(); }
+}
+
 /** העמודים של הלוח כקנבסים: עמוד לכל יום בעיצוב מקובץ, או עמוד אחד בעיצוב של האתר */
 const drawLuach = async l => l.design ? Promise.all(l.pages.map(v => templateCanvas(l.design, v)))
   : [await luachCanvas(l, l.tpl.font, l.tpl.sizes, l.tpl.theme, l.tpl.layout, pageOf(l.tpl), l.tpl.cols)];
@@ -212,6 +297,8 @@ function toggleMerged(id) {
 
 function renderLuach() {
   $('welcome').hidden = saved;
+  if (board === EVENTS_BOARD) return renderPoster();
+  $('luach').classList.remove('poster');
   const t = boardTpl();
   board = t.id;
   if (cursor == null) cursor = todayIn(cfg.tz);
@@ -222,6 +309,7 @@ function renderLuach() {
   if (!p) {
     current = period = null;
     renderMixOffer(null);
+    $('luachEdit').hidden = true;
     $('luach').innerHTML = '<p class="luach-empty">' + (isFinite(cfg.lat) && isFinite(cfg.lng)
       ? 'אין לוח קרוב לתבנית "' + esc(t.name) + '".<button type="button" class="link" id="goTplSettings">לבחירת המועדים שבהם היא חלה ←</button>'
       : 'לא ניתן לחשב לוח. בדקו את המיקום בהגדרות.') + '</p>';
@@ -233,6 +321,9 @@ function renderLuach() {
   applyDesign($('luach'), current.tpl);
   applyPage(current.tpl);
   renderMixOffer(p);
+  // עריכת טקסט בלחיצה זמינה רק בתבנית של האתר (בעיצוב מקובץ הלוח הוא תמונה)
+  $('luachEdit').hidden = !!current.design;
+  $('luach').classList.toggle('editing', boardEditing && !current.design);
   if (current.design) {
     const l = current;
     // עיצוב מלוח קיים הוא תמונה, ותבנית התצוגה (למשל מסגרת) לא חלה עליו
@@ -243,14 +334,65 @@ function renderLuach() {
       $('luach').querySelectorAll('.lp').forEach((el, i) => { el.querySelector('img').src = pages[i].toDataURL('image/png'); });
     }).catch(() => { if (current === l) $('luach').innerHTML = luachHtml(l, false, l.tpl.cols); });
   } else {
-    $('luach').innerHTML = luachHtml(current, false, current.tpl.cols);
+    $('luach').innerHTML = luachHtml(current, boardEditing, current.tpl.cols);
   }
   const now = periodFor(cfg, t, todayIn(cfg.tz));
   $('todayOcc').disabled = !!now && now.first === p.first;
 }
 
+/** שמירת עריכת טקסט בלוח של האתר: scope 'week' – רק ללוח הזה, 'always' – לתמיד בתבנית */
+function saveBoardEdit(key, text, scope) {
+  // במודעת אירוע השינוי תמיד למודעה הזאת בלבד
+  if (scope === 'week' || current.poster) {
+    const k = editKey(current.tpl, period);
+    const store = cfg.edits[k] || (cfg.edits[k] = {});
+    store[key] = text;
+  } else {
+    const t = current.tpl;
+    (t.edits || (t.edits = {}))[key] = text;
+  }
+  changed();
+  renderLuach();
+}
+
+/** מחיקת עריכת טקסט קיימת (חוזר לערך הרגיל): לפי היכן שהעריכה נמצאת כרגע */
+function deleteBoardEdit(key) {
+  if (current.edited.has(key)) {
+    const k = editKey(current.tpl, period), store = cfg.edits[k];
+    if (store) { delete store[key]; if (!Object.keys(store).length) delete cfg.edits[k]; }
+  } else if (current.fixed.has(key)) {
+    const t = current.tpl;
+    if (t.edits) { delete t.edits[key]; if (!Object.keys(t.edits).length) delete t.edits; }
+  }
+  changed();
+  renderLuach();
+}
+
+$('luachEdit').addEventListener('click', () => {
+  boardEditing = !boardEditing;
+  $('luachEdit').setAttribute('aria-pressed', String(boardEditing));
+  renderLuach();
+});
+
+$('luach').addEventListener('click', e => {
+  if (!boardEditing) return;
+  const el = e.target.closest('[data-e]');
+  if (!el) return;
+  const key = el.dataset.e;
+  openTextEdit({
+    text: el.textContent,
+    multiline: key === 'body',
+    weekLabel: current.poster ? null : current.title,
+    weekFirst: !current.fixed.has(key),
+    hasOverride: current.edited.has(key) || current.fixed.has(key),
+    onSave: (text, scope) => saveBoardEdit(key, text, scope),
+    onDelete: () => deleteBoardEdit(key)
+  });
+});
+
 /** הלוח הבא (dir=1) או הקודם (dir=-1) מאותה תבנית */
 function stepLuach(dir) {
+  if (board === EVENTS_BOARD) return stepPoster(dir);
   if (!period) return;
   const o = periodFor(cfg, boardTpl(), dir > 0 ? period.last + 1 : period.first - 1, dir, true);
   if (o) { cursor = o.first; renderLuach(); }
@@ -265,7 +407,7 @@ $('luach').addEventListener('click', e => {
 
 $('prevOcc').onclick = () => stepLuach(-1);
 $('nextOcc').onclick = () => stepLuach(1);
-$('todayOcc').onclick = () => { cursor = null; renderLuach(); };
+$('todayOcc').onclick = () => { cursor = null; posterId = null; renderLuach(); };
 
 /*
  * קבצי תמונה ו-PDF מוכנים מראש לכל לוח שמוצג. בספארי (אייפון) השיתוף חייב לקרות
@@ -275,7 +417,7 @@ let files = null;   // { luach, promise }
 let prepTimer;
 
 function makeFiles(l) {
-  const name = ('לוח זמנים - ' + l.title).replace(/[\\/:*?"<>|]/g, '');
+  const name = ((l.poster ? 'מודעה - ' : 'לוח זמנים - ') + l.title).replace(/[\\/:*?"<>|]/g, '');
   const promise = drawLuach(l).then(async pages => ({
     png: new File([await pngBlob(stackCanvases(pages))], name + '.png', { type: 'image/png' }),
     pdf: new File([await pdfBlob(pages, pageOf(l.tpl))], name + '.pdf', { type: 'application/pdf' })
@@ -313,7 +455,7 @@ $('shareImg').onclick = () => shareFile('png');
 $('sharePdf').onclick = () => shareFile('pdf');
 
 $('print').onclick = async () => {
-  const title = current ? 'לוח זמנים - ' + current.title : document.title;
+  const title = current ? (current.poster ? 'מודעה - ' : 'לוח זמנים - ') + current.title : document.title;
   if (!NativeFiles.isApp()) return NativeFiles.print({ title });
   // באפליקציה beforeprint/afterprint לא נקראים, ולכן מתאימים את הלוח לעמודים ידנית עד שחלון ההדפסה נסגר
   const p = current ? pageOf(current.tpl) : null;
@@ -456,7 +598,6 @@ function fill() {
   $('tz').value = cfg.tz;
   $('il').value = cfg.il ? '1' : '0';
   $('havdalah').value = String(cfg.havdalah);
-  $('notes').value = cfg.notes || '';
   $('custom').hidden = cfg.city !== 'custom';
   renderTemplates();
 }
@@ -519,13 +660,13 @@ function renderFont() {
 /** לוחות לדוגמה לבחירת תבנית התצוגה, לפי סוג הלוח */
 const LAYOUT_SAMPLES = {
   holy: {
-    type: 'holy', shul: 'בית הכנסת', title: 'שבת פרשת בראשית', dates: 'כ״ה תשרי תשפ״ז', notes: '', sections: [
+    type: 'holy', shul: 'בית הכנסת', title: 'שבת פרשת בראשית', dates: 'כ״ה תשרי תשפ״ז', sections: [
       { title: 'ערב שבת', date: 'ו׳ 2.10', rows: [{ name: 'מנחה וקבלת שבת', text: '18:15' }], zmanim: [['הדלקת נרות', '17:52'], ['שקיעה', '18:12']] },
       { title: 'יום השבת', date: 'ש׳ 3.10', rows: [{ name: 'שחרית', text: '08:00' }, { name: 'מנחה', text: '17:30' }, { name: 'ערבית', text: '18:55' }], zmanim: [] }
     ]
   },
   days: {
-    type: 'days', shul: 'בית הכנסת', title: 'ימות השבוע', dates: 'כ״ו תשרי – א׳ חשוון תשפ״ז', notes: '',
+    type: 'days', shul: 'בית הכנסת', title: 'ימות השבוע', dates: 'כ״ו תשרי – א׳ חשוון תשפ״ז',
     days: ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי'].map((name, i) => ({ name, date: (4 + i) + '.10', special: '' })),
     rows: [['שחרית', '06:30'], ['מנחה', '17:55'], ['ערבית', '18:40']].map(([name, v]) => ({ name, cells: Array(5).fill(v) })),
     zmanim: [{ name: 'שקיעה', cells: ['18:10', '18:09', '18:08', '18:07', '18:06'] }]
@@ -537,14 +678,20 @@ const LAYOUT_SAMPLES = {
  */
 const uploadedDesigns = t => cfg.templates.filter(x => x.kind === t.kind && x.design && !x.design.ref);
 
+let moreLayouts = false;   // האם נלחץ "הצג עוד תבניות"
+
 /** תבניות התצוגה: המוכנות של האתר, ואחריהן הלוחות שהועלו בקהילה והעלאת לוח חדש */
 function renderLayouts() {
   const t = selTpl(), sample = withEdits(LAYOUT_SAMPLES[t.kind], {});
   const active = activeDesign(cfg, t) ? (t.design.ref || t.id) : null;
   const card = (attr, pressed, thumb, name, about) => '<button type="button" class="lay-card" ' + attr + ' aria-pressed="' + pressed + '">' +
     '<div class="lay-thumb" aria-hidden="true">' + thumb + '</div><b>' + esc(name) + '</b><small>' + esc(about) + '</small></button>';
+  // בלי "הצג עוד" – התבניות הראשונות, ותמיד גם התבנית שנבחרה
+  const shown = LAYOUTS.filter(([id], i) => moreLayouts || i < LAYOUTS_SHOWN || id === t.layout);
+  $('layoutsMore').textContent = moreLayouts ? 'הצג פחות תבניות' : 'הצג עוד תבניות';
+  $('layoutsMore').setAttribute('aria-expanded', String(moreLayouts));
   $('layouts').innerHTML =
-    LAYOUTS.map(([id, name, about]) => card('data-layout="' + id + '"', !active && id === t.layout, '<div class="luach"></div>', name, about)).join('') +
+    shown.map(([id, name, about]) => card('data-layout="' + id + '"', !active && id === t.layout, '<div class="luach"></div>', name, about)).join('') +
     uploadedDesigns(t).map(x => card('data-design="' + esc(x.id) + '"', active === x.id, '<img src="' + esc(x.design.image) + '" alt="">',
       x === t ? 'הלוח שהועלה לתבנית הזו' : 'הלוח של "' + x.name + '"', 'לוח שהועלה בקהילה: ' + x.design.name)).join('') +
     card('data-upload="1"', false, '<span class="lay-plus">+</span>', 'העלאת לוח משלכם', 'PDF או תמונה של לוח ישן. הוא יתווסף לתבניות של הקהילה');
@@ -569,6 +716,8 @@ async function useDesign(t, src) {
   }
   renderTemplateStatus(); renderLayouts(); changed();
 }
+
+$('layoutsMore').addEventListener('click', () => { moreLayouts = !moreLayouts; renderLayouts(); });
 
 $('layouts').addEventListener('click', e => {
   const c = e.target.closest('.lay-card');
@@ -766,7 +915,7 @@ const offsetDir = r => (parseInt(r.offset, 10) < 0 ? 'לפני' : 'אחרי');
 function ruleSum(r, days) {
   const n = parseInt(r.offset, 10) || 0;
   const at = r.base === 'שעה קבועה' ? 'בשעה ' + (r.offset || '')
-    : BASES[r.base] === 'kiddush' ? r.base
+    : TEXT_BASES.includes(BASES[r.base]) ? r.base
     : n ? Math.abs(n) + ' דק׳ ' + (n < 0 ? 'לפני ' : 'אחרי ') + r.base : r.base;
   return [days ? '' : r.when, r.applies, at].filter(Boolean).join(' · ');
 }
@@ -775,7 +924,7 @@ function renderRules() {
   const days = selTpl().kind === 'days';
   $('rules').innerHTML = rules().map((r, i) => {
     const fixed = r.base === 'שעה קבועה';
-    const kiddush = BASES[r.base] === 'kiddush';
+    const text = TEXT_BASES.includes(BASES[r.base]);   // קידוש או אירועים: טקסט מהקהילה, בלי הפרש ועיגול
     return '<details class="rule" data-i="' + i + '"' + (openRules.has(r) ? ' open' : '') + '>' +
       '<summary><b class="rule-name">' + (esc(r.name) || 'תפילה חדשה') + '</b><span class="rule-sum">' + esc(ruleSum(r, days)) + '</span></summary>' +
       '<div class="rule-top">' +
@@ -785,14 +934,16 @@ function renderRules() {
       (days ? '' : '<div><label>מתי</label><select data-k="when">' + opts(WHEN_LABELS, r.when) + '</select></div>') +
       '<div><label>חל על</label><select data-k="applies">' + opts(days ? DAY_APPLIES : APPLIES, r.applies) + '</select></div>' +
       '<div><label>לפי</label><select data-k="base">' + baseOpts(r) + '</select></div>' +
-      (kiddush ? ''
+      (text ? ''
         : fixed ? '<div><label>שעה</label><input data-k="offset" value="' + esc(r.offset) +
           '" placeholder="08:00" dir="ltr" inputmode="text"></div>'
         : '<div><label>הפרש (דקות)</label><div class="offset-pair"><input data-k="offsetAbs" type="number" min="0" inputmode="numeric" dir="ltr" value="' +
           esc(offsetAbs(r)) + '" placeholder="20"><select data-k="offsetDir">' + opts(['אחרי', 'לפני'], offsetDir(r)) + '</select></div></div>') +
-      '<div><label>עיגול</label><select data-k="round"' + (fixed || kiddush ? ' disabled' : '') + '>' + opts(ROUND, r.round) + '</select></div>' +
-      '</div>' + (kiddush ? '<p class="hint">השורה תתמלא בהודעה בנוסח שהגבאי קבע בלוח הקידושים של הקהילה, ' +
-        'לפי מי שאושר לקידוש בתאריך הזה. בלי קידוש מאושר, השורה לא תופיע.</p>' : '') +
+      '<div><label>עיגול</label><select data-k="round"' + (fixed || text ? ' disabled' : '') + '>' + opts(ROUND, r.round) + '</select></div>' +
+      '</div>' + (BASES[r.base] === 'kiddush' ? '<p class="hint">השורה תתמלא בהודעה בנוסח שהגבאי קבע בלוח הקידושים של הקהילה, ' +
+        'לפי מי שאושר לקידוש בתאריך הזה. בלי קידוש מאושר, השורה לא תופיע.</p>'
+        : BASES[r.base] === 'events' ? '<p class="hint">השורה תתמלא באירועים מיומן הקהילה שחלים בתאריך הזה' +
+          (days ? '' : ' (ב"כניסה" – ביום שלפני השבת או החג)') + ', באירועים שנבחר להציג בהם "שורה בלוח הזמנים". בלי אירוע, השורה לא תופיע.</p>' : '') +
       '</details>';
   }).join('');
 }
@@ -821,7 +972,7 @@ function applyRemote(next, by) {
   remoteLater = null;
   cfg = next; saved = true;
   saveConfig(cfg);
-  fill(); renderLuach();
+  fill(); renderLuach(); renderProfiles();
   if (by) toast('ההגדרות עודכנו (' + by + ')');
 }
 
@@ -832,6 +983,7 @@ function manageSync(sid) {
   if (sync) { sync.stop(); sync = null; }
   syncSid = sid; remoteLater = null;
   if (sid) sync = startSync({ client: window.SiteAuth.client(), sid, getCfg: () => cfg, hasLocal: () => saved, apply: applyRemote, toast });
+  watchProfiles();
 }
 
 let saveTimer;
@@ -876,10 +1028,10 @@ $('rules').addEventListener('input', e => {
     });
   }
   if (k === 'base') {
-    const kiddush = BASES[r.base] === 'kiddush';
+    const text = TEXT_BASES.includes(BASES[r.base]);
     if (r.base === 'שעה קבועה' && r.offset.indexOf(':') < 0) r.offset = '08:00';
-    if (kiddush) r.offset = '';
-    if (!kiddush && r.base !== 'שעה קבועה' && r.offset.indexOf(':') >= 0) r.offset = '0';
+    if (text) r.offset = '';
+    if (!text && r.base !== 'שעה קבועה' && r.offset.indexOf(':') >= 0) r.offset = '0';
     renderRules();
   } else {
     box.querySelector('.rule-name').textContent = r.name || 'תפילה חדשה';
@@ -916,7 +1068,6 @@ bind('lng', v => { cfg.lng = Number(v); });
 bind('tz', v => { cfg.tz = v; cursor = null; });
 bind('il', v => { cfg.il = v === '1'; cursor = null; });
 bind('havdalah', v => { cfg.havdalah = v; });
-bind('notes', v => { cfg.notes = v; });
 bind('font', v => { selTpl().font = v; renderFontSample(); renderLayouts(); });
 bind('theme', v => { selTpl().theme = v; renderFontSample(); renderLayouts(); });
 bind('paper', v => { selTpl().paper = v; });
@@ -1022,7 +1173,7 @@ $('tplUse').onchange = () => {
 /* ---------- גיבוי ---------- */
 
 $('export').onclick = () => {
-  const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ ...cfg, profileId: undefined }, null, 2)], { type: 'application/json' });
   download(blob, 'luach-settings' + (cfg.shul ? '-' + cfg.shul.replace(/[\\/:*?"<>|]/g, '') : '') + '.json');
 };
 $('import').onclick = () => $('importFile').click();
@@ -1033,22 +1184,125 @@ $('importFile').onchange = async () => {
   try {
     const data = JSON.parse(await f.text());
     if (!data || typeof data !== 'object' || !(Array.isArray(data.rules) || Array.isArray(data.templates))) throw new Error();
-    cfg = normalize(data); cursor = null; fill(); store(); saved = true;
+    cfg = normalize(data); cursor = null; fill(); store(); saved = true; renderProfiles();
     toast('ההגדרות נטענו');
   } catch (e) { toast('הקובץ לא תקין', true); }
 };
 $('reset').onclick = async () => {
   if (!await SiteDialog.confirm('למחוק את כל ההגדרות ולחזור לברירת המחדל? ההגדרות יימחקו גם אצל שאר הגבאים והרב.', { ok: 'איפוס', danger: true })) return;
   clearConfig();
-  cfg = normalize(DEFAULT_CONFIG); saved = false; cursor = null; sel = 'shabbat'; board = 'shabbat'; fill();
+  cfg = normalize(DEFAULT_CONFIG); saved = false; cursor = null; sel = 'shabbat'; board = 'shabbat'; fill(); renderProfiles();
   if (sync) sync.push(cfg);
   toast('ההגדרות אופסו');
+};
+
+/* ---------- הגדרות שמורות בשם, בקהילה ---------- */
+
+let profiles = [], unsubProfiles = null;
+
+function watchProfiles() {
+  if (unsubProfiles) { unsubProfiles(); unsubProfiles = null; }
+  profiles = [];
+  if (sync) unsubProfiles = window.SiteAuth.client().onUpdate('zmanimProfiles:list', { synagogueId: syncSid },
+    list => { profiles = list; renderProfiles(); }, e => console.warn(e));
+  renderProfiles();
+}
+
+const profileDate = t => new Date(t).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric' });
+
+function renderProfiles() {
+  const on = !!sync;
+  $('profileNew').hidden = !on;
+  $('profiles').hidden = !on || !profiles.length;
+  $('profilesHint').textContent = !on
+    ? 'אפשר לשמור את ההגדרות בשם ולעבור בין כמה הגדרות שונות (למשל זמני קיץ וזמני חורף). זה זמין לגבאי או לרב שמחוברים לקהילה.'
+    : profiles.length ? 'טעינה מחליפה את ההגדרות הנוכחיות אצל כל הגבאים והרב. "עדכון" שומר את ההגדרות הנוכחיות במקום מה שנשמר באותו שם.'
+    : 'עוד אין הגדרות שמורות. אפשר לשמור את ההגדרות הנוכחיות בשם (למשל "זמני קיץ"), ולחזור אליהן מתי שרוצים.';
+  $('profiles').innerHTML = profiles.map(p => {
+    const cur = p._id === cfg.profileId;
+    return '<li data-id="' + esc(p._id) + '"' + (cur ? ' class="current"' : '') + '><div class="prof-text">' +
+      '<div class="prof-name">' + esc(p.name) + '</div>' +
+      '<div class="prof-meta">' + (cur ? 'האחרונות שנטענו או נשמרו · ' : '') + 'עודכנו ' + profileDate(p.updatedAt) + ', ' + esc(p.updatedBy) + '</div></div>' +
+      '<div class="prof-btns"><button type="button" class="primary" data-act="load">טעינה</button>' +
+      '<button type="button" data-act="overwrite">עדכון</button>' +
+      '<button type="button" data-act="rename">שינוי שם</button>' +
+      '<button type="button" class="danger" data-act="remove">מחיקה</button></div></li>';
+  }).join('');
+}
+
+const cleanProfileName = s => String(s || '').trim().replace(/\s+/g, ' ');
+const profileErr = (e, fallback) => e && typeof e.data === 'string' ? e.data : e && e.userMessage ? e.userMessage : fallback;
+
+/** פעולה על ההגדרות השמורות. שינוי שממתין לשמירה נשמר קודם, כדי שייכלל בהן */
+async function profileRun(fn, done) {
+  if (!sync) return;
+  flush();
+  try { await fn(window.SiteAuth.client(), sync); if (done) toast(done); }
+  catch (e) { console.warn(e); toast(profileErr(e, 'הפעולה נכשלה'), true); }
+}
+
+/** ההגדרות הנוכחיות כטקסט לשמירה בשם, בלי הסימון של ההגדרות השמורות שנטענו */
+const profileConfig = s => s.lighten({ ...cfg, profileId: undefined });
+
+function markProfile(id) {
+  cfg.profileId = id;
+  store(); saved = true;
+  renderProfiles();
+}
+
+async function overwriteProfile(p) {
+  await profileRun(async (client, s) => {
+    await client.mutation('zmanimProfiles:overwrite', { profileId: p._id, config: await profileConfig(s) });
+    markProfile(p._id);
+  }, 'ההגדרות נשמרו בשם "' + p.name + '"');
+}
+
+$('profileNew').onclick = async () => {
+  const name = cleanProfileName(await SiteDialog.prompt('איך לקרוא להגדרות? (למשל "זמני קיץ")', { ok: 'שמירה' }));
+  if (!name) return;
+  const same = profiles.find(p => p.name === name);
+  if (same) {
+    if (await SiteDialog.confirm('כבר יש הגדרות בשם "' + name + '". להחליף אותן בהגדרות הנוכחיות?', { ok: 'החלפה', danger: true })) await overwriteProfile(same);
+    return;
+  }
+  await profileRun(async (client, s) => {
+    markProfile(await client.mutation('zmanimProfiles:create', { synagogueId: syncSid, name, config: await profileConfig(s) }));
+  }, 'ההגדרות נשמרו בשם "' + name + '"');
+};
+
+$('profiles').onclick = async e => {
+  const btn = e.target.closest('[data-act]'), li = e.target.closest('li[data-id]');
+  const p = li && profiles.find(x => x._id === li.dataset.id);
+  if (!btn || !p) return;
+  const act = btn.dataset.act;
+  if (act === 'load') {
+    if (!await SiteDialog.confirm('לטעון את "' + p.name + '"? ההגדרות הנוכחיות יוחלפו אצל כל הגבאים והרב. ' +
+      'אם תרצו לחזור אליהן, כדאי לשמור אותן קודם בשם.', { ok: 'טעינה' })) return;
+    await profileRun(async (client, s) => {
+      const next = await s.resolve(await client.query('zmanimProfiles:get', { profileId: p._id }));
+      next.profileId = p._id;
+      cfg = next; cursor = null;
+      fill(); renderLuach();
+      markProfile(p._id);
+    }, 'נטענו ההגדרות "' + p.name + '"');
+  } else if (act === 'overwrite') {
+    if (!await SiteDialog.confirm('לשמור את ההגדרות הנוכחיות בשם "' + p.name + '", במקום מה שנשמר בו עד עכשיו?', { ok: 'עדכון' })) return;
+    await overwriteProfile(p);
+  } else if (act === 'rename') {
+    const name = cleanProfileName(await SiteDialog.prompt('שם חדש להגדרות:', { value: p.name, ok: 'שמירה' }));
+    if (!name || name === p.name) return;
+    await profileRun(client => client.mutation('zmanimProfiles:rename', { profileId: p._id, name }), 'השם שונה ל"' + name + '"');
+  } else if (act === 'remove') {
+    if (!await SiteDialog.confirm('למחוק את ההגדרות השמורות "' + p.name + '"? ההגדרות הנוכחיות של הלוח לא ישתנו.', { ok: 'מחיקה', danger: true })) return;
+    await profileRun(client => client.mutation('zmanimProfiles:remove', { profileId: p._id }), 'ההגדרות "' + p.name + '" נמחקו');
+  }
 };
 
 /* ---------- הפעלה ---------- */
 
 fill();
 renderLuach();
+renderProfiles();
 
 initCommunity({
   toast,
@@ -1056,12 +1310,19 @@ initCommunity({
     if (!current || !period) return null;
     const { png } = await getFiles();
     return { file: png, title: current.title, firstDate: toYmd(period.first),
-      mode: period.mode === 'days' ? 'days' : 'holy', kind: current.tpl.id };
+      mode: { days: 'days', poster: 'events' }[period.mode] || 'holy', kind: current.tpl.id };
   },
   onManager: manageSync,
   onKiddush(map) {
     kiddush = map;
-    setKiddush(map);
+    comm = communityData();
+    setKiddush(comm);
+    renderLuach();
+  },
+  onEvents(list) {
+    events = list;
+    comm = communityData();
+    setKiddush(comm);
     renderLuach();
   }
 });
