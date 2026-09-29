@@ -66,7 +66,7 @@ jobs:
             echo "Signed with the permanent key: installs over any earlier build, no uninstall."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: zmanim-apk-${{ github.run_number }}
           path: zmanim-1.0.${{ github.run_number }}.apk

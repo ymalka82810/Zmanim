@@ -73,11 +73,25 @@ const css = `
 `;
 
 /* ---------- שורת היום ---------- */
-const COMMUNITY_KEY = 'site.community', ACTIVE_KEY = 'site.activeSynagogue', CONFIG_KEY = 'zmanim.config';
+const COMMUNITY_KEY = 'site.community', ACTIVE_KEY = 'site.activeSynagogue', CONFIG_KEY = 'zmanim.config', TOKEN_KEY = 'convex.auth.token';
 const HEBCAL_SRC = new URL('vendor/hebcal/hebcal-core-6.9.3.min.js', ROOT).href;
 function read(key){ try { return JSON.parse(localStorage.getItem(key)); } catch (e) { return null; } }
 function readRaw(key){ try { return localStorage.getItem(key); } catch (e) { return null; } }
 function write(key, v){ try { v == null ? localStorage.removeItem(key) : localStorage.setItem(key, JSON.stringify(v)); } catch (e) { /* אין גישה לאחסון */ } }
+
+/* תפקיד המשתמש בקהילה הפעילה, מהתשובה האחרונה השמורה של menu:counts (ראו js/auth.js: cached/remember) –
+ * לפני שיש חיבור ל-Convex ולפני ש-js/auth.js אפילו נטען (menu.js רץ לפניו). כשאין תשובה שמורה: null (לא ידוע).
+ * ככה המגירה נבנית עם התפקיד הנכון כבר מההתחלה, ולא רק אחרי שה-watch האסינכרוני מתקן אותה */
+function cachedManager(){
+  const sid = readRaw(ACTIVE_KEY);
+  if (!sid || !readRaw(TOKEN_KEY)) return null;
+  try {
+    const raw = localStorage.getItem('site.cache.menu:counts:' + JSON.stringify({ synagogueId: sid }));
+    if (raw == null) return null;
+    const d = JSON.parse(raw);
+    return d && typeof d.manager === 'boolean' ? d.manager : null;
+  } catch (e) { return null; }
+}
 
 let day = null;
 const gLong = new Intl.DateTimeFormat('he-IL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
@@ -209,6 +223,7 @@ function build(){
   layer.hidden = true;
   layer.innerHTML = `<div class="sm-shade"></div><nav class="sm-drawer" id="sm-drawer" aria-label="דפי האתר"><h2>בית הכנסת</h2></nav>`;
   const nav = layer.querySelector('nav');
+  const mgr = cachedManager(); /* התפקיד הידוע כבר עכשיו, לפני שה-watch האסינכרוני מתחיל; null = לא ידוע */
   for (const p of PAGES){
     const a = document.createElement('a');
     a.href = new URL(p.path, ROOT).href;
@@ -219,7 +234,8 @@ function build(){
     count.hidden = true;
     a.append(label, count);
     if (p === current) a.setAttribute('aria-current', 'page');
-    a.hidden = !!p.showForMember; /* ברירת מחדל עד שידוע תפקיד המשתמש: ראו renderCounts */
+    if (p.hideForMember) a.hidden = mgr === false;
+    else if (p.showForMember) a.hidden = mgr !== false;
     nav.appendChild(a);
     badges.links.push({ path: p.path, title: p.title, a, count, hideForMember: !!p.hideForMember, showForMember: !!p.showForMember });
   }
