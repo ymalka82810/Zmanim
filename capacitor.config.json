@@ -3,6 +3,6 @@
   "appName": "לוח זמנים",
   "webDir": "www",
   "android": {
-    "backgroundColor": "#f6f8fb"
+    "backgroundColor": "#1e3a63"
   }
 }

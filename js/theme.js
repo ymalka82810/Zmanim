@@ -6,7 +6,7 @@
 (function(){
 "use strict";
 const PREF_KEY = 'site.theme', GEO_KEY = 'site.geo', CONFIG_KEY = 'zmanim.config';
-const BAR_COLOR = { light: '#2c4a7c', dark: '#1b2d56' };
+const BAR_COLOR = { light: '#1e3a63', dark: '#12213b' };
 const JERUSALEM = { lat: 31.769, lng: 35.2163 };
 const RAD = Math.PI / 180, DAY = 86400000;
 const root = document.documentElement;

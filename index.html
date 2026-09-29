@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>לוח זמנים לבית הכנסת</title>
 <meta name="description" content="לוח זמני תפילות לשבתות ולחגים. החישוב נעשה במכשיר, בלי שרת.">
-<meta name="theme-color" content="#2c4a7c">
+<meta name="theme-color" content="#1e3a63">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -14,8 +14,57 @@
 <link href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@400;700;900&family=Assistant:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/app.css">
 <script src="js/theme.js"></script>
+<style>
+  /* מסך פתיחה: קריטי inline כדי שיצויר מיד, לפני שאר ה-CSS נטען */
+  #boot-splash{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
+    background:radial-gradient(circle at 50% 42%,#2c4d80 0%,#1e3a63 55%,#162c4d 100%);color:#f7f4ee;
+    transition:opacity .45s ease;padding:24px;box-sizing:border-box}
+  #boot-splash.hide{opacity:0;pointer-events:none}
+  #boot-splash .boot-logo{width:104px;height:104px;filter:drop-shadow(0 8px 22px rgba(0,0,0,.35))}
+  #boot-splash .boot-title{font-family:"Frank Ruhl Libre",Georgia,serif;font-weight:700;font-size:1.3rem;text-align:center;letter-spacing:.2px}
+  #boot-splash .boot-progress{width:min(220px,60vw);height:6px;border-radius:999px;background:rgba(247,244,238,.18);overflow:hidden}
+  #boot-splash .boot-bar{height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,#ab7f2e,#f2c14e);transition:width .25s ease}
+  #boot-splash .boot-pct{font-variant-numeric:tabular-nums;font-size:.82rem;color:#d9cfa8;min-width:3ch;text-align:center}
+  @media (prefers-reduced-motion:reduce){ #boot-splash .boot-bar{transition:none} }
+</style>
 </head>
 <body>
+<div id="boot-splash" role="status" aria-live="polite">
+  <img class="boot-logo" src="icons/icon.svg" alt="" width="104" height="104">
+  <div class="boot-title">לוח זמנים לבית הכנסת</div>
+  <div class="boot-progress"><div class="boot-bar" id="bootBar"></div></div>
+  <div class="boot-pct" id="bootPct">0%</div>
+</div>
+<script>
+(function(){
+  "use strict";
+  var bar = document.getElementById('bootBar'), pct = document.getElementById('bootPct'), splash = document.getElementById('boot-splash');
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var shown = Date.now(), val = 0, done = false, raf = null;
+  function set(v){ val = v; bar.style.width = v + '%'; pct.textContent = Math.round(v) + '%'; }
+  function tick(){
+    if (done) return;
+    // מתקרב ל-92% במהירות פוחתת, ולא ננעל שם עד שהדף באמת מוכן
+    set(val + (92 - val) * 0.045);
+    raf = requestAnimationFrame(tick);
+  }
+  function finish(){
+    if (done) return;
+    done = true;
+    if (raf) cancelAnimationFrame(raf);
+    var elapsed = Date.now() - shown, wait = Math.max(0, 300 - elapsed);
+    setTimeout(function(){
+      set(100);
+      setTimeout(function(){ splash.classList.add('hide'); setTimeout(function(){ splash.remove(); }, 500); }, 180);
+    }, wait);
+  }
+  if (reduced) { set(100); }
+  else raf = requestAnimationFrame(tick);
+  if (document.readyState === 'complete') finish();
+  else addEventListener('load', finish);
+  setTimeout(finish, 4000); // רשת איטית: לא נועלים את המשתמש מאחורי מסך הפתיחה
+})();
+</script>
 <header class="wrap top">
   <h1>לוח זמנים לבית הכנסת</h1>
   <nav class="tabs" role="tablist" hidden>
