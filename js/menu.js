@@ -66,11 +66,10 @@ const css = `
 :root[data-theme="dark"] .sm-day,:root[data-theme="dark"] .sm-day-dates b{color:#e9ecf5}
 :root[data-theme="dark"] .sm-day-syn,:root[data-theme="dark"] .sm-day-dates{color:#98a2c0}
 /* באפליקציה (כשיש אזור מצלמה למעלה): הפס תופס את אזור המצלמה בלי להוסיף לו גובה, ונשאר קבוע
-   עם כפתור התפריט ופס הזהב מתחתיו; רק הכותרת נגללת בתוכו והדף נכנס מתחת */
+   עם כפתור התפריט, הכותרת ופס הזהב מתחתיו, והדף נכנס מתחת */
 .sm-pin{--sm-bar-h:max(48px,env(safe-area-inset-top,0px));--sm-top:calc(var(--sm-bar-h) + 6px)}
 .sm-pin .sm-bar{position:sticky;top:0;z-index:40;height:var(--sm-bar-h);padding-top:0;overflow:hidden}
 .sm-pin .sm-stripe{position:sticky;top:var(--sm-bar-h);z-index:40}
-.sm-pin .sm-title{will-change:transform}
 @media print{.sm-bar,.sm-stripe,.sm-day,.sm-layer{display:none!important}}
 `;
 
@@ -343,13 +342,7 @@ function cameras(){
 function pinTop(bar){
   const title = bar.querySelector('.sm-title'), root = document.documentElement;
   const PAD = 10, BTN = 40, GAP = 10, CLEAR = 8, MIN_TITLE = 80;
-  let pinned = false, queued = false;
-
-  /* הכותרת עולה יחד עם הדף ונעלמת מעל הפס, שנשאר במקומו */
-  function place(){
-    queued = false;
-    title.style.transform = pinned ? `translateY(${-Math.min(Math.max(0, window.scrollY), bar.offsetHeight)}px)` : '';
-  }
+  let pinned = false;
 
   /* מסדרים את הפס סביב המצלמה. הכפתור והכותרת מתחילים מימין (RTL), ולכן מודדים מרחקים מהקצה הימני:
    * מצלמה במקום הכפתור – מזיזים את שניהם אחריה; מצלמה בדרך של הכותרת – מקצרים אותה;
@@ -382,10 +375,8 @@ function pinTop(bar){
         root.style.setProperty('--sm-bar-h', Math.ceil(Math.max(48, low)) + 'px');
       }
     }
-    place();
   }
   refit = setup;
-  window.addEventListener('scroll', () => { if (!queued){ queued = true; requestAnimationFrame(place); } }, { passive: true });
   window.addEventListener('resize', setup);
   if (document.fonts) document.fonts.ready.then(setup);
   setup();
