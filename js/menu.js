@@ -1,5 +1,5 @@
 /* תפריט המבורגר משותף לשלושת הדפים: לוח זמנים, לוח קידושים וקופת בית הכנסת.
- * כל דף טוען את הקובץ הזה, והוא מוסיף פס עליון עם כפתור תפריט ומגירה עם שלושת הדפים.
+ * כל דף טוען את הקובץ הזה, והוא מוסיף פס עליון עם כפתור תפריט, פס זהב מתחתיו ומגירה עם שלושת הדפים.
  * הכתובות מחושבות ביחס למיקום הקובץ, כך שזה עובד גם מתיקיית משנה.
  */
 (function(){
@@ -16,6 +16,7 @@ const current = PAGES.slice().reverse().find(p => here === new URL(p.path, ROOT)
 
 const css = `
 .sm-bar{display:flex;align-items:center;gap:10px;box-sizing:border-box;height:calc(48px + env(safe-area-inset-top,0px));padding:0 10px;padding-top:env(safe-area-inset-top,0px);background:#2c4a7c;color:#fff;font-family:"Assistant",Arial,sans-serif;direction:rtl}
+.sm-stripe{height:6px;background:linear-gradient(90deg,#1e3a63 0%,#ab7f2e 50%,#1e3a63 100%)}
 .sm-btn{display:flex;align-items:center;justify-content:center;flex:none;width:40px;height:40px;padding:0;border:0;border-radius:10px;background:none;color:inherit;cursor:pointer;box-shadow:none;transform:none}
 .sm-btn:hover,.sm-btn:focus-visible{background:rgba(255,255,255,.15)}
 .sm-btn svg{width:24px;height:24px}
@@ -32,6 +33,7 @@ const css = `
 .sm-theme button{flex:1;padding:7px 4px;border:0;border-radius:999px;background:none;color:#5d6b82;font:inherit;font-weight:600;cursor:pointer}
 .sm-theme button[aria-pressed="true"]{background:#2c4a7c;color:#fff}
 :root[data-theme="dark"] .sm-bar{background:#1b2d56}
+:root[data-theme="dark"] .sm-stripe{background:linear-gradient(90deg,#8fb0ec 0%,#dfb564 50%,#8fb0ec 100%)}
 :root[data-theme="dark"] .sm-drawer{background:#1a1f28;color:#e8ecf2}
 :root[data-theme="dark"] .sm-drawer h2{color:#9ba4b3}
 :root[data-theme="dark"] .sm-drawer a:hover{background:#232a36}
@@ -39,7 +41,7 @@ const css = `
 :root[data-theme="dark"] .sm-theme{border-color:#2d3440}
 :root[data-theme="dark"] .sm-theme button{color:#9ba4b3}
 :root[data-theme="dark"] .sm-theme button[aria-pressed="true"]{background:#8fb0ec;color:#0f1524}
-@media print{.sm-bar,.sm-layer{display:none!important}}
+@media print{.sm-bar,.sm-stripe,.sm-layer{display:none!important}}
 `;
 
 function build(){
@@ -106,7 +108,11 @@ function build(){
   layer.querySelector('.sm-shade').addEventListener('click', close);
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !layer.hidden) close(); });
 
-  document.body.prepend(bar);
+  const stripe = document.createElement('div');
+  stripe.className = 'sm-stripe';
+  stripe.setAttribute('aria-hidden', 'true');
+
+  document.body.prepend(bar, stripe);
   document.body.appendChild(layer);
 }
 
