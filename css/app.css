@@ -84,6 +84,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .imp-form[hidden] { display: none; }
 .imp-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
 .imp-form select { width: auto; flex: 1 1 180px; }
+.imp-items { flex: 1 1 100%; border: 1px solid var(--line); border-radius: 10px; padding: 4px 10px; background: var(--bg); max-height: 280px; overflow-y: auto; }
+.imp-items:empty { display: none; }
+.imp-items .check { margin: 5px 0; font-weight: 400; align-items: flex-start; }
+.imp-items .check input { margin-top: 4px; }
+.imp-items small { display: block; color: var(--muted); font-size: .82rem; }
+.imp-items .imp-all { margin: 4px 0 2px; font-size: .85rem; }
 .sizes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
 @media (min-width: 600px) { .sizes { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 
@@ -129,6 +135,9 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .l-poster { text-align: center; white-space: pre-line; font-size: calc(1.35rem * var(--s-name, 1)); line-height: 1.6; margin: calc(56px * var(--fit-gap, 1)) 12px calc(40px * var(--fit-gap, 1)); }
 .luach.poster { min-height: min(120vw, 900px); }
 .luach.poster .l-title { font-size: calc(3.1rem * var(--s-title, 1)); }
+/* הודעת הקידוש: השורות כמו בלוח הקידושים, והכותרת מודגשת */
+.l-sec td.k { text-align: center; white-space: pre-line; line-height: 1.45; }
+.l-sec td.k::first-line { font-weight: 700; }
 .l-sec td.z { font-size: calc(.8rem * var(--s-zman, 1)); color: var(--muted); border: none; }
 .l-sec td.z > span { display: inline-block; margin-left: 14px; }
 /* לוח ימי חול: עמודה לכל יום */
@@ -355,9 +364,10 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .tb.slot span { position: absolute; top: -9px; right: -9px; background: var(--blue); color: var(--on-accent); font-size: 11px; line-height: 16px; min-width: 16px; border-radius: 8px; padding: 0 3px; }
 .tb.val { border: 1px dashed var(--blue); background: rgba(44, 74, 124, .14); pointer-events: none; }
 .tb.drag { pointer-events: none; }
-.tb.slot, .tb.cand { cursor: grab; user-select: none; -webkit-user-select: none; }
-/* בטלפון גוררים אזור אחרי שבוחרים בו, כדי שגלילה בעמוד לא תזיז אזורים */
-.tb.slot.sel { touch-action: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 30%, transparent); }
+.tb.slot, .tb.cand { cursor: pointer; user-select: none; -webkit-user-select: none; }
+.tb.slot.sel { box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 30%, transparent); }
+/* גרירת אזורים רק במצב "הזזת אזורים"; מחוץ לו, נגיעה באזור בטלפון גוללת את העמוד כרגיל */
+.tpl-page.moving .tb.slot, .tpl-page.moving .tb.cand { cursor: grab; touch-action: none; outline: 2px dashed var(--blue); outline-offset: 1px; }
 .tb.ghost { border: 2px dashed var(--blue); background: transparent; opacity: .6; }
 .rh { position: absolute; width: 14px; height: 14px; margin: -7px -7px 0 0; border-radius: 50%; background: var(--blue); border: 2px solid #fff; box-shadow: 0 0 0 1px var(--blue); touch-action: none; z-index: 2; }
 .rh-l, .rh-r { cursor: ew-resize; }

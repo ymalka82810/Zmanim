@@ -130,8 +130,8 @@ export function appliesOnDay(applies, day) {
  * תבנית שהמשתמש מוסיף חלה על המועדים שבחר (moadim) וגוברת על התבנית הקבועה.
  */
 export const BUILTIN = [
-  { id: 'shabbat', name: 'שבתות', kind: 'holy', about: 'שבת רגילה, וגם שבת חול המועד.' },
-  { id: 'chag', name: 'חגים', kind: 'holy', about: 'ימים טובים, כולל חג שצמוד לשבת.' },
+  { id: 'shabbat', name: 'שבתות', kind: 'holy', about: 'שבת רגילה, וגם שבת חול המועד. שבת שחלה בחג או בחול המועד מוצגת בלשונית משותפת לשבתות ולחגים.' },
+  { id: 'chag', name: 'חגים', kind: 'holy', about: 'ימים טובים, כולל חג שחל בשבת או שצמוד לה.' },
   { id: 'chol', name: 'חול המועד', kind: 'days', about: 'ימי החול של חול המועד סוכות ופסח, בלוח אחד.' },
   { id: 'week', name: 'ימות השבוע', kind: 'days', about: 'לוח שבועי מיום ראשון עד שישי.' }
 ];

@@ -5,9 +5,9 @@
 
 import { CITIES, BASES, WHEN, WHEN_LABELS, APPLIES, ROUND, FONTS, THEMES, LAYOUTS, LAYOUTS_SHOWN, SIZE_PARTS, SIZES, PAPERS, ORIENTS, COLUMNS, pageOf, DEFAULT_CONFIG, DAY_APPLIES, BUILTIN, isBuiltin, newTemplate, designOf, activeDesign,
   prayerBases, fontFamilies, fontsHref, themeColors, normalize, loadConfig, saveConfig, clearConfig, TEXT_BASES } from './config.js';
-import { findOccasion, templateFor, periodFor, occasionParts, buildLuach, buildDaysLuach, dayPages, buildPoster } from './luach.js';
+import { findOccasion, templateFor, periodFor, joinedTemplates, occasionParts, buildLuach, buildDaysLuach, dayPages, buildPoster } from './luach.js';
 import { MOADIM } from './moadim.js';
-import { luachHtml, withEdits, esc } from './render.js';
+import { luachHtml, withEdits, esc, multiline } from './render.js';
 import { todayIn, toYmd, toDayNum } from './dates.js';
 import { luachCanvas, luachTextCanvas, pngBlob, pdfBlob, stackCanvases } from './image.js';
 import { templateCanvas } from './template-render.js';
@@ -117,16 +117,17 @@ function setBoard(id, day = null) {
 
 /**
  * רשימת התבניות לבחירה, עם כפתור להוספת תבנית. host – 'luach' או 'settings'.
- * join – התבניות של שבת וחג שמוצגים בלוח משולב: הן מוצגות כלשונית אחת ("שבתות וחגים"), עם סימן להפרדה.
+ * join – התבניות של שבת וחג שמוצגים בלוח משולב: הן מוצגות כלשונית אחת ("שבתות וחגים").
+ * split – סימן להפרדה, כשהגבאי שילב חג ושבת עם פרשה (שבת שחלה בחג אי אפשר להפריד).
  */
-function tplChips(el, id, host, join = null) {
+function tplChips(el, id, host, join = null, split = false) {
   const joined = join ? cfg.templates.filter(x => join.includes(x.id)) : [];
   el.innerHTML = cfg.templates.map(x => {
     if (joined.length > 1 && joined.includes(x)) {
       if (x !== joined[0]) return '';
       return '<span class="chip-join"><button type="button" class="chip" data-t="' + esc(id) + '" aria-pressed="true">' +
-        esc(joined.map(j => j.name).join(' ו')) + '</button><button type="button" class="chip-split" data-split="1" ' +
-        'title="הפרדה לשני לוחות – לשבת ולחג" aria-label="הפרדה לשני לוחות – לשבת ולחג">⇆</button></span>';
+        esc(joined.map(j => j.name).join(' ו')) + '</button>' + (split ? '<button type="button" class="chip-split" data-split="1" ' +
+        'title="הפרדה לשני לוחות – לשבת ולחג" aria-label="הפרדה לשני לוחות – לשבת ולחג">⇆</button>' : '') + '</span>';
     }
     return '<button type="button" class="chip" data-t="' + esc(x.id) + '" aria-pressed="' +
       (x.id === id) + '">' + esc(x.name) + '</button>';
@@ -303,9 +304,9 @@ function renderLuach() {
   board = t.id;
   if (cursor == null) cursor = todayIn(cfg.tz);
   const p = isFinite(cfg.lat) && isFinite(cfg.lng) ? periodFor(cfg, t, cursor) : null;
-  // בלוח משולב, הלשוניות של השבת ושל החג מאוחדות ללשונית אחת
-  const join = isMerged(p) ? [board, ...occasionParts(findOccasion(p.occId, cfg.il), {}).map(x => templateFor(cfg, x).id)] : null;
-  tplChips($('luachTpls'), board, 'luach', join);
+  // בלוח משולב ובשבת שחלה בחג, הלשוניות של השבת ושל החג מאוחדות ללשונית אחת
+  const join = joinedTemplates(cfg, p);
+  tplChips($('luachTpls'), board, 'luach', join && join.map(x => x.id), isMerged(p));
   if (!p) {
     current = period = null;
     renderMixOffer(null);
@@ -390,7 +391,7 @@ $('luach').addEventListener('click', e => {
   const key = el.dataset.e;
   openTextEdit({
     text: el.textContent,
-    multiline: key === 'body',
+    multiline: key === 'body' || multiline(el.textContent),
     weekLabel: current.poster ? null : current.title,
     weekFirst: !current.fixed.has(key),
     hasOverride: current.edited.has(key) || current.fixed.has(key),
@@ -755,36 +756,85 @@ $('sizes').addEventListener('input', e => {
 });
 
 /* ---------- ייבוא מתבנית אחרת: זמנים, עיצוב, גופן וגדלים ---------- */
+/* בוחרים תבנית, ההגדרות שלה נפתחות, ומסמנים מה לייבא: תפילה או שיעור מסוים, רק ערכת הצבעים, רק גודל הכותרת וכו'. */
+
+const kindName = kind => kind === 'days' ? 'ימי חול' : 'שבת או חג';
 
 /**
- * התבניות שאפשר לייבא מהן. עיצוב מלוח ישן – רק מתבנית מאותו סוג, כי האזורים שלו בנויים לפי סוג הלוח.
+ * מה אפשר לייבא מהתבנית src לחלק part בתבנית t: [{ key, label, note, on }].
+ * on – מסומן מראש (לא מסומן כשהערך כבר כמו בתבנית t).
+ * לוח שהועלה – רק מתבנית מאותו סוג, כי האזורים שלו בנויים לפי סוג הלוח.
  */
-function importSources(part) {
-  const t = selTpl();
-  if (part === 'design') return cfg.templates.filter(x => x !== t && x.kind === t.kind && designOf(cfg, x));
-  return cfg.templates.filter(x => x !== t);
+function importItems(part, src, t) {
+  const nameIn = (list, v) => (list.find(x => x[0] === v) || [v, v])[1];
+  const item = (key, label, note, same) => ({ key, label, note: note + (same ? ' · כמו עכשיו' : ''), on: !same });
+  if (part === 'rules') {
+    const days = t.kind === 'days';
+    return convertRules(src.rules, t.kind).map((r, i) => ({ key: String(i), label: r.name || 'תפילה בלי שם', note: ruleSum(r, days), on: true, rule: r }));
+  }
+  if (part === 'design') {
+    const d = src.kind === t.kind && designOf(cfg, src), board = !!activeDesign(cfg, src);
+    const out = [{ key: 'layout', label: 'עיצוב המערכת', note: nameIn(LAYOUTS, src.layout) + (board ? ' (התבנית משתמשת עכשיו בלוח שהועלה)' : ''),
+      on: !board && (src.layout !== t.layout || !!activeDesign(cfg, t)) }];
+    if (d) out.push({ key: 'board', label: 'הלוח שהועלה', note: d.name + ' – מיובא כעותק נפרד', on: board });
+    return out;
+  }
+  return [
+    item('theme', 'ערכת צבעים', nameIn(THEMES, src.theme), src.theme === t.theme),
+    item('font', 'גופן הלוח', nameIn(FONTS, src.font), src.font === t.font),
+    ...SIZE_PARTS.map(([k, label]) => item('size-' + k, 'גודל ' + label, src.sizes[k] + '%', src.sizes[k] === t.sizes[k])),
+    item('paper', 'גודל הדף', src.paper, src.paper === t.paper),
+    item('orient', 'כיוון הדף', nameIn(ORIENTS, src.orient), src.orient === t.orient),
+    // בלוח ימי חול אין חלוקה לעמודות
+    ...(t.kind === 'days' ? [] : [item('cols', 'חלוקה לעמודות', src.cols === 1 ? 'בלי חלוקה' : src.cols + ' עמודות', src.cols === t.cols)])
+  ];
 }
+
 function closeImport(box) {
   box.querySelector('.imp-form').hidden = true;
   box.querySelector('.imp-open').hidden = false;
   box.querySelector('.imp-hint').hidden = true;
+  box.querySelector('.imp-items').innerHTML = '';
+  box.items = null;
 }
 function openImport(box) {
-  const part = box.dataset.part, t = selTpl(), list = importSources(part), hint = box.querySelector('.imp-hint');
+  const t = selTpl(), list = cfg.templates.filter(x => x !== t), hint = box.querySelector('.imp-hint');
   if (!list.length) {
-    hint.textContent = part === 'design'
-      ? 'אין תבנית אחרת מאותו סוג (' + (t.kind === 'days' ? 'ימי חול' : 'שבת או חג') + ') שיש לה לוח שהועלה.'
-      : 'אין תבניות אחרות.';
+    hint.textContent = 'אין תבניות אחרות.';
     hint.hidden = false;
     return;
   }
   box.querySelector('.imp-from').innerHTML = list.map(x => '<option value="' + esc(x.id) + '">מ' + esc(x.name) + '</option>').join('');
   box.querySelector('.imp-open').hidden = true;
   box.querySelector('.imp-form').hidden = false;
-  if (part === 'rules') {
-    hint.textContent = 'בייבוא בין לוח של שבת/חג ללוח של ימי חול, "מתי" ו"חל על" מתאימים את עצמם לסוג הלוח. כדאי לעבור על הזמנים אחרי הייבוא.';
-    hint.hidden = false;
-  }
+  renderImportItems(box);
+}
+
+/** ההגדרות של התבנית שנבחרה, עם תיבת סימון לכל אחת */
+function renderImportItems(box) {
+  const part = box.dataset.part, t = selTpl(), hint = box.querySelector('.imp-hint');
+  const src = cfg.templates.find(x => x.id === box.querySelector('.imp-from').value);
+  box.items = src ? importItems(part, src, t) : [];
+  box.querySelector('.imp-items').innerHTML = !box.items.length
+    ? '<p class="hint">' + (part === 'rules' && src ? 'אין זמני תפילות בתבנית "' + esc(src.name) + '".' : 'אין מה לייבא.') + '</p>'
+    : (box.items.length > 2 ? '<button type="button" class="link imp-all"></button>' : '') +
+      box.items.map(x => '<label class="check"><input type="checkbox" data-item="' + esc(x.key) + '"' + (x.on ? ' checked' : '') + '>' +
+        '<span>' + esc(x.label) + '<small>' + esc(x.note) + '</small></span></label>').join('');
+  const notes = [];
+  if (part === 'rules') notes.push('בייבוא בין לוח של שבת/חג ללוח של ימי חול, "מתי" ו"חל על" מתאימים את עצמם לסוג הלוח. כדאי לעבור על הזמנים אחרי הייבוא.');
+  if (part === 'design' && src && src.kind !== t.kind && designOf(cfg, src)) notes.push('את הלוח שהועלה ל"' + src.name + '" אי אפשר לייבא, כי הוא בנוי ללוח של ' + kindName(src.kind) + ' והתבנית הזו היא של ' + kindName(t.kind) + '.');
+  if (part === 'font') notes.push('הגופן, הצבעים והגדלים חלים על לוחות המערכת. גודל הדף, הכיוון והעמודות – גם על לוח שהועלה.');
+  hint.textContent = notes.join(' ');
+  hint.hidden = !notes.length;
+  updateImportPick(box);
+}
+
+/** כפתור הייבוא פעיל רק כשמשהו מסומן, וכפתור "סימון הכל" מתחלף ל"ניקוי הסימון" */
+function updateImportPick(box) {
+  const boxes = [...box.querySelectorAll('.imp-items input[type="checkbox"]')], n = boxes.filter(x => x.checked).length;
+  box.querySelector('.imp-ok').disabled = !n;
+  const all = box.querySelector('.imp-all');
+  if (all) all.textContent = n === boxes.length ? 'ניקוי הסימון' : 'סימון הכל';
 }
 
 /** זמני התפילות של תבנית אחרת, מותאמים לסוג הלוח של התבנית kind */
@@ -802,24 +852,45 @@ function convertRules(list, kind) {
 async function doImport(box) {
   const part = box.dataset.part, t = selTpl();
   const src = cfg.templates.find(x => x.id === box.querySelector('.imp-from').value);
-  if (!src) return;
+  const checked = new Set([...box.querySelectorAll('.imp-items input:checked')].map(x => x.dataset.item));
+  const picked = (box.items || []).filter(x => checked.has(x.key));
+  if (!src || !picked.length) return;
   if (part === 'rules') {
-    const list = convertRules(src.rules, t.kind);
-    t.rules = box.querySelector('.imp-how').value === 'add' ? mergeRules(t.rules, list, false, t.kind) : list;
-    toast('הזמנים יובאו מ' + src.name);
-  } else if (part === 'design') {
-    const d = designOf(cfg, src);
-    if (designOf(cfg, t) && !await SiteDialog.confirm('להחליף את העיצוב של "' + t.name + '" בעיצוב של "' + src.name + '"?', { ok: 'החלפה' })) return;
-    // תבניות שמשתמשות בעיצוב הקודם של התבנית הזו שומרות עליו
-    if (t.design && !t.design.ref) {
-      for (const x of cfg.templates) if (x.design && x.design.ref === t.id) x.design = { ...t.design, enabled: x.design.enabled !== false };
+    const list = picked.map(x => x.rule);
+    if (box.querySelector('.imp-how').value === 'replace') t.rules = list.map(r => ({ ...r }));
+    else {
+      // תפילה שכבר יש בתבנית (אותו שם, ואותו "מתי" או "חל על") מתעדכנת במקומה, והשאר מתווספות בסוף
+      const same = t.kind === 'days' ? (a, b) => a.name === b.name && a.applies === b.applies : (a, b) => a.name === b.name && a.when === b.when;
+      const out = t.rules.map(x => ({ ...(list.find(r => same(x, r)) || x) }));
+      for (const r of list) if (!out.some(x => same(x, r))) out.push({ ...r });
+      t.rules = out;
     }
-    t.design = { ...JSON.parse(JSON.stringify(d)), enabled: true };   // עותק נפרד
-    if (!store()) { t.design = null; toast('אין מספיק מקום במכשיר לעותק של העיצוב', true); return; }
-    toast('העיצוב יובא מ' + src.name + '. זמני התפילות בו לפי התבנית "' + t.name + '"');
+    toast((list.length === 1 ? '"' + (list[0].name || 'תפילה בלי שם') + '" יובא' : list.length + ' זמנים יובאו') + ' מ' + src.name);
+  } else if (part === 'design') {
+    const board = checked.has('board');
+    if (board) {
+      const d = designOf(cfg, src);
+      if (designOf(cfg, t) && !await SiteDialog.confirm('להחליף את הלוח שהועלה ל"' + t.name + '" בלוח של "' + src.name + '"?', { ok: 'החלפה' })) return;
+      // תבניות שמשתמשות בעיצוב הקודם של התבנית הזו שומרות עליו
+      if (t.design && !t.design.ref) {
+        for (const x of cfg.templates) if (x.design && x.design.ref === t.id) x.design = { ...t.design, enabled: x.design.enabled !== false };
+      }
+      const prev = t.design;
+      t.design = { ...JSON.parse(JSON.stringify(d)), enabled: true };   // עותק נפרד
+      if (!store()) { t.design = prev; toast('אין מספיק מקום במכשיר לעותק של העיצוב', true); return; }
+    }
+    if (checked.has('layout')) {
+      t.layout = src.layout;
+      // בלי הלוח שהועלה – עוברים לעיצוב המערכת. הלוח של התבנית נשאר שמור, ואפשר לחזור אליו
+      if (!board && t.design) t.design.enabled = false;
+    }
+    toast(board ? 'הלוח יובא מ' + src.name + '. זמני התפילות בו לפי התבנית "' + t.name + '"' : 'עיצוב המערכת יובא מ' + src.name);
   } else {
-    t.font = src.font; t.theme = src.theme; t.layout = src.layout; t.sizes = { ...src.sizes }; t.paper = src.paper; t.orient = src.orient; t.cols = src.cols;
-    toast('תבנית התצוגה, הגופן, ערכת הצבעים, הגדלים, הדף והעמודות יובאו מ' + src.name);
+    for (const { key } of picked) {
+      if (key.startsWith('size-')) t.sizes[key.slice(5)] = src.sizes[key.slice(5)];
+      else t[key] = src[key];
+    }
+    toast(picked.map(x => x.label).join(', ') + ' – יובאו מ' + src.name);
   }
   closeImport(box);
   renderRules(); renderTemplateStatus(); renderFont();
@@ -830,6 +901,15 @@ document.querySelectorAll('.imp').forEach(box => {
   box.querySelector('.imp-open').onclick = () => openImport(box);
   box.querySelector('.imp-cancel').onclick = () => closeImport(box);
   box.querySelector('.imp-ok').onclick = () => doImport(box);
+  box.querySelector('.imp-from').onchange = () => renderImportItems(box);
+  const items = box.querySelector('.imp-items');
+  items.addEventListener('change', () => updateImportPick(box));
+  items.addEventListener('click', e => {
+    if (!e.target.closest('.imp-all')) return;
+    const boxes = [...items.querySelectorAll('input[type="checkbox"]')], all = boxes.some(x => !x.checked);
+    boxes.forEach(x => { x.checked = all; });
+    updateImportPick(box);
+  });
 });
 
 function renderMoadimHint() {

@@ -66,6 +66,9 @@ function E(l, key, text, ph) {
     (ph ? ' data-ph="' + esc(ph) + '"' : '') + '>' + esc(text) + '</span>';
 }
 
+/** טקסט עם ירידת שורה בין מילים (ההודעה מלוח הקידושים) */
+export const multiline = s => /\S\s*\n\s*\S/.test(String(s ?? ''));
+
 /** לוח ימי חול: טבלה, שורה לכל תפילה ועמודה לכל יום */
 function daysHtml(l, editing) {
   let h = '<div class="l-grid-wrap"><table class="l-grid"><thead><tr><th></th>' +
@@ -115,7 +118,9 @@ export function luachHtml(l, editing, cols = 1) {
     const sec = s => {
       const i = l.sections.indexOf(s);
       let t = '<table class="l-sec"><tr><th>' + E(l, 's' + i + '.title', s.title) + '</th><th class="d">' + E(l, 's' + i + '.date', s.date) + '</th></tr>';
-      for (const r of s.rows) t += '<tr><td>' + E(l, r._k + '.name', r.name) + '</td><td class="t">' + E(l, r._k + '.text', r.text) + '</td></tr>';
+      // הודעה של כמה שורות (הקידוש): לרוחב הקטע, בשורות כמו בלוח הקידושים. הכותרת שבה מחליפה את שם השורה
+      for (const r of s.rows) t += multiline(r.text) ? '<tr><td colspan="2" class="k">' + E(l, r._k + '.text', r.text) + '</td></tr>'
+        : '<tr><td>' + E(l, r._k + '.name', r.name) + '</td><td class="t">' + E(l, r._k + '.text', r.text) + '</td></tr>';
       if (s.zmanim.length) {
         t += '<tr><td colspan="2" class="z">' +
           s.zmanim.map((z, j) => '<span>' + E(l, s.zk[j] + '.name', z[0]) + ' <b>' + E(l, s.zk[j] + '.val', z[1]) + '</b></span>').join('') + '</td></tr>';

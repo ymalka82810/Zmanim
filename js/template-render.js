@@ -193,8 +193,10 @@ export function slotText(slot, v, host) {
  */
 function reword(slot, text) {
   if (text == null || !slot.rewords) return text;
-  const out = slot.rewords.reduce((t, [from, to]) => from ? t.split(from).join(to) : t, text);
-  return out.replace(/\s+/g, ' ').trim();
+  // המילים נמצאות גם כשיש ביניהן ירידת שורה (ההודעה מלוח הקידושים), וירידות השורה שבטקסט נשמרות
+  const find = from => new RegExp(from.trim().split(/\s+/).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+'), 'g');
+  const out = slot.rewords.reduce((t, [from, to]) => from && from.trim() ? t.replace(find(from), () => to) : t, text);
+  return out.replace(/[^\S\n]+/g, ' ').replace(/ ?\n[\s]*/g, '\n').trim();
 }
 
 /* ---------- ציור ---------- */

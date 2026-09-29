@@ -55,6 +55,7 @@ const dayOpts = () => DOW_LABELS.map((n, i) => ['d' + i, isChol() ? 'יום ' + 
 let st = null;
 const openSlots = new WeakSet();   // אזורים שהשורה שלהם פתוחה לעריכה
 let slotTexts = new WeakMap();     // הטקסט שנכתב בכל אזור בתצוגה האחרונה – למילים שבתיבות השורות
+let slotEdited = new WeakSet();    // אזורים שהנוסח שלהם נערך לשבוע שבתצוגה האחרונה
 
 /** העמודה (יום) של מפתח d0…d5 בלוח הישן. בלי תאריך: יום בשבוע לפי המפתח */
 function colOf(key) {
@@ -157,6 +158,7 @@ function open() {
   $('tplPreviewWrap').hidden = true;
   st.drawing = false;
   $('tplDraw').setAttribute('aria-pressed', 'false');
+  setMoving(false);
   renderOcc(); renderBoxes(); renderSlots();
   // העמוד שבעורך מוצג כמו שיודפס, עם אירוע לדוגמה (קידוש וכו')
   schedulePreviewRefresh();
@@ -380,7 +382,7 @@ function renderBoxes() {
     const lb = (s.kind === 'rule' || s.kind === 'zman') && label;
     const outer = lb ? unionBox(box, lb) : box;
     h += '<button type="button" class="tb slot' + (i === st.sel ? ' sel' : '') + '" data-s="' + i + '" style="' + boxStyle(outer) +
-      '" aria-label="אזור ' + ranks[i] + '" title="לחיצה – עריכת האזור, גרירה – הזזה למקום אחר בעמוד"><span>' + ranks[i] + '</span></button>';
+      '" aria-label="אזור ' + ranks[i] + '" title="' + (st.moving ? 'גרירה – הזזה למקום אחר בעמוד' : 'לחיצה – עריכת האזור') + '"><span>' + ranks[i] + '</span></button>';
     if (lb) h += '<div class="tb val" style="' + boxStyle(box) + '"></div>';
   });
   if (move && move.ghost) h += '<div class="tb slot drag ghost" style="' + boxStyle(move.ghost) + '"></div>';
@@ -565,6 +567,19 @@ $('tplDraw').onclick = () => {
   st.drawing = !st.drawing;
   $('tplDraw').setAttribute('aria-pressed', String(st.drawing));
   $('tplPage').classList.toggle('drawing', st.drawing);
+  if (st.drawing) setMoving(false);
+};
+
+/* הזזת אזורים וטקסט אפור בגרירה: רק כשהכפתור לחוץ, כדי שאזורים לא יזוזו בטעות */
+function setMoving(on) {
+  st.moving = on;
+  $('tplMove').setAttribute('aria-pressed', String(on));
+  $('tplPage').classList.toggle('moving', on);
+}
+$('tplMove').onclick = () => {
+  setMoving(!st.moving);
+  if (st.moving && st.drawing) $('tplDraw').click();
+  renderBoxes();
 };
 
 /* עריכת טקסט בלחיצה: על טקסט שזוהה אוטומטית (יוצר אזור טקסט קבוע), או על אזור טקסט קיים */
@@ -593,7 +608,7 @@ $('tplPage').addEventListener('pointerdown', e => {
     resize = { s, edge: h.dataset.edge };
     return;
   }
-  const tb = st && !st.drawing && e.button === 0 && e.target.closest('.tb.slot, .tb.cand');
+  const tb = st && st.moving && !st.drawing && e.button === 0 && e.target.closest('.tb.slot, .tb.cand');
   if (tb) { move = { i: tb.dataset.s != null ? +tb.dataset.s : null, c: tb.dataset.c, cx: e.clientX, cy: e.clientY, start: toImg(e) }; return; }
   if (!st || !st.drawing) return;
   e.preventDefault();
@@ -836,10 +851,10 @@ function sizeFields(s) {
 function wrapLines(s) {
   const text = slotTexts.get(s);
   if (!text || !text.trim()) return '<p class="hint">המילים יופיעו כאן אחרי שהתצוגה תתעדכן.</p>';
-  const { words, lines, own } = lineWords(s), count = s.lineCount || 2;
+  const { words, lines, own, fixed, count } = lineWords(s);
   const box = n => lineEdit && lineEdit.s === s && lineEdit.n === n ? lineEditor(s, n) :
     '<div class="wrap-line"><span class="wrap-no">שורה ' + (n + 1) + '</span>' +
-    words.map((w, i) => lines[i] !== n ? '' : own ? '<span class="chip">' + esc(w) + '</span>'
+    words.map((w, i) => lines[i] !== n ? '' : fixed ? '<span class="chip">' + esc(w) + '</span>'
       : '<button type="button" class="chip" data-word="' + i + '">' + esc(w) + '</button>').join('') +
     '<button type="button" class="wrap-edit" data-edit-line="' + n + '" title="עריכת הנוסח בשורה ' + (n + 1) +
     '" aria-label="עריכת הנוסח בשורה ' + (n + 1) + '">✎</button></div>';
@@ -847,6 +862,7 @@ function wrapLines(s) {
   return Array.from({ length: count }, (x, n) => box(n)).join('') + '<p class="hint">' +
     (own ? 'הנוסח נערך במיוחד לשבוע שבתצוגה' + week + ', והשורות בו לפי העריכה. ' +
       '<button type="button" class="linkish" data-week-reset>ביטול העריכה לשבוע הזה</button>'
+      : fixed ? 'השורות כמו בהודעה בלוח הקידושים: הכותרת, "ע״י" ובעל הקידוש, והסיבה.'
       : 'לחצו על מילה כדי להעביר אותה לשורה הבאה' +
         (lines.some(Boolean) ? '' : ' (כל עוד כל המילים בשורה הראשונה, הטקסט מתחלק לפי האורך)') + '.') +
     ' לשינוי הנוסח עצמו – לחצו על ✎ שבצד השורה.' +
@@ -856,18 +872,20 @@ function wrapLines(s) {
 let lineEdit = null;   // { s, n } – השורה שהנוסח שלה נערך כרגע
 
 /**
- * המילים שבתצוגה והשורה של כל אחת. own – הנוסח נערך לשבוע שבתצוגה, והשורות נקבעות לפי ירידות השורה שבו
+ * המילים שבתצוגה, השורה של כל אחת ומספר השורות. השורות נקבעות לפי ירידות השורה שבטקסט (fixed) כשהנוסח נערך
+ * לשבוע שבתצוגה (own), ובהודעה מלוח הקידושים – הכותרת / ע״י ובעל הקידוש / הסיבה, בכל שבוע לפי אורך השמות שבו.
+ * אחרת – לפי המילים שהגבאי העביר בין השורות (s.lines)
  */
 function lineWords(s) {
-  const text = (slotTexts.get(s) || '').trim(), count = s.lineCount || 2;
+  const text = (slotTexts.get(s) || '').trim();
   if (text.includes('\n')) {
-    const words = [], lines = [];
-    text.split('\n').filter(ln => ln.trim()).forEach((ln, n) =>
-      ln.trim().split(/\s+/).forEach(w => { words.push(w); lines.push(Math.min(n, count - 1)); }));
-    return { words, lines, own: true };
+    const words = [], lines = [], rows = text.split('\n').filter(ln => ln.trim());
+    rows.forEach((ln, n) => ln.trim().split(/\s+/).forEach(w => { words.push(w); lines.push(n); }));
+    const own = slotEdited.has(s);
+    return { words, lines, count: own ? Math.max(s.lineCount || 2, rows.length) : rows.length, own, fixed: true };
   }
-  const words = text ? text.split(/\s+/) : [];
-  return { words, lines: words.map((w, i) => wordLine(s.lines, i, count)), own: false };
+  const words = text ? text.split(/\s+/) : [], count = s.lineCount || 2;
+  return { words, lines: words.map((w, i) => wordLine(s.lines, i, count)), count, own: false, fixed: false };
 }
 
 const lineText = (s, n) => { const { words, lines } = lineWords(s); return words.filter((w, i) => lines[i] === n).join(' '); };
@@ -894,7 +912,7 @@ function upcomingWeeks() {
 function lineEditor(s, n) {
   const weeks = st.weeks || (st.weeks = upcomingWeeks());
   const cur = st.weekShown, own = lineWords(s).own;
-  const full = lineWords(s), count = s.lineCount || 2;
+  const full = lineWords(s), count = full.count;
   const shown = Array.from({ length: count }, (x, k) => full.words.filter((w, i) => full.lines[i] === k).join(' ')).filter(Boolean);
   const kd = s.kind === 'kiddush' && cur ? (hasKiddush(cur) ? 'קידוש מאושר מלוח הקידושים של הקהילה.' : 'אין קידוש מאושר לשבוע הזה – מוצג קידוש לדוגמה.') : '';
   return '<div class="wrap-line line-ed"><span class="wrap-no">שורה ' + (n + 1) + '</span><div class="line-ed-body">' +
@@ -939,7 +957,7 @@ const weekKey = () => st.tpl.id + ':' + st.weekShown.first;
  * (cfg.edits) לכל עמוד שבו האזור נכתב באותו טקסט. עד שמירת התבנית השינויים ממתינים ב-st.weekEdits
  */
 function saveWeekLine(s, n, to) {
-  const { words, lines } = lineWords(s), count = s.lineCount || 2;
+  const { words, lines, count } = lineWords(s);
   const rows = Array.from({ length: count }, (x, k) => words.filter((w, i) => lines[i] === k).join(' '));
   rows[n] = to;
   const text = rows.filter(Boolean).join('\n');
@@ -949,7 +967,7 @@ function saveWeekLine(s, n, to) {
   const edits = weekEditsFor(weekKey());
   const hit = pages.map((v, i) => i).filter(i => { const t = slotText(b, { ...pages[i], edits: null }, host); return t != null && t === plain; });
   for (const i of hit.length ? hit : [0]) {
-    if (text.replace(/\n/g, ' ') === plain || !text) delete edits['p' + i + '|' + k];
+    if (!text || text === plain || text.replace(/\n/g, ' ') === plain) delete edits['p' + i + '|' + k];
     else edits['p' + i + '|' + k] = text;
   }
 }
@@ -973,8 +991,7 @@ function resetWeek(s) {
  * נשמר כהחלפה (s.rewords), ולא כטקסט קבוע, כדי שמה שמשתנה בשאר השורות ימשיך להתעדכן
  */
 function rewordAll(s, n, to) {
-  const words = slotTexts.get(s).trim().split(/\s+/), count = s.lineCount || 2;
-  const lines = words.map((w, i) => wordLine(s.lines, i, count));
+  const { words, lines, fixed } = lineWords(s);
   const idx = lines.map((l, i) => l === n ? i : -1).filter(i => i >= 0);
   const first = idx.length ? idx[0] : lines.filter(l => l < n).length, last = idx.length ? idx[idx.length - 1] : first - 1;
   if (idx.length && last - first + 1 !== idx.length) {
@@ -990,9 +1007,12 @@ function rewordAll(s, n, to) {
     if (!before) { SiteDialog.alert('אפשר להוסיף מילים לשורה ריקה רק אחרי שיש מילים בשורה שלפניה.'); return; }
     addReword(s, before, before + ' ' + to);
   } else addReword(s, from, to);
-  const added = to ? to.split(' ').length : 0;
-  s.lines = [...lines.slice(0, first), ...Array(added).fill(n), ...lines.slice(last + 1)];
-  if (!s.lines.some(Boolean)) delete s.lines;
+  // בהודעה מלוח הקידושים השורות נקבעות לפי ההודעה עצמה, ולא לפי מספר המילים
+  if (!fixed) {
+    const added = to ? to.split(' ').length : 0;
+    s.lines = [...lines.slice(0, first), ...Array(added).fill(n), ...lines.slice(last + 1)];
+    if (!s.lines.some(Boolean)) delete s.lines;
+  }
   schedulePreviewRefresh();
 }
 
@@ -1372,6 +1392,7 @@ async function renderTemplatePreview() {
   canvas.view = { ...at, slots: new Map(st.slots.map((s, i) => [s, at.slots.get(built[i])]).filter(e => e[1])) };
   const host = specialHost(tpl.slots);
   slotTexts = new WeakMap(st.slots.map((s, i) => [s, slotText(built[i], values, host) ?? '']));
+  slotEdited = new WeakSet(st.slots.filter((s, i) => slotKey(built[i]) in edits));
   refreshWrapLines();
   $('tplPreviewTitle').textContent = 'תצוגה מקדימה – ' + occ.title;
   $('tplPreviewImg').src = canvas.toDataURL('image/png');

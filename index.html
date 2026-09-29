@@ -209,7 +209,8 @@ try { if (sessionStorage.getItem('site.booted') && !/[?&]code=/.test(location.se
         <button type="button" class="link imp-open">ייבוא מתבנית אחרת</button>
         <div class="imp-form" hidden>
           <select class="imp-from" aria-label="התבנית שמייבאים ממנה"></select>
-          <select class="imp-how" aria-label="מה לעשות עם הזמנים הקיימים"><option value="replace">להחליף את כל הזמנים</option><option value="add">להוסיף רק תפילות שחסרות</option></select>
+          <div class="imp-items" role="group" aria-label="הזמנים לייבוא"></div>
+          <select class="imp-how" aria-label="מה לעשות עם הזמנים הקיימים"><option value="add">להוסיף לזמנים הקיימים (תפילה באותו שם תתעדכן)</option><option value="replace">להחליף את כל הזמנים בזמנים שנבחרו</option></select>
           <button type="button" class="primary imp-ok">ייבוא</button>
           <button type="button" class="imp-cancel">ביטול</button>
         </div>
@@ -235,6 +236,7 @@ try { if (sessionStorage.getItem('site.booted') && !/[?&]code=/.test(location.se
         <button type="button" class="link imp-open">ייבוא מתבנית אחרת</button>
         <div class="imp-form" hidden>
           <select class="imp-from" aria-label="התבנית שמייבאים ממנה"></select>
+          <div class="imp-items" role="group" aria-label="מה לייבא מהעיצוב"></div>
           <button type="button" class="primary imp-ok">ייבוא</button>
           <button type="button" class="imp-cancel">ביטול</button>
         </div>
@@ -259,6 +261,7 @@ try { if (sessionStorage.getItem('site.booted') && !/[?&]code=/.test(location.se
         <button type="button" class="link imp-open">ייבוא מתבנית אחרת</button>
         <div class="imp-form" hidden>
           <select class="imp-from" aria-label="התבנית שמייבאים ממנה"></select>
+          <div class="imp-items" role="group" aria-label="מה לייבא מהגופן והגדלים"></div>
           <button type="button" class="primary imp-ok">ייבוא</button>
           <button type="button" class="imp-cancel">ביטול</button>
         </div>
@@ -295,7 +298,7 @@ try { if (sessionStorage.getItem('site.booted') && !/[?&]code=/.test(location.se
         <p id="tplOcc" class="hint tpl-occ"></p>
       </div>
       <label class="check"><input type="checkbox" id="tplRules" checked> לעדכן את זמני התפילות של התבנית לפי הקובץ</label>
-      <details class="tpl-help"><summary>איך עורכים את התבנית?</summary><p class="hint">האזורים המסומנים בכחול יוחלפו בכל לוח. לוחצים על אזור כדי לערוך אותו: לכתוב בו טקסט משלכם ("טקסט שכותבים כאן"), או לבחור ערך שמתעדכן בכל לוח (תפילה, זמן, פרשה, תאריך). לוחצים על טקסט אפור כדי לסמן אותו ולשנות אותו. עם "עריכת טקסט" אפשר גם ללחוץ ישירות על כל טקסט בעמוד ולערוך, להוסיף או למחוק אותו – לתמיד או לשבוע הזה בלבד. כדי להזיז אזור או טקסט אפור – גוררים אותו למקום אחר בעמוד (בטלפון: קודם לוחצים עליו ואז גוררים), והוא יונח במקום הפנוי הקרוב, מיושר לשורה ולעמודה של הטקסט שסביבו.</p></details>
+      <details class="tpl-help"><summary>איך עורכים את התבנית?</summary><p class="hint">האזורים המסומנים בכחול יוחלפו בכל לוח. לוחצים על אזור כדי לערוך אותו: לכתוב בו טקסט משלכם ("טקסט שכותבים כאן"), או לבחור ערך שמתעדכן בכל לוח (תפילה, זמן, פרשה, תאריך). לוחצים על טקסט אפור כדי לסמן אותו ולשנות אותו. עם "עריכת טקסט" אפשר גם ללחוץ ישירות על כל טקסט בעמוד ולערוך, להוסיף או למחוק אותו – לתמיד או לשבוע הזה בלבד. כדי להזיז אזור או טקסט אפור – לוחצים על "הזזת אזורים" וגוררים אותו למקום אחר בעמוד, והוא יונח במקום הפנוי הקרוב, מיושר לשורה ולעמודה של הטקסט שסביבו.</p></details>
       <p class="hint" id="tplScanHint" hidden>לא זוהה טקסט בקובץ (מסמך סרוק, תמונה לא ברורה, או שאין חיבור לאינטרנט לזיהוי טקסט בתמונה). לחצו "סימון אזור" וגררו על כל שעה או תאריך שצריך להחליף.</p>
       <div class="tpl-fontfill" id="tplFontFill" hidden>
         <p class="hint" id="tplFontMsg"></p>
@@ -309,6 +312,7 @@ try { if (sessionStorage.getItem('site.booted') && !/[?&]code=/.test(location.se
         <div class="tpl-tools">
           <button type="button" id="tplDraw" aria-pressed="false">סימון אזור</button>
           <button type="button" id="tplEditText" aria-pressed="false">✎ עריכת טקסט</button>
+          <button type="button" id="tplMove" aria-pressed="false">✥ הזזת אזורים</button>
         </div>
         <div class="tpl-page" id="tplPage"><img id="tplImg" alt="הלוח הישן"><div id="tplBoxes"></div></div>
       </div>

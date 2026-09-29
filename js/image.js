@@ -5,7 +5,7 @@
 
 let C = { ink: '#1d2b45', blue: '#2c4a7c', muted: '#5d6b82', soft: '#e3e9f2', note: '#eef3fa', bg: '#ffffff' };
 import { fontFamilies, themeColors } from './config.js';
-import { splitColumns } from './render.js';
+import { splitColumns, multiline } from './render.js';
 
 let SERIF, SANS;   // גופן הכותרת וגופן הטקסט, לפי התבנית
 let SZ = { title: 1, name: 1, time: 1, zman: 1 };   // גדלי הטקסט של התבנית (1 = רגיל)
@@ -153,6 +153,21 @@ function layout(ctx, l, draw, H) {
     y = headLine(rect, y + (bar ? 13 : 12), M, R);
 
     s.rows.forEach((r, k) => {
+      if (multiline(r.text)) {
+        // הודעת הקידוש: לרוחב הקטע, בשורות כמו בלוח הקידושים, והכותרת (השורה הראשונה) מודגשת
+        const size = px(21, 'name'), lh = px(29, 'name'), cxs = (M + R) / 2, top = y;
+        const lines = String(r.text).split('\n').map(ln => ln.trim()).filter(Boolean).flatMap((ln, i) => {
+          const f = (i ? '400 ' : '700 ') + size + 'px ' + SANS;
+          ctx.font = f;
+          return wrap(ctx, ln, inner - 2 * bar - 16).map(t => ({ t, f }));
+        });
+        const next = top + 10 + size + (lines.length - 1) * lh + 14;
+        if (LAY === 'banner' && k % 2) round(M, top, inner, next - top, 6, C.note);
+        lines.forEach((ln, i) => text(ln.t, cxs, top + 10 + size + i * lh, ln.f, C.ink, 'center'));
+        y = next;
+        rowLine(rect, y, M, R);
+        return;
+      }
       const nf = '400 ' + px(21, 'name') + 'px ' + SANS, lh = px(28, 'name');
       ctx.font = nf;
       const pills = LAY === 'pills';

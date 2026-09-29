@@ -34,13 +34,25 @@ export function findOccasion(from, il, dir = 1) {
   return { mode: 'holy', id: first, erev: first - 1, first, last, days, title: holyTitle(days) };
 }
 
-/** "ראש השנה ושבת", "שבת חול המועד סוכות", "שבת פרשת נח" */
+/**
+ * "שבת שמיני עצרת ושמחת תורה", "סוכות ושבת חול המועד", "שבת חול המועד פסח", "שבועות ושבת פרשת נשא", "שבת פרשת נח".
+ * שבת שחלה בחג לא נבלעת בו: שם החג בא אחרי "שבת".
+ */
 function holyTitle(days) {
-  const names = [];
-  days.forEach(x => { if (x.chag && names.indexOf(x.chag) < 0) names.push(x.chag); });
-  if (names.length) return names.join(' ו') + (days.some(x => x.shabbat) ? ' ושבת' : '');
-  if (days[0].chol) return 'שבת חול המועד ' + days[0].chol;
-  return days[0].parasha ? 'שבת פרשת ' + days[0].parasha : 'שבת';
+  const names = [], seen = new Set();
+  const chag = days.some(x => x.chag);
+  days.forEach(x => {
+    if (x.chag) {
+      // יום שני של חג שחל בשבת: "שבועות ושבת"
+      if (seen.has(x.chag)) { if (x.shabbat) names.push('שבת'); return; }
+      seen.add(x.chag);
+      names.push((x.shabbat ? 'שבת ' : '') + x.chag);
+    } else if (x.shabbat) {
+      // בשבת חול המועד שצמודה לחג, שם החג כבר מופיע בכותרת
+      names.push(x.chol ? 'שבת חול המועד' + (chag ? '' : ' ' + x.chol) : x.parasha ? 'שבת פרשת ' + x.parasha : 'שבת');
+    }
+  });
+  return names.join(' ו');
 }
 
 /* ---------- ימות השבוע וחול המועד ---------- */
@@ -138,9 +150,29 @@ function* periods(cfg, kind, from, dir) {
 export function periodFor(cfg, t, from, dir = 1, strict = false) {
   for (const p of periods(cfg, t.kind, from, dir)) {
     if (strict && (dir > 0 ? p.first < from : p.last > from)) continue;
-    if (templateFor(cfg, p) === t) return p;
+    if (templateFor(cfg, p) === t || (joinedTemplates(cfg, p) || []).includes(t)) return p;
   }
   return null;
+}
+
+/**
+ * התבניות שהלוח p שייך לכולן, ומוצגות לכן כלשונית אחת ("שבתות וחגים"): שבת שחלה בחג או בחול המועד
+ * (בלי פרשה) היא גם שבת וגם חג, וכך גם חג ושבת עם פרשה שהגבאי שילב ללוח אחד. הלוח נבנה בתבנית הראשונה.
+ * בכל לוח אחר – null.
+ */
+export function joinedTemplates(cfg, p) {
+  if (!p || p.mode !== 'holy') return null;
+  const own = templateFor(cfg, p);
+  let list;
+  if (p.mixed) {
+    if (!(cfg.merged || {})[p.occId]) return null;
+    list = [own, ...occasionParts(findOccasion(p.occId, cfg.il), {}).map(x => templateFor(cfg, x))];
+  } else {
+    if (!p.days.some(d => d.shabbat) || !p.days.some(d => d.chag || d.chol)) return null;
+    list = [own, cfg.templates.find(t => t.id === (own.id === 'shabbat' ? 'chag' : 'shabbat'))];
+  }
+  list = [...new Set(list.filter(Boolean))];
+  return list.length > 1 ? list : null;
 }
 
 /* ---------- בחירת התבנית ---------- */
@@ -209,15 +241,15 @@ function ruleTime(rule, ctx, seen = new Set()) {
 /**
  * ערך "קידוש": הטקסט של הכלל הזה לא זמן, אלא ההודעה בנוסח שהגבאי קבע בלוח הקידושים –
  * השורה הראשונה, "ע״י", בעל הקידוש והסיבה – לפי מי שאושר לקידוש בתאריך של היום הזה.
+ * השורות כמו בלוח הקידושים, עם ירידת שורה ביניהן: הכותרת / "ע״י" ובעל הקידוש / הסיבה.
  * אין אישור קידוש לתאריך – אין ערך.
  */
 function kiddushRow(rule, ctx) {
   const info = ctx.kiddush && ctx.kiddush.get(toYmd(ctx.day.day));
   if (!info) return null;
+  const line = (...parts) => parts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
   // שורת הסיבה כבר כוללת את הסוג: "לרגל בר המצווה", "לעילוי נשמת … ז״ל"
-  const occasion = info.occasion || '';
-  const text = [info.heading, info.by, info.sponsorName, occasion]
-    .filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+  const text = [line(info.heading), line(info.by, info.sponsorName), line(info.occasion)].filter(Boolean).join('\n');
   return { text, key: 9998 };
 }
 
@@ -271,7 +303,8 @@ function rowsFor(cfg, when, day, t, kiddush) {
  */
 export function buildLuach(cfg, occ, kiddush) {
   const il = cfg.il, tz = cfg.tz;
-  const kind = d => d.chag ? 'חג' : 'שבת';
+  // שבת שחלה בחג: "ערב שבת וחג", "מוצאי שבת וחג"
+  const kind = d => d.chag ? (d.shabbat ? 'שבת וחג' : 'חג') : 'שבת';
   const first = occ.days[0], last = occ.days[occ.days.length - 1];
   const times = d => { const t = dayTimes(cfg, d); t.candles = candlesOn(cfg, d, t, il); return t; };
   const zlist = list => list.filter(x => x[1] != null).map(x => [x[0], hm(x[1], tz)]);
@@ -286,7 +319,7 @@ export function buildLuach(cfg, occ, kiddush) {
 
   occ.days.forEach((d, i) => {
     const t = times(d.day);
-    const label = d.chag || (d.chol ? 'שבת חול המועד' : d.special || (occ.days.length > 1 ? 'שבת' : 'יום השבת'));
+    const label = d.chag ? (d.shabbat ? 'שבת ' : '') + d.chag : (d.chol ? 'שבת חול המועד' : d.special || (occ.days.length > 1 ? 'שבת' : 'יום השבת'));
     const z = [['סו"ז ק"ש מג"א', t.sofZmanShmaMGA], ['סו"ז ק"ש גר"א', t.sofZmanShma], ['שקיעה', t.sunset]];
     if (i < occ.days.length - 1) z.push(['הדלקת נרות', t.candles]);
     sections.push({ title: label, date: gDate(d.day), rows: rowsFor(cfg, 'כל יום', d, t, kiddush), zmanim: zlist(z) });
@@ -296,7 +329,7 @@ export function buildLuach(cfg, occ, kiddush) {
   sections.push({
     title: 'מוצאי ' + kind(last), date: gDate(last.day),
     rows: rowsFor(cfg, 'יציאה', last, tl, kiddush),
-    zmanim: zlist([['צאת ה' + kind(last), tl.havdalah]])
+    zmanim: zlist([['צאת ' + kind(last).split(' ו').map(w => 'ה' + w).join(' ו'), tl.havdalah]])
   });
 
   // ערכים לתבנית מקובץ: זמני היום וזמני התפילות לפי "מתי", והטקסטים של הכותרת
