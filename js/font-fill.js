@@ -14,6 +14,21 @@ const RANGES = [[0x20, 0x7e], [0xa0, 0xbf], [0xd7, 0xd7], [0x0591, 0x05f4], [0x2
 export const canReadLocalFonts = () => typeof window.queryLocalFonts === 'function';
 
 /**
+ * טלפון או טאבלט (גם באפליקציה): אין בהם גישה לגופנים שבמכשיר, ולרוב גם אין קובץ גופן להעלות.
+ * iPad מציג את עצמו כ-Mac, ולכן מזהים אותו לפי מסך המגע
+ */
+export function isPhone() {
+  if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) return true;
+  if (navigator.userAgentData && navigator.userAgentData.mobile) return true;
+  return /Android|iPhone|iPad|iPod|Mobi/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+}
+
+/** מצב ההרשאה לגופנים שבמחשב: 'granted', 'denied' או 'prompt' (הדפדפן ישאל) */
+export async function localFontsPermission() {
+  try { return (await navigator.permissions.query({ name: 'local-fonts' })).state; } catch (e) { return 'prompt'; }
+}
+
+/**
  * האותיות העבריות שחסרות בגופן המוטמע (ריק אם הגופן לא מוטמע או כבר הושלם).
  * גופן שאין בו אף אות עברית משמש בקובץ רק לאנגלית, לספרות או לרווחים – ואין בו מה להשלים
  */

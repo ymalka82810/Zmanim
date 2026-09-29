@@ -9,11 +9,12 @@ import { analyzeSlot, refineBox, inkLines, templateCanvas, specialHost, slotText
 import { findOccasion, findPeriod, periodFor, buildLuach, buildDaysLuach, timesFor, dayPages } from './luach.js';
 import { toDayNum, toYmd, todayIn, dow } from './dates.js';
 import { esc } from './render.js';
-import { fontsToFill, fontLabel, isUnnamed, canReadLocalFonts, fillFromLocal, fillFromFile } from './font-fill.js';
+import { fontsToFill, fontLabel, isUnnamed, canReadLocalFonts, isPhone, localFontsPermission, fillFromLocal, fillFromFile } from './font-fill.js';
 
 const $ = id => document.getElementById(id);
 const KINDS = [['text', 'טקסט שכותבים כאן'], ['rule', 'תפילה או שיעור'], ['kiddush', 'קידוש (מלוח הקידושים)'], ['zman', 'זמן היום'], ['title', 'כותרת (שבת פרשת…)'], ['parasha', 'פרשת…'],
-  ['parashaName', 'שם הפרשה בלבד'], ['special', 'שבת מיוחדת (נחמו, זכור…) – רק כשיש'], ['hebDate', 'תאריך עברי'], ['gregDate', 'תאריך לועזי'], ['address', 'כתובת בית הכנסת']];
+  ['parashaName', 'שם הפרשה בלבד'], ['special', 'שבת מיוחדת (נחמו, זכור…) – רק כשיש'], ['hebDate', 'תאריך עברי'], ['gregDate', 'תאריך לועזי'], ['address', 'כתובת בית הכנסת'],
+  ['notes', 'הודעה בתחתית הלוח']];
 const KIND_LABEL = Object.fromEntries(KINDS);
 const BASE_LABELS = Object.keys(BASES);
 const ZMANIM = BASE_LABELS.filter(l => BASES[l] !== 'fixed' && BASES[l] !== 'kiddush');
@@ -151,7 +152,7 @@ const slotFonts = () => Object.fromEntries(st.slots.map(s => s.box.font).filter(
 
 /** הודעה כשבגופן המוטמע חסרות אותיות, עם אפשרות להשלים אותן מהמחשב או מקובץ גופן */
 function renderFontFill(done) {
-  const need = fontsToFill(slotFonts());
+  const need = fontsToFill(slotFonts()), phone = isPhone();
   const box = $('tplFontFill');
   box.hidden = !need.length && !done;
   if (box.hidden) return;
@@ -163,27 +164,49 @@ function renderFontFill(done) {
     ? 'בגופנים שבקובץ חסרות אותיות (' + list + '), ולכן הן ייכתבו בגופן דומה. ' +
       (need.some(([, f]) => isUnnamed(f) && !f.realName)
         ? 'כשהקובץ לא שומר את שם הגופן, האתר מזהה אותו לפי צורת האותיות. ' : '') +
-      (canReadLocalFonts()
-        ? 'אם הגופן מותקן במחשב שלך או שיש לך קובץ שלו, אפשר להשלים ממנו את האותיות ולשמור אותן בתבנית.'
-        // בטלפון (ובדפדפנים אחרים) אין גישה לגופנים שבמכשיר, ולרוב גם אין קובץ גופן להעלות
-        : 'אפשר להשלים אותן מקובץ של הגופן, או בקלות יותר ממחשב עם Chrome או Edge שהגופן מותקן בו: ' +
-          'פותחים שם את "עריכת התבנית" ולוחצים "השלמה מהגופנים שבמחשב". אחרי השמירה הלוח ייראה תקין בכל מכשיר.')
+      // בטלפון אין גישה לגופנים שבמכשיר, ולרוב גם אין קובץ גופן להעלות – רק מפנים למחשב
+      (phone
+        ? 'אם הגופן מותקן במחשב, כדאי להשלים ממנו את האותיות: פותחים את "עריכת התבנית" במחשב עם Chrome או Edge ' +
+          'ולוחצים "השלמה מהגופנים שבמחשב". אחרי השמירה הלוח ייראה תקין בכל מכשיר.'
+        : canReadLocalFonts()
+          ? 'אם הגופן מותקן במחשב שלך או שיש לך קובץ שלו, אפשר להשלים ממנו את האותיות ולשמור אותן בתבנית.'
+          : 'אפשר להשלים אותן מקובץ של הגופן, או בקלות יותר בדפדפן Chrome או Edge במחשב שהגופן מותקן בו: ' +
+            'פותחים שם את "עריכת התבנית" ולוחצים "השלמה מהגופנים שבמחשב".')
     : '');
-  $('tplFontLocal').hidden = !need.length || !canReadLocalFonts();
-  $('tplFontUpload').hidden = !need.length;
+  $('tplFontLocal').hidden = !need.length || phone || !canReadLocalFonts();
+  $('tplFontUpload').hidden = !need.length || phone;
+}
+
+/**
+ * הדפדפן מבקש אישור לגופנים שבמחשב בחלון משלו, שאי אפשר לעצב. לכן לפני הבקשה מסבירים בהודעה של האתר מה עומד לקרות,
+ * וכשהגישה נחסמה – מסבירים איך לאשר אותה, בלי לפנות לדפדפן שוב. מחזיר true אם אפשר לבקש את הגופנים
+ */
+async function askLocalFonts() {
+  const state = await localFontsPermission();
+  if (state === 'granted') return true;
+  if (state === 'denied') {
+    await SiteDialog.alert('הגישה לגופנים שבמחשב חסומה בדפדפן. כדי לאשר אותה: לוחצים על הסמל שמשמאל לכתובת האתר, ' +
+      'בוחרים "הגדרות אתר" ומאשרים "גופנים". אפשר גם להעלות קובץ גופן.');
+    return false;
+  }
+  return SiteDialog.confirm('כדי להשלים את האותיות, האתר צריך לקרוא את הגופנים שמותקנים במחשב. ' +
+    'הדפדפן יבקש עכשיו אישור – לוחצים "אישור" או "Allow". הגופנים נקראים רק במחשב שלך, ורק האותיות החסרות נשמרות בתבנית.',
+  { ok: 'המשך' });
 }
 
 $('tplFontLocal').onclick = async () => {
   const btn = $('tplFontLocal');
   let res;
+  if (!(await askLocalFonts())) return;
   // זיהוי גופן בלי שם סורק את כל הגופנים שבמחשב, וזה לוקח כמה שניות
-  btn.disabled = true;
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'מחפש את הגופנים במחשב…';
   try { res = await fillFromLocal(slotFonts()); }
   catch (e) {
     console.warn('אין גישה לגופנים שבמחשב', e);
     SiteDialog.alert('לא התקבלה גישה לגופנים שבמחשב. אפשר לאשר את הגישה בהגדרות האתר בדפדפן, או להעלות קובץ גופן.');
     return;
-  } finally { btn.disabled = false; }
+  } finally { btn.disabled = false; btn.textContent = label; }
   // הסבר נפרד לכל סיבה: לא נמצא, נמצא בפורמט שלא נקרא (Type 1 ב-Linux), בלי עברית, או בלי חיבור
   const WHY = {
     format: x => 'הגופן ' + x.family + ' נמצא במחשב (' + x.file + '), אבל הוא שמור בפורמט ישן שהאתר לא יודע לקרוא. אפשר להעלות קובץ ‎.ttf או ‎.otf שלו.',
@@ -195,7 +218,8 @@ $('tplFontLocal').onclick = async () => {
     ...[...new Set(res.unknown)].map(n => 'לא נמצא במחשב גופן שהאותיות שלו זהות ל' + n + '. אפשר להעלות קובץ גופן.'),
     ...res.failed.map(x => (WHY[x.why] || WHY.format)(x))
   ])];
-  if (res.filled.length) renderFontFill('הושלמו האותיות מהגופן ' + [...new Set(res.filled)].join(', ') + '.');
+  // העמוד בעורך מצויר מחדש, כדי שהאותיות שהושלמו ייראו מיד
+  if (res.filled.length) { renderFontFill('הושלמו האותיות מהגופן ' + [...new Set(res.filled)].join(', ') + '.'); schedulePreviewRefresh(); }
   if (problems.length) SiteDialog.alert(problems.join('\n'));
 };
 $('tplFontUpload').onclick = () => $('tplFontFile').click();
@@ -203,7 +227,10 @@ $('tplFontFile').onchange = async e => {
   const file = e.target.files[0];
   e.target.value = '';
   if (!file) return;
-  try { renderFontFill('הושלמו האותיות מהגופן ' + (await fillFromFile(slotFonts(), file)).join(', ') + '.'); }
+  try {
+    renderFontFill('הושלמו האותיות מהגופן ' + (await fillFromFile(slotFonts(), file)).join(', ') + '.');
+    schedulePreviewRefresh();
+  }
   catch (err) { SiteDialog.alert(err.message || 'לא ניתן לקרוא את קובץ הגופן.'); }
 };
 
@@ -301,25 +328,41 @@ function unionBox(a, b) {
   return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
 }
 
+/**
+ * איפה האזור מוצג על העמוד שבעורך: העמוד מצויר מחדש עם הטקסט החדש, ושורות שנפתחו או נסגרו מזיזות את מה שמתחתיהן.
+ * { box, label } – המקום שבו נכתב הטקסט (בגודל שלו), ושל השם שליד השעה. אזור שעוד לא צויר – רק מוזז עם השורות
+ */
+function shownBox(s) {
+  const v = st.view, e = v && v.slots.get(s);
+  const moved = b => b && v ? { ...b, y: v.toView(b.y) } : b;
+  if (!e || (resize && resize.s === s)) return { box: moved(s.box), label: moved(s.labelBox) };
+  // מסגרת קצת רחבה מהדיו, כדי שיהיה נוח ללחוץ עליה
+  const pad = b => { const k = Math.max(2, Math.min(b.h, b.w) * 0.12); return { x: b.x - k, y: b.y - k, w: b.w + 2 * k, h: b.h + 2 * k }; };
+  return { box: e.ink ? pad(e.ink) : e.box, label: e.labelInk ? pad(e.labelInk) : e.labelBox };
+}
+
 function renderBoxes() {
   const ranks = slotRanks();
   let h = '';
   const same = (a, b) => a && a.x === b.x && a.y === b.y;
   st.candidates.forEach((c, i) => {
     if (st.slots.some(s => same(s.box, c.box) || same(s.labelBox, c.box) || covers(s.box, c.box))) return;
-    h += '<button type="button" class="tb cand" data-c="' + i + '" style="' + boxStyle(c.box) + '" title="' + esc(c.old) + '" aria-label="הוספת אזור: ' + esc(c.old) + '"></button>';
+    const b = (st.view && st.view.candidates[i]) || c.box;
+    h += '<button type="button" class="tb cand" data-c="' + i + '" style="' + boxStyle(b) + '" title="' + esc(c.old) + '" aria-label="הוספת אזור: ' + esc(c.old) + '"></button>';
   });
+  const shown = st.slots.map(shownBox);
   st.slots.forEach((s, i) => {
     // שעה עם השם שלידה: מסגרת אחת לשניהם, ובתוכה מסומן המקום שבו תיכתב השעה החדשה
-    const lb = (s.kind === 'rule' || s.kind === 'zman') && s.labelBox;
-    const outer = lb ? unionBox(s.box, lb) : s.box;
+    const { box, label } = shown[i];
+    const lb = (s.kind === 'rule' || s.kind === 'zman') && label;
+    const outer = lb ? unionBox(box, lb) : box;
     h += '<button type="button" class="tb slot" data-s="' + i + '" style="' + boxStyle(outer) + '" aria-label="אזור ' + ranks[i] + '"><span>' + ranks[i] + '</span></button>';
-    if (lb) h += '<div class="tb val" style="' + boxStyle(s.box) + '"></div>';
+    if (lb) h += '<div class="tb val" style="' + boxStyle(box) + '"></div>';
   });
   const sel = st.slots[st.sel];
   if (sel && !st.drawing) {
     // ידיות למתיחת האזור הנבחר
-    const b = sel.box, at = (right, top) => 'right:' + pct(right, st.W) + ';top:' + pct(top, st.H);
+    const b = shown[st.sel].box, at = (right, top) => 'right:' + pct(right, st.W) + ';top:' + pct(top, st.H);
     for (const [edge, r, t, label] of [['r', st.W - b.x - b.w, b.y + b.h / 2, 'שמאל'], ['l', st.W - b.x, b.y + b.h / 2, 'ימין'],
       ['t', st.W - b.x - b.w / 2, b.y, 'למעלה'], ['b', st.W - b.x - b.w / 2, b.y + b.h, 'למטה']]) {
       h += '<div class="rh rh-' + edge + '" data-edge="' + edge + '" style="' + at(r, t) + '" title="מתיחת האזור ' + label + '"></div>';
@@ -439,6 +482,8 @@ const toImg = (e) => {
   const r = $('tplPage').getBoundingClientRect();
   return { x: (e.clientX - r.left) / r.width * st.W, y: (e.clientY - r.top) / r.height * st.H };
 };
+/** גובה בעמוד שבעורך ← הגובה המתאים בקובץ, לפני שהשורות זזו בכתיבה מחדש */
+const toSrcY = y => st.view ? st.view.toSrc(y) : y;
 let resize = null;
 $('tplPage').addEventListener('pointerdown', e => {
   const h = st && !st.drawing && e.target.closest('.rh');
@@ -462,6 +507,7 @@ $('tplPage').addEventListener('pointerdown', e => {
 $('tplPage').addEventListener('pointermove', e => {
   if (resize) {
     const p = toImg(e), b = resize.s.box, MIN = 8;
+    p.y = toSrcY(p.y);
     const r = b.x + b.w, bot = b.y + b.h;
     if (resize.edge === 'l') { b.x = Math.min(p.x, r - MIN); b.w = r - b.x; }
     if (resize.edge === 'r') b.w = Math.max(MIN, p.x - b.x);
@@ -482,14 +528,20 @@ $('tplPage').addEventListener('pointerup', () => {
     // קו הבסיס של הכתיבה נשאר, אלא אם האזור זז ממנו
     if (b.baseline != null && (b.baseline < b.y || b.baseline > b.y + b.h)) b.baseline = b.y + b.h * 0.78;
     if (s.kind === 'parasha' || s.kind === 'parashaName') stretchPrefix(s);
-    if (s.kind === 'kiddush') { fitKiddush(s, false); schedulePreviewRefresh(); }
+    if (s.kind === 'kiddush') fitKiddush(s, false);
+    // עד שהעמוד יצויר מחדש, המסגרת נשארת כפי שנמתחה ולא חוזרת למקום הטקסט הקודם
+    if (st.view) st.view.slots.delete(s);
+    schedulePreviewRefresh();
     renderBoxes(); renderSlots();
     return;
   }
   if (!drag) return;
-  const b = drag.box;
+  let b = drag.box;
   drag.el.remove(); drag = null;
   if (!b || b.w < 8 || b.h < 8) return;
+  // המסגרת סומנה על העמוד שבעורך – נשמרת במקום המתאים בקובץ
+  const top = toSrcY(b.y);
+  b = { ...b, y: top, h: Math.max(8, toSrcY(b.y + b.h) - top) };
   st.slots.push({ box: b, kind: 'rule', when: isDays() ? 'd0' : 'כל יום', name: '', base: 'שקיעה', offset: '0', round: 'ללא', old: '' });
   st.drawing = false;
   $('tplDraw').setAttribute('aria-pressed', 'false');
@@ -527,6 +579,10 @@ function slotFields(s) {
       '<p class="hint">האזור יתמלא בהודעה בנוסח שהגבאי קבע בלוח הקידושים של הקהילה – השורה הראשונה, "ע״י", ' +
       'בעל הקידוש והסיבה – לפי מי שאושר לקידוש בתאריך הזה. בלי קידוש מאושר, האזור לא יתמלא. ' +
       'כאן בעורך, כשאין קידוש מאושר, מוצג קידוש לדוגמה.</p>';
+  }
+  if (s.kind === 'notes') {
+    return '<p class="hint">האזור יתמלא בהודעה שנקבעה בהגדרות ("בית הכנסת ← הודעה בתחתית הלוח"). בלי הודעה בהגדרות – האזור יימחק. ' +
+      'אפשר גם לערוך את הנוסח כאן, לשבוע הזה בלבד או לתמיד: מסמנים "לאפשר גלישה לכמה שורות" ולוחצים על ✎ ליד השורה בתצוגה למטה.</p>';
   }
   if (s.kind === 'parasha' || s.kind === 'parashaName') {
     return '<div class="rgrid"><div class="wide"><label>טקסט לפני הפרשה</label><input data-k="prefix" value="' + esc(s.prefix || '') +
@@ -1131,6 +1187,9 @@ async function renderTemplatePreview() {
   }
   const values = { ...base, edits };
   const canvas = await templateCanvas(tpl, values);
+  // המקום של כל אזור בתמונה שנכתבה, לפי האזור שבעורך
+  const at = canvas.layout;
+  canvas.view = { ...at, slots: new Map(st.slots.map((s, i) => [s, at.slots.get(built[i])]).filter(e => e[1])) };
   const host = specialHost(tpl.slots);
   slotTexts = new WeakMap(st.slots.map((s, i) => [s, slotText(built[i], values, host) ?? '']));
   refreshWrapLines();
@@ -1152,7 +1211,11 @@ function schedulePreviewRefresh() {
   previewTimer = setTimeout(async () => {
     const seq = ++previewSeq, cur = st;
     const canvas = await renderTemplatePreview();
-    if (seq === previewSeq && cur === st) $('tplImg').src = canvas.toDataURL('image/png');
+    if (seq !== previewSeq || cur !== st) return;
+    $('tplImg').src = canvas.toDataURL('image/png');
+    // המסגרות עוברות למקום שבו הטקסט נכתב בתמונה החדשה (לא באמצע גרירה – היא מצוירת בתוך המסגרות)
+    st.view = canvas.view;
+    if (!drag && !resize) renderBoxes();
   }, 200);
 }
 

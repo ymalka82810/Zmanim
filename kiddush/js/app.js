@@ -378,15 +378,38 @@ function switchSheet(){
 }
 
 /* ---------- ICS ---------- */
-function downloadIcs(k){
-  const s = syn(), sl = slotFor(k, !!s.il), d = sl.date, nd = new Date(d); nd.setDate(nd.getDate()+1);
+function calEvent(k){
+  const s = syn(), sl = slotFor(k, !!s.il), nd = new Date(sl.date); nd.setDate(nd.getDate()+1);
   const ymd = x => x.getFullYear()+pad(x.getMonth()+1)+pad(x.getDate());
+  return { start: ymd(sl.date), end: ymd(nd), title: 'קידוש – '+slotTitle(sl)+' – '+s.name,
+    details: 'הקידוש שלך ב'+s.name+'. יש לעבור על ההנחיות בלוח הקידושים.' };
+}
+function calUrl(kind, k){
+  const ev = calEvent(k), body = ev.details + '\n' + location.href;
+  const iso = x => x.slice(0,4)+'-'+x.slice(4,6)+'-'+x.slice(6);
+  const q = o => new URLSearchParams(o).toString();
+  const outlook = host => 'https://'+host+'/calendar/0/deeplink/compose?' + q({ path: '/calendar/action/compose',
+    rru: 'addevent', subject: ev.title, body, startdt: iso(ev.start), enddt: iso(ev.end), allday: 'true' });
+  return {
+    google: () => 'https://calendar.google.com/calendar/render?' + q({ action: 'TEMPLATE', text: ev.title, dates: ev.start+'/'+ev.end, details: body }),
+    outlook: () => outlook('outlook.live.com'),
+    office: () => outlook('outlook.office.com'),
+    yahoo: () => 'https://calendar.yahoo.com/?' + q({ v: '60', title: ev.title, st: ev.start, dur: 'allday', desc: body }),
+  }[kind]();
+}
+const CALS = [['google','Google'],['apple','Apple (iPhone, Mac)'],['outlook','Outlook.com'],['office','Outlook לעבודה (Microsoft 365)'],['yahoo','Yahoo'],['notion','Notion Calendar']];
+function calendarSheet(k){
+  openSheet(sheetHead('הוספה ליומן', 'בחרו את היומן שלכם') + `<div class="list">${CALS.map(([id, name]) =>
+    `<button class="btn sec" style="width:100%;margin-bottom:8px" data-act="addCal" data-cal="${id}" data-k="${k}">${esc(name)}</button>`).join('')}</div>`);
+}
+function downloadIcs(k){
+  const ev = calEvent(k);
   const stamp = new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d+/,'');
   const e = x => x.replace(/[,;\\]/g, m => '\\'+m);
-  const sum = e('קידוש – '+slotTitle(sl)+' – '+s.name);
+  const sum = e(ev.title);
   const ics = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//kiddush//he','CALSCALE:GREGORIAN','BEGIN:VEVENT',
-    'UID:'+k+'-'+S.sid+'@kiddush','DTSTAMP:'+stamp,'DTSTART;VALUE=DATE:'+ymd(d),'DTEND;VALUE=DATE:'+ymd(nd),
-    'SUMMARY:'+sum,'DESCRIPTION:'+e('הקידוש שלך ב'+s.name+'. יש לעבור על ההנחיות בלוח הקידושים.'),
+    'UID:'+k+'-'+S.sid+'@kiddush','DTSTAMP:'+stamp,'DTSTART;VALUE=DATE:'+ev.start,'DTEND;VALUE=DATE:'+ev.end,
+    'SUMMARY:'+sum,'DESCRIPTION:'+e(ev.details),
     'BEGIN:VALARM','TRIGGER:-PT62H','ACTION:DISPLAY','DESCRIPTION:'+sum,'END:VALARM',
     'BEGIN:VALARM','TRIGGER:-PT38H','ACTION:DISPLAY','DESCRIPTION:'+sum,'END:VALARM',
     'END:VEVENT','END:VCALENDAR'].join('\r\n');
@@ -411,7 +434,13 @@ const A = {
   viewTerms: () => { S.view = 'terms'; renderAll(); window.scrollTo(0,0); },
   termsVer: d => termsVerSheet(d.v),
   editTerms: editTermsSheet,
-  ics: d => downloadIcs(d.k),
+  ics: d => calendarSheet(d.k),
+  addCal: d => {
+    if (d.cal === 'apple') downloadIcs(d.k);
+    else window.open(calUrl(d.cal === 'notion' ? 'google' : d.cal, d.k), '_blank', 'noopener');
+    closeSheet();
+    if (d.cal === 'notion') toast('Notion Calendar מציג את יומן Google שמחובר אליו. שמרו את האירוע ב-Google והוא יופיע גם שם.');
+  },
   register: d => registerSheet(d.k),
   regNext: () => {
     if (!$('#fSponsor').value.trim()){ $('#fSponsor').focus(); return toast('נא למלא את שם בעל הקידוש'); }

@@ -1,6 +1,6 @@
 /* תפריט המבורגר משותף לשלושת הדפים: לוח זמנים, לוח קידושים וקופת בית הכנסת.
  * כל דף טוען את הקובץ הזה, והוא מוסיף פס עליון עם כפתור תפריט, פס זהב מתחתיו, שורת היום
- * (שם הקהילה, השבת או החג הקרובים והתאריך) ומגירה עם שלושת הדפים.
+ * (שם הקהילה והתאריך) ומגירה עם שלושת הדפים.
  * הדף מעדכן את שם הקהילה ב-SiteMenu.setCommunity({ _id, name, il }); השם נשמר במכשיר כדי להופיע מיד בכניסה הבאה.
  * הקובץ גם רושם את ה-service worker מכל דף. הדפים נפתחים מהעותק שבמכשיר; כשגרסה חדשה של האתר
  * מסיימת לרדת ברקע, הדף מתרענן פעם אחת כדי להציג אותה (ואם המשתמש באמצע הקלדה – כשהוא עוזב את הדף).
@@ -49,7 +49,6 @@ const css = `
 .sm-day{direction:rtl;color:#202a3f;font-family:"Assistant",Arial,sans-serif}
 .sm-day-in{box-sizing:border-box;max-width:var(--page-width,760px);margin:0 auto;padding:22px var(--page-gutter,16px) 0}
 .sm-day-syn{font-size:.92rem;font-weight:600;color:#726c59}
-.sm-day-title{font-family:"Frank Ruhl Libre",Georgia,serif;font-weight:900;font-size:clamp(2rem,6vw,2.6rem);line-height:1.15;margin:2px 0 4px;letter-spacing:.2px}
 .sm-day-dates{font-size:.95rem;color:#726c59}
 .sm-day-dates b{font-family:"Frank Ruhl Libre",Georgia,serif;font-weight:700;color:#202a3f}
 :root[data-theme="dark"] .sm-day,:root[data-theme="dark"] .sm-day-dates b{color:#e9ecf5}
@@ -66,7 +65,6 @@ function write(key, v){ try { v == null ? localStorage.removeItem(key) : localSt
 
 let day = null;
 const gLong = new Intl.DateTimeFormat('he-IL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-const noNiqqud = s => String(s).replace(/[֑-ׇ]/g, '');
 
 /* הקהילה הפעילה כפי שנשמרה במכשיר; בלי קהילה – שם בית הכנסת מהגדרות לוח הזמנים */
 function community(){
@@ -75,30 +73,21 @@ function community(){
   return { name: (cfg.shul || '').trim(), il: cfg.il !== false };
 }
 
-/* השבת או החג הקרובים (כמו בקופה): פרשת השבוע, או "שבת <חג>" כשהשבת היא חג */
-function occasion(date, il){
+/* התאריך העברי של היום */
+function hebDate(date){
   const H = window.hebcal;
-  if (!H) return { heb: new Intl.DateTimeFormat('he-u-ca-hebrew', { day: 'numeric', month: 'long', year: 'numeric' }).format(date), title: '' };
-  const hd = new H.HDate(date);
-  let title = '';
-  try {
-    const p = new H.Sedra(hd.getFullYear(), il).lookup(hd);
-    const name = p.parsha.map(x => noNiqqud(H.Locale.gettext(x, 'he'))).join('-');
-    title = p.chag ? 'שבת ' + name : 'פרשת ' + name;
-  } catch (e) { /* אין פרשה לתאריך הזה */ }
-  return { heb: hd.renderGematriya(true), title };
+  if (!H) return new Intl.DateTimeFormat('he-u-ca-hebrew', { day: 'numeric', month: 'long', year: 'numeric' }).format(date);
+  return new H.HDate(date).renderGematriya(true);
 }
 
 function renderDay(){
   if (!day) return;
-  const c = community(), now = new Date(), o = occasion(now, c.il !== false);
+  const c = community(), now = new Date();
   day.syn.textContent = c.name || '';
   day.syn.hidden = !c.name;
-  day.title.textContent = o.title;
-  day.title.hidden = !o.title;
   day.dates.textContent = '';
   const b = document.createElement('b');
-  b.textContent = o.heb;
+  b.textContent = hebDate(now);
   day.dates.append(b, ' · ' + gLong.format(now));
 }
 
@@ -207,8 +196,8 @@ function build(){
 
   const dayBox = document.createElement('div');
   dayBox.className = 'sm-day';
-  dayBox.innerHTML = '<div class="sm-day-in"><div class="sm-day-syn"></div><div class="sm-day-title"></div><div class="sm-day-dates"></div></div>';
-  day = { syn: dayBox.querySelector('.sm-day-syn'), title: dayBox.querySelector('.sm-day-title'), dates: dayBox.querySelector('.sm-day-dates') };
+  dayBox.innerHTML = '<div class="sm-day-in"><div class="sm-day-syn"></div><div class="sm-day-dates"></div></div>';
+  day = { syn: dayBox.querySelector('.sm-day-syn'), dates: dayBox.querySelector('.sm-day-dates') };
   renderDay();
   loadHebcal();
 

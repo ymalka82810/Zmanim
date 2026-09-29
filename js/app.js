@@ -7,7 +7,7 @@ import { CITIES, BASES, WHEN, WHEN_LABELS, APPLIES, ROUND, FONTS, THEMES, LAYOUT
   prayerBases, fontFamilies, fontsHref, themeColors, normalize, loadConfig, saveConfig, clearConfig } from './config.js';
 import { findOccasion, templateFor, periodFor, occasionParts, buildLuach, buildDaysLuach, dayPages } from './luach.js';
 import { MOADIM } from './moadim.js';
-import { luachHtml, luachText, withEdits, esc } from './render.js';
+import { luachHtml, withEdits, esc } from './render.js';
 import { todayIn, toYmd } from './dates.js';
 import { luachCanvas, pngBlob, pdfBlob, stackCanvases } from './image.js';
 import { templateCanvas } from './template-render.js';
@@ -72,10 +72,14 @@ $('settingsTabs').onclick = e => { const b = e.target.closest('[data-pane]'); if
 
 const boardTpl = () => cfg.templates.find(t => t.id === board) || cfg.templates[0];
 
-/** מעבר לתבנית אחרת בלוח. day – היום שממנו מחפשים את הלוח, או null ללוח הקרוב */
+/**
+ * מעבר לתבנית אחרת בלוח. day – היום שממנו מחפשים את הלוח, או null ללוח הקרוב.
+ * שורת התבניות זהה בלוח ובהגדרות, ולכן הבחירה בה מסונכרנת: מעבר כאן מעדכן גם איזו תבנית נבחרת לעריכה בהגדרות
+ */
 function setBoard(id, day = null) {
   board = id; cursor = day;
   try { localStorage.setItem(MODE_KEY, id); } catch (e) { /* אין גישה לאחסון */ }
+  if (sel !== id && cfg.templates.some(t => t.id === id)) { sel = id; renderTemplates(); }
   renderLuach();
 }
 
@@ -256,15 +260,6 @@ $('prevOcc').onclick = () => stepLuach(-1);
 $('nextOcc').onclick = () => stepLuach(1);
 $('todayOcc').onclick = () => { cursor = null; renderLuach(); };
 
-async function copyText(text) {
-  try { await navigator.clipboard.writeText(text); return true; }
-  catch (e) {
-    const ta = document.createElement('textarea');
-    ta.value = text; document.body.appendChild(ta); ta.select();
-    const ok = document.execCommand('copy'); ta.remove(); return ok;
-  }
-}
-
 /*
  * קבצי תמונה ו-PDF מוכנים מראש לכל לוח שמוצג. בספארי (אייפון) השיתוף חייב לקרות
  * מיד אחרי הלחיצה, ולכן אי אפשר לחכות ליצירת הקובץ בזמן הלחיצה.
@@ -314,15 +309,6 @@ async function shareFile(kind) {
 $('shareImg').onclick = () => shareFile('png');
 $('sharePdf').onclick = () => shareFile('pdf');
 
-$('share').onclick = async () => {
-  if (!current) return;
-  const text = luachText(current);
-  if (navigator.share) {
-    try { await navigator.share({ title: current.title, text }); return; }
-    catch (e) { if (e.name === 'AbortError') return; }
-  }
-  toast(await copyText(text) ? 'הלוח הועתק. אפשר להדביק בוואטסאפ או במייל' : 'ההעתקה נכשלה', false);
-};
 $('print').onclick = () => {
   const prev = document.title;
   if (current) document.title = 'לוח זמנים - ' + current.title;   // שם קובץ ה-PDF
@@ -677,9 +663,8 @@ $('tplList').addEventListener('click', e => {
   if (!b) return;
   if (b.dataset.add) { openNewTemplate('settings'); return; }
   flush();
-  sel = b.dataset.t;
   $('tplNew').hidden = true;
-  renderTemplates();
+  setBoard(b.dataset.t);
 });
 
 $('tplInfo').addEventListener('input', e => {
@@ -704,8 +689,7 @@ $('tplInfo').addEventListener('click', async e => {
   const t = selTpl();
   if (!await SiteDialog.confirm('למחוק את התבנית "' + t.name + '"?', { ok: 'מחיקה', danger: true })) return;
   cfg.templates = cfg.templates.filter(x => x !== t);
-  sel = 'shabbat';
-  renderTemplates(); changed();
+  setBoard('shabbat'); changed();
 });
 
 function fillNewFrom() {
@@ -732,13 +716,9 @@ $('tplNewOk').onclick = () => {
   const from = cfg.templates.find(t => t.id === $('tplNewFrom').value);
   const t = newTemplate(name, $('tplNewKind').value, from ? from.rules : []);
   cfg.templates.push(t);
-  sel = t.id;
   $('tplNew').hidden = true;
-  renderTemplates(); changed();
-  if (newTplHost === 'luach') {
-    setBoard(t.id);
-    toast('התבנית נוצרה. בהגדרות בוחרים באילו מועדים היא חלה');
-  } else toast('התבנית נוצרה. בחרו מתי היא חלה');
+  setBoard(t.id); changed();
+  toast(newTplHost === 'luach' ? 'התבנית נוצרה. בהגדרות בוחרים באילו מועדים היא חלה' : 'התבנית נוצרה. בחרו מתי היא חלה');
 };
 
 const openRules = new WeakSet();   // תפילות שהשורה שלהן פתוחה לעריכה

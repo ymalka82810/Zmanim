@@ -309,6 +309,7 @@ export function buildLuach(cfg, occ, kiddush) {
       parashaName: first.parasha || noParasha,
       // בשבת בלי שם מיוחד – ריק, כדי ש"שבת נחמו" מהלוח הישן לא יופיע בה
       special: occ.days.map(d => d.special).find(Boolean) || '',
+      notes: String(cfg.notes || '').trim(),
       hebDay: first.day,
       firstDay: first.day,
       multiDay: occ.days.length > 1
@@ -371,6 +372,7 @@ export function buildDaysLuach(cfg, p, kiddush) {
     address: String(cfg.address || '').trim(),
     title: p.title, parasha: shabbat ? 'פרשת ' + shabbat : p.title, parashaName: shabbat || p.title,
     special: p.kind === 'week' ? specialShabbat(first.day - first.dow + 6, cfg.il) : '',
+    notes: String(cfg.notes || '').trim(),
     hebDay: first.day, firstDay: first.day, multiDay: false
   });
 

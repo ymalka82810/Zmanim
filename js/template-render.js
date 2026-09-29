@@ -149,6 +149,8 @@ export function slotValue(slot, v) {
     case 'parashaName': return (slot.prefix || '') + v.parashaName;
     // בשבת בלי שם מיוחד האזור נמחק (נכתב טקסט ריק על הרקע)
     case 'special': return v.special || '';
+    // בלי הודעה בהגדרות האזור נמחק, כמו שבת בלי שם מיוחד
+    case 'notes': return v.notes || '';
     // בלי כתובת בהגדרות – הכתובת מהקובץ נשארת כמו שהיא
     case 'address': return v.address || null;
     case 'hebDate': {
@@ -516,11 +518,14 @@ export async function templateCanvas(tpl, values) {
   const src = document.createElement('canvas');
   src.width = canvas.width; src.height = canvas.height;
   src.getContext('2d', { willReadFrequently: true }).drawImage(img, 0, 0);
-  const copy = b => b && { ...b };
+  const copy = b => b && { ...b }, given = tpl;
   tpl = { ...tpl, slots: tpl.slots.map(s => ({ ...s, box: copy(s.box), labelBox: copy(s.labelBox) })),
     candidates: (tpl.candidates || []).map(c => ({ ...c, box: copy(c.box) })) };
   const allBoxes = [...tpl.slots.flatMap(s => [s.box, s.labelBox]), ...tpl.candidates.map(c => c.box)].filter(Boolean);
+  // כל ההזזות לפי הסדר: מהן יודעים איפה נקודה מהקובץ נמצאת בתמונה החדשה, ולהפך
+  const moves = [];
   const shiftBoxes = (cut, end, k) => {
+    moves.push([cut, end, k]);
     for (const b of allBoxes) {
       const mid = b.y + b.h / 2;
       if (mid >= cut && mid < end) { b.y += k; if (b.baseline != null) b.baseline += k; }
@@ -648,8 +653,18 @@ export async function templateCanvas(tpl, values) {
   // שלב 3: כתיבת שאר האזורים, והשם שליד השעה
   for (const p of plans) {
     if (!done.has(p)) paint(p, ctx, p.writeAt, null, null);
-    if ((p.s.sizePct || 100) !== 100) redrawLabel(ctx, tpl, p.s, fonts, p.st);
+    if ((p.s.sizePct || 100) !== 100) p.s.labelInk = redrawLabel(ctx, tpl, p.s, fonts, p.st);
   }
+  // איפה נכתב כל אזור בתמונה החדשה – כדי שהמסגרות בעורך יהיו על הטקסט עצמו ובגודל שלו
+  canvas.layout = {
+    slots: new Map(given.slots.map((s, i) => {
+      const o = tpl.slots[i];
+      return [s, { box: o.box, labelBox: o.labelBox, ink: o.ink, labelInk: o.labelInk }];
+    })),
+    candidates: tpl.candidates.map(c => c.box),
+    toView: y => moves.reduce((y, [cut, end, k]) => y >= cut && y < end ? y + k : y, y),
+    toSrc: y => moves.reduceRight((y, [cut, end, k]) => y >= cut + k && y < end + k ? y - k : y, y)
+  };
 
   /**
    * המקום, המרווח והגודל הסופיים, והכתיבה על c. top, bottom – הרווח הרצוי מעל ומתחת (מ-want).
@@ -692,6 +707,12 @@ export async function templateCanvas(tpl, values) {
     c.fillRect(left, y0, right - left, y1 - y0);
     c.fillStyle = st.fg;
     lines.forEach((ln, i) => write(ln, size, baselines[i], true));
+    // המקום של הטקסט החדש; נוסף לתיבות, כדי שיזוז יחד עם מה שנפתח או נסגר מעליו אחר כך
+    if (w > 0) {
+      const iy = baselines[0] - L.ink[0].asc;
+      s.ink = { x: cx - w / 2, y: iy, w, h: baselines[n - 1] + L.ink[n - 1].desc - iy };
+      allBoxes.push(s.ink);
+    }
     return baselines[n - 1] + L.ink[n - 1].desc;
   }
   return canvas;
@@ -793,4 +814,5 @@ function redrawLabel(ctx, tpl, s, fonts, timeStyle) {
   ctx.fillRect(left, top, right - left, bottom - top);
   ctx.fillStyle = st.fg;
   textWriter(ctx, f, look, cx)(text, size, baseline, true);
+  return { x: cx - w / 2, y: top + 1, w, h: bottom - top - 2 };
 }
