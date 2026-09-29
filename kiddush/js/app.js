@@ -148,6 +148,7 @@ function headerHTML(){
   return `<header class="top">
     <div class="shul"><h1>לוח קידושים</h1><small>${esc(s.city||'')}${s.city?', ':''}${s.il?'ארץ ישראל':'חוץ לארץ'} | ${ROLE_LABEL[myRole()]}</small></div>
     ${S.synagogues.length > 1?`<button class="iconbtn" data-act="switchSyn" aria-label="החלפת קהילה">${ICON.swap}</button>`:''}
+    <a class="iconbtn" href="../community-calendar/" aria-label="יומן הקהילה והאירועים" title="יומן הקהילה והאירועים" style="color:inherit">${ICON.cal}</a>
     <button class="iconbtn" data-act="notes" aria-label="התראות">${ICON.bell}${unread?`<span class="dot">${unread}</span>`:''}</button>
   </header>`;
 }

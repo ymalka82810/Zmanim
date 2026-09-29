@@ -27,6 +27,7 @@ import type * as schedules from "../schedules.js";
 import type * as storage from "../storage.js";
 import type * as synagogues from "../synagogues.js";
 import type * as users from "../users.js";
+import type * as zmanimProfiles from "../zmanimProfiles.js";
 import type * as zmanimSettings from "../zmanimSettings.js";
 
 import type {
@@ -55,6 +56,7 @@ declare const fullApi: ApiFromModules<{
   storage: typeof storage;
   synagogues: typeof synagogues;
   users: typeof users;
+  zmanimProfiles: typeof zmanimProfiles;
   zmanimSettings: typeof zmanimSettings;
 }>;
 
