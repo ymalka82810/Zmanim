@@ -25,6 +25,7 @@ public class MainActivity extends BridgeActivity {
     // /kiddush/ וכו' הציגו את לוח הזמנים. מפנים כתובת שמסתיימת ב-/ ל-index.html שבתיקייה, גם לבקשות של ה-service worker.
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        registerPlugin(NativeFilesPlugin.class);
         super.onCreate(savedInstanceState);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             getWindow().getAttributes().layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;

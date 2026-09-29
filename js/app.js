@@ -287,12 +287,11 @@ function getFiles() {
   return files.promise;
 }
 
-function download(file) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(file);
-  a.download = file.name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+async function download(blob, name) {
+  try {
+    const r = await NativeFiles.save(blob, name);
+    if (r === 'saved' || r === 'downloaded') toast('הקובץ נשמר בהורדות');
+  } catch (e) { toast('שמירת הקובץ נכשלה', true); }
 }
 
 async function shareFile(kind) {
@@ -304,17 +303,20 @@ async function shareFile(kind) {
     try { await navigator.share({ files: [file], title: current.title }); return; }
     catch (e) { if (e.name === 'AbortError') return; }
   }
-  download(file);
-  toast('הקובץ נשמר בהורדות');
+  download(file, file.name);
 }
 $('shareImg').onclick = () => shareFile('png');
 $('sharePdf').onclick = () => shareFile('pdf');
 
-$('print').onclick = () => {
-  const prev = document.title;
-  if (current) document.title = 'לוח זמנים - ' + current.title;   // שם קובץ ה-PDF
-  window.print();
-  document.title = prev;
+$('print').onclick = async () => {
+  const title = current ? 'לוח זמנים - ' + current.title : document.title;
+  if (!NativeFiles.isApp()) return NativeFiles.print({ title });
+  // באפליקציה beforeprint/afterprint לא נקראים, ולכן מתאימים את הלוח לעמודים ידנית עד שחלון ההדפסה נסגר
+  const p = current ? pageOf(current.tpl) : null;
+  fitPrint();
+  try { await NativeFiles.print({ title, paper: p ? p.size.split(' ')[0] : 'A4', landscape: !!(p && p.landscape) }); }
+  catch (e) { toast('ההדפסה נכשלה', true); }
+  finally { unfitPrint(); }
 };
 
 /**
@@ -1017,11 +1019,7 @@ $('tplUse').onchange = () => {
 
 $('export').onclick = () => {
   const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'luach-settings' + (cfg.shul ? '-' + cfg.shul.replace(/[\\/:*?"<>|]/g, '') : '') + '.json';
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  download(blob, 'luach-settings' + (cfg.shul ? '-' + cfg.shul.replace(/[\\/:*?"<>|]/g, '') : '') + '.json');
 };
 $('import').onclick = () => $('importFile').click();
 $('importFile').onchange = async () => {

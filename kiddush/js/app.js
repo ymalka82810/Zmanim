@@ -399,16 +399,25 @@ function calUrl(kind, k){
     yahoo: () => 'https://calendar.yahoo.com/?' + q({ v: '60', title: ev.title, st: ev.start, dur: 'allday', desc: body }),
   }[kind]();
 }
-const CALS = [['google','Google','#4285F4','G'],['apple','Apple (iPhone, Mac)','#555','A'],
-  ['outlook','Outlook.com','#0A2767','O'],['office','Outlook לעבודה (Microsoft 365)','#0A2767','O'],
-  ['yahoo','Yahoo','#6001D2','Y'],['notion','Notion Calendar','#111','N']];
-function calIcon(color, letter){
-  return `<svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="11" fill="${color}"/>
-    <text x="11" y="15" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="#fff">${letter}</text></svg>`;
-}
+const CALS = [['google','Google'],['apple','Apple (iPhone, Mac)'],
+  ['outlook','Outlook.com'],['office','Outlook לעבודה (Microsoft 365)'],
+  ['yahoo','Yahoo'],['notion','Notion Calendar']];
+function badge(bg, inner){ return `<svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><rect width="22" height="22" rx="5" fill="${bg}"/>${inner}</svg>`; }
+const CAL_ICON = {
+  google: `<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+    <path fill="#4285F4" d="M23.64 12.204c0-.815-.073-1.598-.21-2.35H12v4.451h6.549c-.282 1.52-1.14 2.807-2.43 3.67v3.05h3.927c2.298-2.115 3.622-5.231 3.622-8.821z"/>
+    <path fill="#34A853" d="M12 24c3.24 0 5.956-1.075 7.942-2.91l-3.927-3.05c-1.09.73-2.485 1.16-4.015 1.16-3.09 0-5.71-2.086-6.646-4.888H1.29v3.07C3.264 21.31 7.31 24 12 24z"/>
+    <path fill="#FBBC05" d="M5.354 14.312A7.183 7.183 0 015 12c0-.803.138-1.583.354-2.312V6.618H1.29A11.986 11.986 0 000 12c0 1.937.464 3.77 1.29 5.382l4.064-3.07z"/>
+    <path fill="#EA4335" d="M12 4.77c1.763 0 3.345.607 4.59 1.796l3.443-3.443C17.953 1.19 15.238 0 12 0 7.31 0 3.264 2.69 1.29 6.618l4.064 3.07C6.29 6.886 8.91 4.77 12 4.77z"/></svg>`,
+  apple: badge('#000', `<path fill="#fff" transform="translate(4.5,4)" d="M12.24 1.02c0 .82-.3 1.58-.89 2.22-.63.66-1.5 1.13-2.35 1.07-.11-.87.31-1.78.89-2.36.63-.64 1.6-1.06 2.35-1.06v.13zm2.94 12.94c-.3.68-.66 1.35-1.09 1.97-.6.87-1.3 1.93-2.35 1.94-.92.01-1.19-.6-2.34-.59-1.16.01-1.46.6-2.39.6-.99-.01-1.75-.98-2.35-1.85-1.6-2.33-2.83-6.59-1.18-9.46.82-1.42 2.29-2.32 3.83-2.34 1.03-.02 1.94.71 2.35.71.4 0 1.63-.87 2.75-.74.47.03 1.78.19 2.62 1.42-.07.04-1.56.92-1.55 2.75.02 2.19 1.92 2.92 1.94 2.93l-.24.66z"/>`),
+  outlook: badge('#0A2767', `<circle cx="11" cy="11" r="6" fill="#fff"/><circle cx="11" cy="11" r="3.6" fill="#0A2767"/>`),
+  office: badge('#0A2767', `<circle cx="11" cy="11" r="6" fill="#fff"/><circle cx="11" cy="11" r="3.6" fill="#0A2767"/>`),
+  yahoo: badge('#5F01D1', `<text x="11" y="16" text-anchor="middle" font-size="14" font-weight="800" font-family="sans-serif" fill="#fff">!</text>`),
+  notion: badge('#000', `<text x="11" y="16" text-anchor="middle" font-size="13" font-weight="700" font-family="Georgia,serif" fill="#fff">N</text>`),
+};
 function calendarSheet(k){
-  openSheet(sheetHead('הוספה ליומן', 'בחרו את היומן שלכם') + `<div class="list">${CALS.map(([id, name, color, letter]) =>
-    `<button class="btn sec" style="width:100%;margin-bottom:8px" data-act="addCal" data-cal="${id}" data-k="${k}">${calIcon(color, letter)}${esc(name)}</button>`).join('')}</div>`);
+  openSheet(sheetHead('הוספה ליומן', 'בחרו את היומן שלכם') + `<div class="list">${CALS.map(([id, name]) =>
+    `<button class="btn sec" style="width:100%;margin-bottom:8px" data-act="addCal" data-cal="${id}" data-k="${k}">${CAL_ICON[id]}${esc(name)}</button>`).join('')}</div>`);
 }
 function downloadIcs(k){
   const ev = calEvent(k);
@@ -421,10 +430,8 @@ function downloadIcs(k){
     'BEGIN:VALARM','TRIGGER:-PT62H','ACTION:DISPLAY','DESCRIPTION:'+sum,'END:VALARM',
     'BEGIN:VALARM','TRIGGER:-PT38H','ACTION:DISPLAY','DESCRIPTION:'+sum,'END:VALARM',
     'END:VEVENT','END:VCALENDAR'].join('\r\n');
-  const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
-  const a = document.createElement('a');
-  a.href = url; a.download = 'kiddush-'+k+'.ics'; document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  NativeFiles.save(new Blob([ics], { type: 'text/calendar;charset=utf-8' }), 'kiddush-'+k+'.ics', { open: true })
+    .catch(() => toast('יצירת קובץ היומן נכשלה'));
 }
 
 /* ---------- Actions ---------- */

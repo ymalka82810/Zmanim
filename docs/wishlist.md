@@ -4,15 +4,7 @@
 
 ## דחיפות גבוהה: פיצ'רים שלא עובדים באפליקציית ה-APK
 
-פיצ'רים שמוגדרים לעבוד גם במחשב וגם באפליקייה, אך ב-APK כנראה שבורים כי אין חיווט native מתאים (`android/app/src/main/java/com/zmanim/luach/MainActivity.java` לא מיישם `DownloadListener`/`onCreateWindow`/`PrintManager`, ואין תוספי Capacitor כמו `@capacitor/filesystem`). "הוספה ליומן" כבר תוקן (`kiddush/js/app.js`); הבאים עדיין פתוחים:
-
-- **הדפסת לוח הזמנים** (`index.html` כפתור "הדפסה", `js/app.js` — `window.print()`): אין חיווט ל-PrintManager של אנדרואיד ב-`MainActivity.java`, כך שבאפליקציה הכפתור כנראה לא עושה כלום. יש לבדוק בפועל ב-APK, ואם מאושר — או להסתיר את הכפתור באפליקייה, או להוסיף חיווט native (Capacitor print plugin / PrintManager).
-- **הורדות קבצים מבוססות Blob** — סובלות מאותה בעיה כי Android WebView לא מפעיל הורדות עבור כתובות `blob:` דרך `<a download>` סינתטי בלי `WebView.setDownloadListener` (שלא קיים) או תוסף Filesystem (שלא מותקן):
-  - שמירת קובץ הגדרות/גיבוי (`js/app.js`, פונקציית השמירה סביב `URL.createObjectURL`).
-  - ייצוא דוח קופה/עו"ש CSV של הגבאי (`gabbai/js/app.js`, `exportCsv`).
-  - הורדת קובץ .ics ליומן Apple (`kiddush/js/app.js`, `downloadIcs`).
-  - אפשרות תיקון: להוסיף תוסף `@capacitor/filesystem` (ו/או `@capacitor/share`) ולהשתמש בו כשרצים באפליקייה, במקום/בנוסף להורדת ה-blob.
-- שיתוף תמונה/PDF של לוח הזמנים (`js/app.js`) מנסה קודם `navigator.share` ולכן כנראה עובד, אבל ה-fallback שלו חוזר לאותה שיטת blob — כדאי לוודא בבדיקה ולתקן את ה-fallback גם אם השיתוף הרגיל עובד.
+הדפסת לוח הזמנים והורדות הקבצים (גיבוי הגדרות, CSV של הגבאי, .ics, וה-fallback של שיתוף תמונה/PDF) עוברים עכשיו דרך `js/native-files.js` ותוסף native מקומי (`android/.../NativeFilesPlugin.java`: PrintManager, שמירה לתיקיית ההורדות דרך MediaStore, פתיחת .ics ביומן). נשאר: לבנות APK ולבדוק בפועל במכשיר (כולל אנדרואיד 9 ומטה, שבו במקום שמירה נפתח חלון שיתוף).
 
 - **תשלום חיצוני לתרומות**: חיבור לספק תשלומים, כדי שחבר קהילה יוכל לתרום ישירות מהאפליקציה והתרומה תירשם בקופה אוטומטית.
 - **דוח/סיכום חודשי אוטומטי לקופה**: יש כבר cron יומי לתזכורות תשלום (`convex/crons.ts` → `fund.sendDueReminders`). אפשר להוסיף לו cron חודשי נוסף ששולח לגבאי/רב סיכום הכנסות/הוצאות וחיובים פתוחים.

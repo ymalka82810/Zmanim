@@ -371,9 +371,10 @@ async function exportCsv(){
   lines.push([q(""),q(""),q(""),q("סה״כ ויתרת סגירה"),q(""),n(s.cr),n(s.dr),n(s.closing)].join(","));
   const name=(ui.acct==="main"?"דוח-עוש":"דוח-קופה-קטנה")+`_${ui.from||"התחלה"}_${ui.to||"היום"}.csv`;
   const data="\uFEFF"+lines.join("\r\n");
-  const url=URL.createObjectURL(new Blob([data],{type:"text/csv;charset=utf-8"}));
-  const a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  try{
+    const r=await NativeFiles.save(new Blob([data],{type:"text/csv;charset=utf-8"}),name);
+    if(r==="saved")toast("הדוח נשמר בהורדות");
+  }catch(e){toast("שמירת הדוח נכשלה")}
 }
 
 // ---------- boot ----------
