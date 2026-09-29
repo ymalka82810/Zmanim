@@ -5,12 +5,15 @@
 
 let C = { ink: '#1d2b45', blue: '#2c4a7c', muted: '#5d6b82', soft: '#e3e9f2', note: '#eef3fa', bg: '#ffffff' };
 import { fontFamilies, themeColors } from './config.js';
+import { splitColumns } from './render.js';
 
 let SERIF, SANS;   // גופן הכותרת וגופן הטקסט, לפי התבנית
 let SZ = { title: 1, name: 1, time: 1, zman: 1 };   // גדלי הטקסט של התבנית (1 = רגיל)
 let LAY = 'classic';   // תבנית התצוגה (LAYOUTS ב-config.js)
+let COLS = 1;   // מספר העמודות של קטעי השבת/החג
 const px = (n, k) => Math.round(n * SZ[k] * 10) / 10;
-const W = 800, M = 56, SCALE = 2;   // רוחב לוגי, שוליים, רזולוציה (1600 פיקסלים)
+const M = 56, SCALE = 2;   // שוליים, רזולוציה (בדף גדול יותר – באותו יחס, כדי שהדפסה של ה-PDF תהיה חדה)
+let W = 800;   // רוחב לוגי (1600 פיקסלים), ובדף לרוחב רחב יותר לפי היחס של הדף
 
 /** פירוק טקסט לשורות לפי רוחב */
 function wrap(ctx, text, width) {
@@ -27,19 +30,18 @@ function wrap(ctx, text, width) {
   return lines;
 }
 
-/** קו מופרד בין שורות, לפי תבנית התצוגה */
-function rowLine(rect, y) {
-  const inner = W - 2 * M;
-  if (LAY === 'classic') rect(M, y - 1, inner, 1, C.soft);
-  else if (LAY === 'framed') for (let x = M; x < W - M; x += 5) rect(x, y - 1, 2, 1, C.line);
+/** קו מופרד בין שורות, לפי תבנית התצוגה. x0–x1 – הרוחב (בלוח בעמודות – העמודה) */
+function rowLine(rect, y, x0 = M, x1 = W - M) {
+  if (LAY === 'classic') rect(x0, y - 1, x1 - x0, 1, C.soft);
+  else if (LAY === 'framed') for (let x = x0; x < x1; x += 5) rect(x, y - 1, 2, 1, C.line);
 }
 
 /** קו מתחת לכותרת של קטע או של טבלת הימים, לפי תבנית התצוגה. מחזיר את ה-y שאחריו */
-function headLine(rect, y) {
-  const inner = W - 2 * M;
-  if (LAY === 'framed') { rect(M, y, inner, 1.5, C.blue); rect(M, y + 4, inner, 1.5, C.blue); return y + 6; }
-  if (LAY === 'minimal') { rect(M, y, inner, 1, C.line); return y + 3; }
-  if (LAY === 'classic') rect(M, y, inner, 3, C.blue);
+function headLine(rect, y, x0 = M, x1 = W - M) {
+  const inner = x1 - x0;
+  if (LAY === 'framed') { rect(x0, y, inner, 1.5, C.blue); rect(x0, y + 4, inner, 1.5, C.blue); return y + 6; }
+  if (LAY === 'minimal') { rect(x0, y, inner, 1, C.line); return y + 3; }
+  if (LAY === 'classic') rect(x0, y, inner, 3, C.blue);
   return y + 3;
 }
 
@@ -92,8 +94,9 @@ function layout(ctx, l, draw, H) {
     }
   }
 
-  if (l.type === 'days') y = daysGrid(ctx, l, y, text, rect, round);
-  else for (const s of l.sections) {
+  // קטע של שבת/חג בעמודה שבין M ל-R. מחזיר את ה-y בסוף הקטע
+  const section = (s, y, M, R) => {
+    const inner = R - M;
     y += 52;
     const bar = LAY === 'banner' ? 12 : 0;
     if (bar) round(M, y - 31, inner, 44, 8, C.soft);
@@ -105,7 +108,7 @@ function layout(ctx, l, draw, H) {
       text(s.title, (R + M + ctx.measureText(s.date).width + 12) / 2, y, sf, C.ink, 'center');
     } else text(s.title, R - bar, y, sf, minimal ? C.blue : C.ink, 'right');
     text(s.date, M + bar, y, '400 16px ' + SANS, C.muted, 'left');
-    y = headLine(rect, y + (bar ? 13 : 12));
+    y = headLine(rect, y + (bar ? 13 : 12), M, R);
 
     s.rows.forEach((r, k) => {
       const nf = '400 ' + px(21, 'name') + 'px ' + SANS, lh = px(28, 'name');
@@ -117,7 +120,7 @@ function layout(ctx, l, draw, H) {
       lines.forEach((line, i) => text(line, R - bar, base + i * lh, nf, C.ink, 'right'));
       text(r.text, M + bar, base, '700 ' + px(22, 'time') + 'px ' + SANS, C.ink, 'left');
       y = next;
-      rowLine(rect, y);
+      rowLine(rect, y, M, R);
     });
 
     if (s.zmanim.length) {
@@ -142,6 +145,14 @@ function layout(ctx, l, draw, H) {
         x -= w + gap;
       }
     }
+    return y;
+  };
+
+  if (l.type === 'days') y = daysGrid(ctx, l, y, text, rect, round);
+  else {
+    // הקטעים מחולקים לעמודות (הראשונה מימין), והלוח ממשיך מתחת לעמודה הארוכה
+    const cols = splitColumns(l.sections, COLS), gap = 32, cw = (inner - gap * (cols.length - 1)) / cols.length;
+    y = Math.max(y, ...cols.map((c, i) => c.reduce((cy, s) => section(s, cy, R - i * (cw + gap) - cw, R - i * (cw + gap)), y)));
   }
 
   if (l.notes) {
@@ -212,10 +223,12 @@ async function loadFonts(font) {
 
 /**
  * מצייר את הלוח ומחזיר canvas. font/theme/layout – מזהי הגופן, ערכת הצבעים ותבנית התצוגה של התבנית,
- * sizes – הגדלים שלה באחוזים
+ * sizes – הגדלים שלה באחוזים, page – הדף שלה (pageOf ב-config.js), cols – מספר העמודות
  */
-export async function luachCanvas(l, font, sizes = {}, theme, lay) {
+export async function luachCanvas(l, font, sizes = {}, theme, lay, page, cols = 1) {
+  COLS = cols;
   ({ title: SERIF, body: SANS } = fontFamilies(font));
+  W = page && page.landscape ? Math.round(800 * page.w / page.h) : 800;
   const t = themeColors(theme);
   C = { ink: t.ink, blue: t.blue, muted: t.muted, soft: t.soft, note: t.note, line: t.line, bg: t.paper };
   LAY = lay || 'classic';
@@ -226,9 +239,10 @@ export async function luachCanvas(l, font, sizes = {}, theme, lay) {
   let ctx = canvas.getContext('2d');
   ctx.direction = 'rtl';
   const h = Math.ceil(layout(ctx, l, false));
-  canvas.width = W * SCALE; canvas.height = h * SCALE;
+  const scale = SCALE * (page ? page.k : 1);
+  canvas.width = Math.round(W * scale); canvas.height = Math.round(h * scale);
   ctx = canvas.getContext('2d');
-  ctx.scale(SCALE, SCALE);
+  ctx.scale(canvas.width / W, canvas.height / h);
   ctx.direction = 'rtl';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, h);
@@ -254,11 +268,14 @@ export function stackCanvases(list) {
   return out;
 }
 
-/** PDF בעמודי A4, תמונה בראש כל עמוד (מוקטנת אם היא ארוכה מהעמוד). canvases – קנבס אחד או רשימה, עמוד לכל אחד */
-export async function pdfBlob(canvases) {
+/**
+ * PDF בעמודים בגודל page (במ"מ, pageOf ב-config.js; בלי – A4 לאורך), תמונה בראש כל עמוד (מוקטנת אם היא ארוכה מהעמוד).
+ * canvases – קנבס אחד או רשימה, עמוד לכל אחד
+ */
+export async function pdfBlob(canvases, page = { w: 210, h: 297 }) {
   const list = Array.isArray(canvases) ? canvases : [canvases];
   const jpegs = await Promise.all(list.map(async c => new Uint8Array(await (await toBlob(c, 'image/jpeg', 0.92)).arrayBuffer())));
-  const PW = 595.28, PH = 841.89;
+  const PW = page.w * 72 / 25.4, PH = page.h * 72 / 25.4;
   const f = n => n.toFixed(2);
 
   const enc = new TextEncoder(), parts = [], offsets = [];

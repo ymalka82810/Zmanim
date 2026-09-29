@@ -3,7 +3,7 @@
  * ועותק שלהן נשמר בדפדפן. הלוחות המאושרים נשמרים בקהילה (community.js).
  */
 
-import { CITIES, BASES, WHEN, WHEN_LABELS, APPLIES, ROUND, FONTS, THEMES, LAYOUTS, SIZE_PARTS, SIZES, DEFAULT_CONFIG, DAY_APPLIES, BUILTIN, isBuiltin, newTemplate, designOf, activeDesign,
+import { CITIES, BASES, WHEN, WHEN_LABELS, APPLIES, ROUND, FONTS, THEMES, LAYOUTS, SIZE_PARTS, SIZES, PAPERS, ORIENTS, COLUMNS, pageOf, DEFAULT_CONFIG, DAY_APPLIES, BUILTIN, isBuiltin, newTemplate, designOf, activeDesign,
   prayerBases, fontFamilies, fontsHref, themeColors, normalize, loadConfig, saveConfig, clearConfig } from './config.js';
 import { findOccasion, templateFor, periodFor, occasionParts, buildLuach, buildDaysLuach, dayPages } from './luach.js';
 import { MOADIM } from './moadim.js';
@@ -150,7 +150,7 @@ function build(p) {
 }
 /** העמודים של הלוח כקנבסים: עמוד לכל יום בעיצוב מקובץ, או עמוד אחד בעיצוב של האתר */
 const drawLuach = async l => l.design ? Promise.all(l.pages.map(v => templateCanvas(l.design, v)))
-  : [await luachCanvas(l, l.tpl.font, l.tpl.sizes, l.tpl.theme, l.tpl.layout)];
+  : [await luachCanvas(l, l.tpl.font, l.tpl.sizes, l.tpl.theme, l.tpl.layout, pageOf(l.tpl), l.tpl.cols)];
 
 /**
  * החלת הגופן, ערכת הצבעים, הגדלים ותבנית התצוגה של התבנית t על el (הלוח, או הדוגמה בהגדרות).
@@ -225,6 +225,7 @@ function renderLuach() {
   cursor = p.first; period = p;
   current = build(p);
   applyDesign($('luach'), current.tpl);
+  applyPage(current.tpl);
   renderMixOffer(p);
   if (current.design) {
     const l = current;
@@ -234,9 +235,9 @@ function renderLuach() {
     drawLuach(l).then(pages => {
       if (current !== l) return;
       $('luach').querySelectorAll('.lp').forEach((el, i) => { el.querySelector('img').src = pages[i].toDataURL('image/png'); });
-    }).catch(() => { if (current === l) $('luach').innerHTML = luachHtml(l); });
+    }).catch(() => { if (current === l) $('luach').innerHTML = luachHtml(l, false, l.tpl.cols); });
   } else {
-    $('luach').innerHTML = luachHtml(current);
+    $('luach').innerHTML = luachHtml(current, false, current.tpl.cols);
   }
   const now = periodFor(cfg, t, todayIn(cfg.tz));
   $('todayOcc').disabled = !!now && now.first === p.first;
@@ -271,7 +272,7 @@ function makeFiles(l) {
   const name = ('לוח זמנים - ' + l.title).replace(/[\\/:*?"<>|]/g, '');
   const promise = drawLuach(l).then(async pages => ({
     png: new File([await pngBlob(stackCanvases(pages))], name + '.png', { type: 'image/png' }),
-    pdf: new File([await pdfBlob(pages)], name + '.pdf', { type: 'application/pdf' })
+    pdf: new File([await pdfBlob(pages, pageOf(l.tpl))], name + '.pdf', { type: 'application/pdf' })
   }));
   promise.catch(() => {});
   files = { luach: l, promise };
@@ -317,26 +318,44 @@ $('print').onclick = () => {
 };
 
 /**
- * התאמת הלוח לעמודי A4 בהדפסה, בכל מספר של עמודים. לוח שבעמוד האחרון שלו יש עד חצי עמוד נדחס לעמוד אחד פחות:
+ * התאמת הלוח לעמודים בהדפסה (בגודל ובכיוון של הדף בתבנית), בכל מספר של עמודים. לוח שבעמוד האחרון שלו יש עד חצי עמוד נדחס לעמוד אחד פחות:
  * קודם מצמצמים את הרווחים (עד 40% מהרגיל), ואם עדיין לא נכנס – מקטינים את כל הלוח, טקסט ורווחים, באותו יחס,
  * כך שהיחס בין הגדלים של השורות נשמר. יותר מחצי עמוד בעמוד האחרון – מדפיסים כרגיל.
  * בעיצוב מקובץ – אותו כלל לתמונה של כל יום בנפרד.
  */
-const PAGE_H = 268 * 96 / 25.4;   // גובה הדף בלי השוליים, בפיקסלים
-const PAGE_W = 182 * 96 / 25.4;
+const MM = 96 / 25.4;   // פיקסלים במ"מ
+const PRINT_MARGIN = 14;   // השוליים של הדף בהדפסה (@page ב-app.css), במ"מ
+/** השטח להדפסה בדף p (pageOf), במ"מ. מ"מ אחד פחות בגובה, כדי שעיגול של הדפדפן לא ישבור לעמוד נוסף */
+const printArea = p => ({ w: p.w - 2 * PRINT_MARGIN, h: p.h - 2 * PRINT_MARGIN - 1 });
+
+/**
+ * גודל הדף בהדפסה (@page) והרוחב של הלוח בהדפסה, לפי התבנית t.
+ * בדף גדול מ-A4 הלוח מוגדל (--zoom) כך שהוא ממלא את הדף כמו ב-A4.
+ */
+function applyPage(t) {
+  const p = pageOf(t), el = $('luach');
+  let st = $('pageStyle');
+  if (!st) { st = document.createElement('style'); st.id = 'pageStyle'; document.head.appendChild(st); }
+  st.textContent = '@page { size: ' + p.size + '; }';
+  el.style.setProperty('--page-w', printArea(p).w + 'mm');
+  el.style.setProperty('--zoom', String(p.k));
+}
 
 /**
  * החלוקה של הלוח לעמודים כמו בהדפסה: שוברים רק בין יחידות שלמות (שורה בטבלה, כותרת, הודעה),
  * כותרת של קטע נשארת עם השורה הראשונה שלו, וכותרת טבלת ימי החול חוזרת בראש כל עמוד.
- * מחזיר את מספר העמודים ואת החלק (0–1) של העמוד האחרון שבשימוש.
+ * H – גובה העמוד בפיקסלים. מחזיר את מספר העמודים ואת החלק (0–1) של העמוד האחרון שבשימוש.
  */
-function paginate(el) {
+function paginate(el, H) {
   const units = [];
   const unit = (a, b, repeat = 0) => {
     const r1 = a.getBoundingClientRect(), r2 = b.getBoundingClientRect();
     if (r2.bottom > r1.top) units.push({ top: r1.top, bottom: r2.bottom, repeat });
   };
-  for (const c of el.children) {
+  // בלוח בעמודות כל עמודה נשברת לעמודים לחוד, ומספר העמודים נקבע לפי העמודה הארוכה
+  const h = x => x.getBoundingClientRect().height;
+  const kids = [...el.children].flatMap(c => c.matches('.l-cols') ? [...[...c.children].reduce((a, b) => h(b) > h(a) ? b : a).children] : [c]);
+  for (const c of kids) {
     const rows = c.matches('.l-sec, .l-grid-wrap') ? [...c.querySelectorAll('tbody tr')] : [];
     if (rows.length < 2) { unit(c, c); continue; }
     const thead = c.querySelector('thead');
@@ -348,38 +367,39 @@ function paginate(el) {
   const top = el.getBoundingClientRect().top;
   let start = top, extra = 0, pages = 1, end = top;
   for (const u of units) {
-    if (u.bottom - start + extra > PAGE_H && u.top > start) { pages++; start = u.top; extra = u.repeat; }
+    if (u.bottom - start + extra > H && u.top > start) { pages++; start = u.top; extra = u.repeat; }
     // יחידה ארוכה מעמוד שלם נשברת באמצע
-    while (u.bottom - start + extra > PAGE_H) { pages++; start += PAGE_H - extra; extra = 0; }
+    while (u.bottom - start + extra > H) { pages++; start += H - extra; extra = 0; }
     end = u.bottom;
   }
-  return { pages, last: (end - start + extra) / PAGE_H };
+  return { pages, last: (end - start + extra) / H };
 }
 
 function fitPrint() {
   const el = $('luach');
   unfitPrint();
   if (!current || !el.offsetParent) return;
+  const p = pageOf(current.tpl), area = printArea(p), H = area.h * MM;
   if (current.design) {
     for (const lp of el.querySelectorAll('.lp')) {
       const img = lp.querySelector('img');
       if (!img.naturalWidth) continue;
-      const pages = PAGE_W * img.naturalHeight / img.naturalWidth / PAGE_H, n = Math.ceil(pages - 1e-6);
-      if (n > 1 && pages - (n - 1) <= 0.5) { lp.classList.add('fit'); lp.style.setProperty('--fit-h', (n - 1) * 268 + 'mm'); }
+      const pages = area.w * img.naturalHeight / img.naturalWidth / area.h, n = Math.ceil(pages - 1e-6);
+      if (n > 1 && pages - (n - 1) <= 0.5) { lp.classList.add('fit'); lp.style.setProperty('--fit-h', (n - 1) * area.h + 'mm'); }
     }
     return;
   }
   el.classList.add('fit-measure');
-  const first = paginate(el), target = first.pages - 1;
+  const first = paginate(el, H), target = first.pages - 1;
   if (!target || first.last > 0.5) { el.classList.remove('fit-measure'); return; }
-  const fits = () => paginate(el).pages <= target;
+  const fits = () => paginate(el, H).pages <= target;
   for (let gap = 0.9; !fits() && gap >= 0.4; gap = Math.round((gap - 0.1) * 10) / 10) el.style.setProperty('--fit-gap', String(gap));
   // הקווים נשארים ברוחב פיקסל שלם גם בהקטנה, והשבירה היא רק בין שורות, ולכן מודדים שוב אחרי כל הקטנה עד שהלוח נכנס
   for (let zoom = 1, i = 0; i < 30; i++) {
-    const p = paginate(el);
-    if (p.pages <= target) break;
-    zoom = Math.floor(zoom * Math.min(0.99, target / (p.pages - 1 + p.last)) * 1000) / 1000;
-    el.style.setProperty('--fit-zoom', String(zoom));
+    const r = paginate(el, H);
+    if (r.pages <= target) break;
+    zoom = Math.floor(zoom * Math.min(0.99, target / (r.pages - 1 + r.last)) * 1000) / 1000;
+    el.style.setProperty('--zoom', String(p.k * zoom));
   }
   el.classList.replace('fit-measure', 'fit');
 }
@@ -387,7 +407,7 @@ function unfitPrint() {
   const el = $('luach');
   el.classList.remove('fit', 'fit-measure');
   el.style.removeProperty('--fit-gap');
-  el.style.removeProperty('--fit-zoom');
+  if (current) el.style.setProperty('--zoom', String(pageOf(current.tpl).k));
   el.querySelectorAll('.lp.fit').forEach(lp => { lp.classList.remove('fit'); lp.style.removeProperty('--fit-h'); });
 }
 window.addEventListener('beforeprint', fitPrint);
@@ -403,6 +423,9 @@ $('tz').innerHTML = zones.map(z => '<option>' + esc(z) + '</option>').join('');
 
 $('font').innerHTML = FONTS.map(f => '<option value="' + f[0] + '">' + esc(f[1]) + '</option>').join('');
 $('theme').innerHTML = THEMES.map(x => '<option value="' + x[0] + '">' + esc(x[1]) + '</option>').join('');
+$('paper').innerHTML = PAPERS.map(x => '<option>' + x[0] + '</option>').join('');
+$('orient').innerHTML = ORIENTS.map(x => '<option value="' + x[0] + '">' + esc(x[1]) + '</option>').join('');
+$('cols').innerHTML = COLUMNS.map(n => '<option value="' + n + '">' + (n === 1 ? 'עמודה אחת' : n + ' עמודות') + '</option>').join('');
 
 const opts = (list, v) => list.map(x => Array.isArray(x)
   ? '<option value="' + x[0] + '"' + (x[0] === v ? ' selected' : '') + '>' + esc(x[1]) + '</option>'
@@ -475,6 +498,11 @@ function renderFont() {
   const t = selTpl();
   $('font').value = t.font;
   $('theme').value = t.theme;
+  $('paper').value = t.paper;
+  $('orient').value = t.orient;
+  $('cols').value = String(t.cols);
+  // בלוח ימי חול כל עמודה היא יום, ואין חלוקה לעמודות
+  $('colsField').hidden = t.kind === 'days';
   $('sizes').innerHTML = SIZE_PARTS.map(([k, label]) => '<div><label for="size-' + k + '">גודל ' + esc(label) + '</label>' +
     '<select id="size-' + k + '" data-size="' + k + '">' +
     SIZES.map(v => '<option value="' + v + '"' + (v === t.sizes[k] ? ' selected' : '') + '>' + v + '%</option>').join('') + '</select></div>').join('');
@@ -517,7 +545,7 @@ function renderLayouts() {
   $('layouts').querySelectorAll('.lay-card[data-layout]').forEach(c => {
     const el = c.querySelector('.luach');
     applyDesign(el, t, c.dataset.layout);
-    el.innerHTML = luachHtml(sample);
+    el.innerHTML = luachHtml(sample, false, t.cols);
   });
 }
 
@@ -638,8 +666,8 @@ async function doImport(box) {
     if (!store()) { t.design = null; toast('אין מספיק מקום במכשיר לעותק של העיצוב', true); return; }
     toast('העיצוב יובא מ' + src.name + '. זמני התפילות בו לפי התבנית "' + t.name + '"');
   } else {
-    t.font = src.font; t.theme = src.theme; t.layout = src.layout; t.sizes = { ...src.sizes };
-    toast('תבנית התצוגה, הגופן, ערכת הצבעים והגדלים יובאו מ' + src.name);
+    t.font = src.font; t.theme = src.theme; t.layout = src.layout; t.sizes = { ...src.sizes }; t.paper = src.paper; t.orient = src.orient; t.cols = src.cols;
+    toast('תבנית התצוגה, הגופן, ערכת הצבעים, הגדלים, הדף והעמודות יובאו מ' + src.name);
   }
   closeImport(box);
   renderRules(); renderTemplateStatus(); renderFont();
@@ -885,6 +913,9 @@ bind('havdalah', v => { cfg.havdalah = v; });
 bind('notes', v => { cfg.notes = v; });
 bind('font', v => { selTpl().font = v; renderFontSample(); renderLayouts(); });
 bind('theme', v => { selTpl().theme = v; renderFontSample(); renderLayouts(); });
+bind('paper', v => { selTpl().paper = v; });
+bind('orient', v => { selTpl().orient = v; });
+bind('cols', v => { selTpl().cols = Number(v); renderLayouts(); });
 
 /* ---------- עיצוב מלוח קיים ---------- */
 

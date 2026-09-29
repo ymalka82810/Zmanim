@@ -83,21 +83,52 @@ function daysHtml(l, editing) {
   return h + '</tbody></table></div>';
 }
 
-/** l – לוח אחרי withEdits. editing – מצב עריכה: מוצגים גם שדות ריקים (שם בית הכנסת, הודעה) כדי שאפשר יהיה לכתוב בהם */
-export function luachHtml(l, editing) {
+/**
+ * חלוקת הקטעים של לוח שבת/חג ל-n עמודות, לפי הסדר: עמודה ראשונה (מימין) מלמעלה למטה, ואחריה הבאה.
+ * הקטעים מחולקים כך שהעמודה הארוכה תהיה קצרה ככל האפשר (לפי מספר השורות בכל קטע). מחזיר רשימה של עמודות
+ */
+export function splitColumns(sections, n) {
+  n = Math.max(1, Math.min(n || 1, sections.length));
+  const size = s => 2 + s.rows.length + (s.zmanim.length ? 1 : 0);
+  // best(i, k) – החלוקה הטובה של הקטעים מ-i והלאה ל-k עמודות: [הגובה של הארוכה, רשימת נקודות החיתוך]
+  const best = (i, k) => {
+    if (k === 1) return [sections.slice(i).reduce((a, s) => a + size(s), 0), []];
+    let out = null, h = 0;
+    for (let j = i + 1; j <= sections.length - k + 1; j++) {
+      h += size(sections[j - 1]);
+      const [rest, cuts] = best(j, k - 1), m = Math.max(h, rest);
+      if (!out || m < out[0]) out = [m, [j, ...cuts]];
+    }
+    return out;
+  };
+  const cuts = [0, ...best(0, n)[1], sections.length];
+  return cuts.slice(1).map((c, i) => sections.slice(cuts[i], c));
+}
+
+/**
+ * l – לוח אחרי withEdits. editing – מצב עריכה: מוצגים גם שדות ריקים (שם בית הכנסת, הודעה) כדי שאפשר יהיה לכתוב בהם.
+ * cols – מספר העמודות שהקטעים של לוח שבת/חג מחולקים ביניהן
+ */
+export function luachHtml(l, editing, cols = 1) {
   let h = '<div class="l-head"><div class="stripe"></div><div class="stripe s"></div><div class="stripe"></div>';
   if (l.shul || editing) h += '<div class="l-shul">' + E(l, 'shul', l.shul, 'שם בית הכנסת') + '</div>';
   h += '<h2 class="l-title">' + E(l, 'title', l.title) + '</h2><div class="l-dates">' + E(l, 'dates', l.dates) + '</div></div>';
   if (l.type === 'days') h += daysHtml(l, editing);
-  else l.sections.forEach((s, i) => {
-    h += '<table class="l-sec"><tr><th>' + E(l, 's' + i + '.title', s.title) + '</th><th class="d">' + E(l, 's' + i + '.date', s.date) + '</th></tr>';
-    for (const r of s.rows) h += '<tr><td>' + E(l, r._k + '.name', r.name) + '</td><td class="t">' + E(l, r._k + '.text', r.text) + '</td></tr>';
-    if (s.zmanim.length) {
-      h += '<tr><td colspan="2" class="z">' +
-        s.zmanim.map((z, j) => '<span>' + E(l, s.zk[j] + '.name', z[0]) + ' <b>' + E(l, s.zk[j] + '.val', z[1]) + '</b></span>').join('') + '</td></tr>';
-    }
-    h += '</table>';
-  });
+  else {
+    const sec = s => {
+      const i = l.sections.indexOf(s);
+      let t = '<table class="l-sec"><tr><th>' + E(l, 's' + i + '.title', s.title) + '</th><th class="d">' + E(l, 's' + i + '.date', s.date) + '</th></tr>';
+      for (const r of s.rows) t += '<tr><td>' + E(l, r._k + '.name', r.name) + '</td><td class="t">' + E(l, r._k + '.text', r.text) + '</td></tr>';
+      if (s.zmanim.length) {
+        t += '<tr><td colspan="2" class="z">' +
+          s.zmanim.map((z, j) => '<span>' + E(l, s.zk[j] + '.name', z[0]) + ' <b>' + E(l, s.zk[j] + '.val', z[1]) + '</b></span>').join('') + '</td></tr>';
+      }
+      return t + '</table>';
+    };
+    const columns = splitColumns(l.sections, cols);
+    h += columns.length > 1 ? '<div class="l-cols">' + columns.map(c => '<div class="l-col">' + c.map(sec).join('') + '</div>').join('') + '</div>'
+      : l.sections.map(sec).join('');
+  }
   if (l.notes || editing) h += '<div class="l-notes">' + E(l, 'notes', l.notes, 'הודעה בתחתית הלוח') + '</div>';
   return h;
 }

@@ -131,6 +131,11 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .l-grid td { font-weight: 700; font-size: calc(1em * var(--s-time, 1)); color: var(--blue); }
 .l-grid tr.z th, .l-grid tr.z td { font-size: calc(.8rem * var(--s-zman, 1)); color: var(--muted); border: none; padding: 2px 4px; font-weight: 400; }
 .l-grid tr.z.first th, .l-grid tr.z.first td { padding-top: calc(12px * var(--fit-gap, 1)); }
+/* לוח שבת/חג בעמודות (הגדרת התבנית): הקטעים זה לצד זה. בלוח צר (טלפון) – עמודה אחת */
+.luach:has(.l-cols) { container-type: inline-size; }
+.l-cols { display: flex; gap: 28px; align-items: flex-start; }
+.l-col { flex: 1 1 0; min-width: 0; }
+@container (max-width: 520px) { .l-cols { display: block; } }
 .l-notes { margin-top: calc(20px * var(--fit-gap, 1)); padding: calc(12px * var(--fit-gap, 1)) 14px; background: var(--note); border-radius: 10px; font-size: .95rem; white-space: pre-line; }
 .luach-empty { text-align: center; color: var(--muted); }
 
@@ -199,7 +204,8 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .credit { text-align: center; font-size: .8rem; color: var(--muted); padding-bottom: 28px; }
 
 @media print {
-  @page { size: A4; margin: 14mm; }
+  /* גודל הדף וכיוונו לפי התבנית (applyPage ב-app.js) */
+  @page { margin: 14mm; }
   body { background: #fff; }
   header,.tpl-list, .mix-offer, .tpl-new, .nav-occ, .actions, #welcome, footer, .toast, #view-settings, .community-panel { display: none !important; }
   main.wrap { max-width: none; padding: 0; }
@@ -208,8 +214,9 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
   /* לוח בשני עמודים נשבר בין השורות, ולא משאירים כותרת של קטע לבד בתחתית העמוד */
   .l-sec tr, .l-grid tr { break-inside: avoid; }
   .l-sec tr:first-child { break-after: avoid; }
-  /* לוח שבעמוד האחרון שלו עד חצי עמוד: הרווחים והגדלים מוקטנים לפי fitPrint ב-app.js */
-  .luach.fit { zoom: var(--fit-zoom, 1); width: calc(182mm / var(--fit-zoom, 1)); }
+  /* הלוח ברוחב הדף בלי השוליים. בדף גדול מ-A4 הוא מוגדל באותו יחס, ולוח שבעמוד האחרון שלו עד חצי עמוד
+     מוקטן, יחד עם הרווחים, לעמוד אחד פחות (applyPage ו-fitPrint ב-app.js) */
+  .luach:not(:has(.lp)) { zoom: var(--zoom, 1); width: calc(var(--page-w, 182mm) / var(--zoom, 1)); }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 
@@ -286,8 +293,8 @@ button[aria-pressed="true"] { background: linear-gradient(135deg, var(--blue), v
   .lp.fit { break-inside: avoid; }
   .lp.fit .luach-img { width: auto; max-width: 100%; max-height: var(--fit-h, 268mm); margin: 0 auto; border-radius: 0; }
 }
-/* מדידת הלוח ברוחב ובגודל של ההדפסה (A4 בלי השוליים), לפני ההדפסה */
-.luach.fit-measure { zoom: var(--fit-zoom, 1); width: calc(182mm / var(--fit-zoom, 1)); max-width: none; border: none; box-shadow: none; padding: 0; font-size: 18px; border-radius: 0; }
+/* מדידת הלוח ברוחב ובגודל של ההדפסה (הדף בלי השוליים), לפני ההדפסה */
+.luach.fit-measure { zoom: var(--zoom, 1); width: calc(var(--page-w, 182mm) / var(--zoom, 1)); max-width: none; border: none; box-shadow: none; padding: 0; font-size: 18px; border-radius: 0; }
 .luach.fit-measure .l-title { font-size: calc(2.4rem * var(--s-title, 1)); }
 /* המסגרת המעוטרת צריכה ריווח גם בהדפסה */
 .luach[data-layout="framed"].fit-measure { padding: 30px 32px; }

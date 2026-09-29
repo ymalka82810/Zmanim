@@ -151,6 +151,21 @@ export const SIZE_PARTS = [['title', 'כותרת'], ['name', 'שמות התפי�
 export const SIZES = [70, 80, 90, 100, 110, 120, 130, 140, 150, 160];
 export const DEFAULT_SIZES = { title: 100, name: 100, time: 100, zman: 100 };
 
+/** גודל הדף בהדפסה וב-PDF: [מפתח, רוחב, גובה] במ"מ, לאורך */
+export const PAPERS = [['A4', 210, 297], ['A3', 297, 420]];
+export const ORIENTS = [['portrait', 'לאורך'], ['landscape', 'לרוחב']];
+/** מספר העמודות שהקטעים של לוח שבת/חג מחולקים ביניהן (splitColumns ב-render.js) */
+export const COLUMNS = [1, 2, 3];
+
+/**
+ * הדף של התבנית t: size – הערך ל-@page, w ו-h – המידות במ"מ לפי הכיוון,
+ * k – היחס לרוחב של A4 (בדף גדול יותר הלוח מודפס מוגדל באותו יחס)
+ */
+export function pageOf(t) {
+  const [size, a, b] = PAPERS.find(p => p[0] === t.paper) || PAPERS[0], landscape = t.orient === 'landscape';
+  return { size: size + (landscape ? ' landscape' : ''), landscape, w: landscape ? b : a, h: landscape ? a : b, k: a / PAPERS[0][1] };
+}
+
 const clone = o => JSON.parse(JSON.stringify(o));
 // הגופן והגדלים נקבעים ב-normalize: הגופן הכללי מגרסה קודמת, או classic
 const builtinTemplate = b => ({ id: b.id, name: b.name, kind: b.kind, rules: clone(DEFAULT_RULES[b.id]), design: null });
@@ -167,7 +182,7 @@ export const DEFAULT_CONFIG = {
 /** תבנית חדשה של המשתמש. rules – זמני התפילות להתחלה */
 export function newTemplate(name, kind, rules) {
   return { id: 'u' + Date.now().toString(36), name, kind, moadim: [], rules: clone(rules || []), design: null,
-    font: 'classic', theme: 'classic', layout: 'classic', sizes: { ...DEFAULT_SIZES } };
+    font: 'classic', theme: 'classic', layout: 'classic', sizes: { ...DEFAULT_SIZES }, paper: 'A4', orient: 'portrait', cols: 1 };
 }
 
 /** העיצוב של התבנית. { ref } – העיצוב של תבנית אחרת (למשל חגים שמשתמשים בעיצוב של שבתות) */
@@ -209,6 +224,9 @@ export function normalize(c) {
     if (!FONTS.some(f => f[0] === t.font)) t.font = FONTS.some(f => f[0] === cfg.font) ? cfg.font : 'classic';
     if (!THEMES.some(x => x[0] === t.theme)) t.theme = 'classic';
     if (!LAYOUTS.some(x => x[0] === t.layout)) t.layout = 'classic';
+    if (!PAPERS.some(x => x[0] === t.paper)) t.paper = 'A4';
+    if (!ORIENTS.some(x => x[0] === t.orient)) t.orient = 'portrait';
+    if (COLUMNS.indexOf(t.cols) < 0) t.cols = 1;
     const sizes = t.sizes && typeof t.sizes === 'object' ? t.sizes : {};
     t.sizes = {};
     for (const [k] of SIZE_PARTS) t.sizes[k] = SIZES.indexOf(Number(sizes[k])) >= 0 ? Number(sizes[k]) : 100;

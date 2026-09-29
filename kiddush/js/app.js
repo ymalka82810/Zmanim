@@ -384,6 +384,8 @@ function calEvent(k){
   return { start: ymd(sl.date), end: ymd(nd), title: 'קידוש – '+slotTitle(sl)+' – '+s.name,
     details: 'הקידוש שלך ב'+s.name+'. יש לעבור על ההנחיות בלוח הקידושים.' };
 }
+// באפליקציית Capacitor window.open/target="_blank" לא נתמך ב-WebView; ניווט רגיל נפתח אוטומטית בדפדפן החיצוני
+const isNativeApp = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 function calUrl(kind, k){
   const ev = calEvent(k), body = ev.details + '\n' + location.href;
   const iso = x => x.slice(0,4)+'-'+x.slice(4,6)+'-'+x.slice(6);
@@ -397,10 +399,16 @@ function calUrl(kind, k){
     yahoo: () => 'https://calendar.yahoo.com/?' + q({ v: '60', title: ev.title, st: ev.start, dur: 'allday', desc: body }),
   }[kind]();
 }
-const CALS = [['google','Google'],['apple','Apple (iPhone, Mac)'],['outlook','Outlook.com'],['office','Outlook לעבודה (Microsoft 365)'],['yahoo','Yahoo'],['notion','Notion Calendar']];
+const CALS = [['google','Google','#4285F4','G'],['apple','Apple (iPhone, Mac)','#555','A'],
+  ['outlook','Outlook.com','#0A2767','O'],['office','Outlook לעבודה (Microsoft 365)','#0A2767','O'],
+  ['yahoo','Yahoo','#6001D2','Y'],['notion','Notion Calendar','#111','N']];
+function calIcon(color, letter){
+  return `<svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="11" fill="${color}"/>
+    <text x="11" y="15" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="#fff">${letter}</text></svg>`;
+}
 function calendarSheet(k){
-  openSheet(sheetHead('הוספה ליומן', 'בחרו את היומן שלכם') + `<div class="list">${CALS.map(([id, name]) =>
-    `<button class="btn sec" style="width:100%;margin-bottom:8px" data-act="addCal" data-cal="${id}" data-k="${k}">${esc(name)}</button>`).join('')}</div>`);
+  openSheet(sheetHead('הוספה ליומן', 'בחרו את היומן שלכם') + `<div class="list">${CALS.map(([id, name, color, letter]) =>
+    `<button class="btn sec" style="width:100%;margin-bottom:8px" data-act="addCal" data-cal="${id}" data-k="${k}">${calIcon(color, letter)}${esc(name)}</button>`).join('')}</div>`);
 }
 function downloadIcs(k){
   const ev = calEvent(k);
@@ -437,7 +445,10 @@ const A = {
   ics: d => calendarSheet(d.k),
   addCal: d => {
     if (d.cal === 'apple') downloadIcs(d.k);
-    else window.open(calUrl(d.cal === 'notion' ? 'google' : d.cal, d.k), '_blank', 'noopener');
+    else {
+      const url = calUrl(d.cal === 'notion' ? 'google' : d.cal, d.k);
+      if (isNativeApp()) location.href = url; else window.open(url, '_blank', 'noopener');
+    }
     closeSheet();
     if (d.cal === 'notion') toast('Notion Calendar מציג את יומן Google שמחובר אליו. שמרו את האירוע ב-Google והוא יופיע גם שם.');
   },
