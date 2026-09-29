@@ -140,7 +140,13 @@ export default defineSchema({
     submittedAt: v.number(),
     approvedBy: v.optional(v.id("users")),
     approvedAt: v.optional(v.number()),
-  }).index("by_synagogue_first", ["synagogueId", "firstDate"]),
+    size: v.optional(v.number()),
+    // מחיקה רכה: הקובץ בסל המחזור, מוסתר מהקהילה ועדיין תופס מקום עד מחיקה סופית
+    deletedAt: v.optional(v.number()),
+    deletedBy: v.optional(v.id("users")),
+  })
+    .index("by_synagogue_first", ["synagogueId", "firstDate"])
+    .index("by_deletedAt", ["deletedAt"]),
 
   communityEvents: defineTable({
     synagogueId: v.id("synagogues"),
@@ -174,6 +180,7 @@ export default defineSchema({
     hash: v.string(),
     storageId: v.id("_storage"),
     createdAt: v.number(),
+    size: v.optional(v.number()),
   }).index("by_synagogue_hash", ["synagogueId", "hash"]),
 
   // יומן כשלים כללי (שליחת מיילים, cron וכו'), גלוי לבעל האתר בלבד ב"החשבון שלי"

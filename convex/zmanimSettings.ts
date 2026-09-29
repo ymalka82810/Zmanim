@@ -3,9 +3,9 @@ import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { requireManager } from "./roles";
+import { acceptUpload } from "./storage";
 
 const MAX_CONFIG = 500 * 1024;
-const MAX_DESIGN_BYTES = 12 * 1024 * 1024;
 const HASH_RE = /^[0-9a-f]{64}$/;
 // עיצוב שלא מופיע בהגדרות נמחק רק אחרי זמן, כי גבאי אחר אולי העלה אותו עכשיו ועוד לא שמר את ההגדרות
 const ORPHAN_MS = 60 * 60 * 1000;
@@ -86,10 +86,10 @@ export const addDesign = mutation({
   args: { synagogueId: v.id("synagogues"), hash: v.string(), storageId: v.id("_storage") },
   handler: async (ctx, args) => {
     await requireManager(ctx, args.synagogueId);
-    const meta = await ctx.db.system.get(args.storageId);
-    if (!HASH_RE.test(args.hash) || meta === null || meta.size > MAX_DESIGN_BYTES) {
+    // מחזירים שגיאה במקום לזרוק אותה, אחרת גם מחיקת הקובץ הפסול מתבטלת
+    if (!HASH_RE.test(args.hash)) {
       await ctx.storage.delete(args.storageId);
-      throw new ConvexError("קובץ העיצוב לא תקין או גדול מדי");
+      return { error: "קובץ העיצוב לא תקין" };
     }
     const existing = await ctx.db
       .query("zmanimDesigns")
@@ -97,14 +97,20 @@ export const addDesign = mutation({
       .first();
     if (existing !== null) {
       await ctx.storage.delete(args.storageId);
-      return;
+      return null;
+    }
+    const accepted = await acceptUpload(ctx, args.synagogueId, args.storageId);
+    if (accepted.error !== undefined) {
+      return { error: "לא ניתן לשמור את עיצוב הלוח בקהילה: " + accepted.error };
     }
     await ctx.db.insert("zmanimDesigns", {
       synagogueId: args.synagogueId,
       hash: args.hash,
       storageId: args.storageId,
       createdAt: Date.now(),
+      size: accepted.size,
     });
+    return null;
   },
 });
 

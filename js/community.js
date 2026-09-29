@@ -7,7 +7,8 @@ const Auth = window.SiteAuth;
 const ACCOUNT_URL = 'account/';
 const ROLE = { gabbai: 'גבאי', rabbi: 'רב', member: 'חבר קהילה' };
 const MODE = { holy: 'שבתות וחגים', days: 'ימות השבוע' };
-const fmtDate = ymd => { const [y, m, d] = ymd.split('-'); return `${d}/${m}/${y}`; };
+const MAX_FILE_BYTES = 7 * 1024 * 1024;
+const fmtDate =ymd => { const [y, m, d] = ymd.split('-'); return `${d}/${m}/${y}`; };
 
 let sid = null, role = null, files = [], unsubscribe = null, unsubscribeKiddush = null, getLuachFile = null, toast = () => {}, onKiddush = () => {}, onManager = () => {};
 
@@ -54,7 +55,8 @@ function renderManager(){
     (approved.length ? '<details><summary>קבצים מאושרים (' + approved.length + ')</summary>' + approved.map(row).join('') + '</details>' : '');
   $('communityFiles').querySelectorAll('[data-approve]').forEach(b => b.onclick = () => act('schedules:approve', b.dataset.approve, 'הלוח אושר ופורסם לקהילה'));
   $('communityFiles').querySelectorAll('[data-remove]').forEach(b => b.onclick = async () => {
-    if (await SiteDialog.confirm('להסיר את הקובץ?', { ok: 'הסרה', danger: true })) act('schedules:remove', b.dataset.remove, 'הקובץ הוסר');
+    if (await SiteDialog.confirm('להעביר את הקובץ לסל המחזור? אפשר לשחזר או למחוק אותו לצמיתות ב"החשבון שלי", תחת "קבצים ואחסון".', { ok: 'העברה לסל', danger: true }))
+      act('schedules:remove', b.dataset.remove, 'הקובץ הועבר לסל המחזור');
   });
 }
 
@@ -71,14 +73,16 @@ async function submitCurrent(){
   try {
     const luach = await getLuachFile();
     if (!luach) return;
+    if (luach.file.size > MAX_FILE_BYTES) return toast(`קובץ הלוח שוקל ${(luach.file.size / 1048576).toFixed(1)}MB, והמקסימום לקובץ הוא 7MB`, true);
     const client = Auth.client();
     const url = await client.mutation('schedules:generateUploadUrl', { synagogueId: sid });
     const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: luach.file });
     if (!res.ok) throw new Error('upload');
     const { storageId } = await res.json();
-    const id = await client.mutation('schedules:submit',
+    const result = await client.mutation('schedules:submit',
       { synagogueId: sid, storageId, title: luach.title, firstDate: luach.firstDate, mode: luach.mode, kind: luach.kind });
-    toast(id ? 'הלוח נשלח לאישור' : 'הקובץ לא תקין', !id);
+    if (result.error) toast(result.error, true);
+    else toast('הלוח נשלח לאישור');
   } catch (e) { toast(errText(e, 'השליחה נכשלה. נסו שוב.'), true); }
   finally { btn.disabled = false; }
 }

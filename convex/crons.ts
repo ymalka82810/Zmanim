@@ -9,4 +9,10 @@ crons.daily(
   internal.fund.sendDueReminders,
 );
 
+crons.daily(
+  "purge old schedule trash",
+  { hourUTC: 2, minuteUTC: 0 },
+  internal.schedules.purgeOldTrash,
+);
+
 export default crons;

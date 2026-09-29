@@ -52,7 +52,8 @@ export function startSync({ client, sid, getCfg, hasLocal, apply, toast }) {
     const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: text });
     if (!res.ok) throw new Error('upload');
     const { storageId } = await res.json();
-    await client.mutation('zmanimSettings:addDesign', { synagogueId: sid, hash, storageId });
+    const result = await client.mutation('zmanimSettings:addDesign', { synagogueId: sid, hash, storageId });
+    if (result && result.error) throw Object.assign(new Error('design'), { userMessage: result.error });
     known.add(hash);
   }
 
@@ -77,7 +78,8 @@ export function startSync({ client, sid, getCfg, hasLocal, apply, toast }) {
       if (failed) { failed = false; toast('ההגדרות סונכרנו עם הקהילה'); }
     } catch (e) {
       console.warn(e);
-      if (!failed) toast(navigator.onLine === false ? 'אין חיבור. ההגדרות נשמרו במכשיר ויסונכרנו בשינוי הבא'
+      if (e.userMessage) toast(e.userMessage + '. ההגדרות נשמרו במכשיר בלבד', true);
+      else if (!failed) toast(navigator.onLine === false ? 'אין חיבור. ההגדרות נשמרו במכשיר ויסונכרנו בשינוי הבא'
         : 'לא ניתן לשמור את ההגדרות בקהילה. הן נשמרו במכשיר', true);
       failed = true;
     } finally {

@@ -1,21 +1,27 @@
 import { ConvexError, v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { isManager, requireManager, requireMember } from "./roles";
+import { acceptUpload, TRASH_DAYS } from "./storage";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const MAX_BYTES = 8 * 1024 * 1024;
 const modeValidator = v.union(v.literal("holy"), v.literal("days"));
+const fileArgs = { synagogueId: v.id("synagogues"), fileId: v.id("scheduleFiles") };
 
-async function samePeriod(ctx: MutationCtx, file: Doc<"scheduleFiles">) {
+// לוחות ישנים נשמרו בלי kind, ואז סוג הלוח הוא הזהות
+const keyOf = (f: { kind?: string; mode: string }) => f.kind ?? f.mode;
+
+/** קבצים פעילים (לא בסל המחזור) של אותו לוח */
+async function samePeriod(
+  ctx: MutationCtx,
+  file: Pick<Doc<"scheduleFiles">, "synagogueId" | "firstDate" | "kind" | "mode"> & { _id?: Id<"scheduleFiles"> },
+) {
   const files = await ctx.db
     .query("scheduleFiles")
     .withIndex("by_synagogue_first", (q) => q.eq("synagogueId", file.synagogueId).eq("firstDate", file.firstDate))
     .collect();
-  // לוחות ישנים נשמרו בלי kind, ואז סוג הלוח הוא הזהות
-  const key = (f: Doc<"scheduleFiles">) => f.kind ?? f.mode;
-  return files.filter((f) => key(f) === key(file) && f._id !== file._id);
+  return files.filter((f) => keyOf(f) === keyOf(file) && f._id !== file._id && f.deletedAt === undefined);
 }
 
 async function deleteFile(ctx: MutationCtx, file: Doc<"scheduleFiles">) {
@@ -31,7 +37,7 @@ async function requireFile(ctx: MutationCtx, synagogueId: Id<"synagogues">, file
   return file;
 }
 
-/** חבר קהילה מקבל רק קבצים מאושרים. גבאי ורב מקבלים גם קבצים שממתינים לאישור. */
+/** חבר קהילה מקבל רק קבצים מאושרים. גבאי ורב מקבלים גם קבצים שממתינים לאישור. קבצים בסל המחזור לא מוצגים */
 export const list = query({
   args: { synagogueId: v.id("synagogues") },
   handler: async (ctx, args) => {
@@ -42,7 +48,9 @@ export const list = query({
       .withIndex("by_synagogue_first", (q) => q.eq("synagogueId", args.synagogueId))
       .order("desc")
       .take(100);
-    const visible = files.filter((f) => manager || f.status === "approved").slice(0, 40);
+    const visible = files
+      .filter((f) => f.deletedAt === undefined && (manager || f.status === "approved"))
+      .slice(0, 40);
     return {
       role: membership.role,
       files: await Promise.all(
@@ -73,7 +81,10 @@ export const generateUploadUrl = mutation({
   },
 });
 
-/** קובץ חדש לאותו לוח מחליף קובץ קודם שעוד ממתין. הקובץ המאושר נשאר גלוי עד שהחדש מאושר. */
+/**
+ * קובץ חדש לאותו לוח מחליף קובץ קודם שעוד ממתין. הקובץ המאושר נשאר גלוי עד שהחדש מאושר.
+ * מחזיר { id } או { error } (קובץ פסול, גדול מדי או שאין מקום בקהילה).
+ */
 export const submit = mutation({
   args: {
     synagogueId: v.id("synagogues"),
@@ -85,14 +96,19 @@ export const submit = mutation({
   },
   handler: async (ctx, args) => {
     const { userId } = await requireManager(ctx, args.synagogueId);
-    const meta = await ctx.db.system.get(args.storageId);
-    const badFile = meta === null || meta.size > MAX_BYTES || meta.contentType !== "image/png";
-    // מחזירים null במקום לזרוק שגיאה, אחרת גם מחיקת הקובץ הפסול מתבטלת
-    if (!DATE_RE.test(args.firstDate) || badFile) {
-      if (meta !== null) {
-        await ctx.storage.delete(args.storageId);
-      }
-      return null;
+    if (!DATE_RE.test(args.firstDate)) {
+      await ctx.storage.delete(args.storageId);
+      return { error: "הקובץ לא תקין" };
+    }
+    // קובץ ממתין קודם של אותו לוח יוחלף, ולכן המקום שלו לא נספר
+    const replaced = (await samePeriod(ctx, args)).filter((f) => f.status === "pending");
+    const freed = replaced.reduce((sum, f) => sum + (f.size ?? 0), 0);
+    const accepted = await acceptUpload(ctx, args.synagogueId, args.storageId, "image/png", freed);
+    if (accepted.error !== undefined) {
+      return { error: accepted.error };
+    }
+    for (const other of replaced) {
+      await deleteFile(ctx, other);
     }
     const id = await ctx.db.insert("scheduleFiles", {
       synagogueId: args.synagogueId,
@@ -104,23 +120,18 @@ export const submit = mutation({
       status: "pending",
       submittedBy: userId,
       submittedAt: Date.now(),
+      size: accepted.size,
     });
-    const file = (await ctx.db.get(id))!;
-    for (const other of await samePeriod(ctx, file)) {
-      if (other.status === "pending") {
-        await deleteFile(ctx, other);
-      }
-    }
-    return id;
+    return { id };
   },
 });
 
 export const approve = mutation({
-  args: { synagogueId: v.id("synagogues"), fileId: v.id("scheduleFiles") },
+  args: fileArgs,
   handler: async (ctx, args) => {
     const { userId } = await requireManager(ctx, args.synagogueId);
     const file = await requireFile(ctx, args.synagogueId, args.fileId);
-    if (file.status === "approved") {
+    if (file.status === "approved" || file.deletedAt !== undefined) {
       return;
     }
     await ctx.db.patch(file._id, { status: "approved", approvedBy: userId, approvedAt: Date.now() });
@@ -130,12 +141,71 @@ export const approve = mutation({
   },
 });
 
-/** דחייה של קובץ ממתין, או הסרה של קובץ מאושר. */
+/** מחיקה רכה: דחייה של קובץ ממתין או הסרה של קובץ מאושר. הקובץ עובר לסל המחזור ואפשר לשחזר אותו */
 export const remove = mutation({
-  args: { synagogueId: v.id("synagogues"), fileId: v.id("scheduleFiles") },
+  args: fileArgs,
+  handler: async (ctx, args) => {
+    const { userId } = await requireManager(ctx, args.synagogueId);
+    const file = await requireFile(ctx, args.synagogueId, args.fileId);
+    if (file.deletedAt === undefined) {
+      await ctx.db.patch(file._id, { deletedAt: Date.now(), deletedBy: userId });
+    }
+  },
+});
+
+/** שחזור מסל המחזור. אם בינתיים נשלח לוח אחר לאותו תאריך, הקובץ חוזר כממתין לאישור */
+export const restore = mutation({
+  args: fileArgs,
+  handler: async (ctx, args) => {
+    await requireManager(ctx, args.synagogueId);
+    const file = await requireFile(ctx, args.synagogueId, args.fileId);
+    if (file.deletedAt === undefined) {
+      return;
+    }
+    const conflict = (await samePeriod(ctx, file)).length > 0;
+    await ctx.db.patch(file._id, {
+      deletedAt: undefined,
+      deletedBy: undefined,
+      ...(conflict ? { status: "pending" as const, approvedAt: undefined, approvedBy: undefined } : {}),
+    });
+    return { pending: conflict && file.status === "approved" };
+  },
+});
+
+/** מחיקה קשה: הקובץ נמחק לצמיתות ומפנה מקום */
+export const purge = mutation({
+  args: fileArgs,
   handler: async (ctx, args) => {
     await requireManager(ctx, args.synagogueId);
     const file = await requireFile(ctx, args.synagogueId, args.fileId);
     await deleteFile(ctx, file);
+  },
+});
+
+export const emptyTrash = mutation({
+  args: { synagogueId: v.id("synagogues") },
+  handler: async (ctx, args) => {
+    await requireManager(ctx, args.synagogueId);
+    const files = await ctx.db
+      .query("scheduleFiles")
+      .withIndex("by_synagogue_first", (q) => q.eq("synagogueId", args.synagogueId))
+      .collect();
+    for (const f of files) {
+      if (f.deletedAt !== undefined) await deleteFile(ctx, f);
+    }
+  },
+});
+
+export const purgeOldTrash = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const cutoff = Date.now() - TRASH_DAYS * 24 * 60 * 60 * 1000;
+    const old = await ctx.db
+      .query("scheduleFiles")
+      .withIndex("by_deletedAt", (q) => q.gt("deletedAt", 0).lt("deletedAt", cutoff))
+      .take(200);
+    for (const f of old) {
+      await deleteFile(ctx, f);
+    }
   },
 });
