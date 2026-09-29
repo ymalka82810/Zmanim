@@ -288,6 +288,18 @@ async function leaveSynagogue(id){
   } catch(e){ toast(errMsg(e)); }
 }
 
+async function deleteSynagogue(id){
+  const synName = S.detail ? S.detail.name : 'הקהילה';
+  const msg = `למחוק את ${synName} לצמיתות?\nכל הנתונים של הקהילה יימחקו: הלוחות, הקבצים, הקידושים, הקופה וההגדרות. אי אפשר לבטל את המחיקה.`;
+  if (!await SiteDialog.confirm(msg, { ok: 'מחיקה לצמיתות', cancel: 'ביטול', danger: true, within: $('#sheet') })) return;
+  try {
+    await client.mutation('synagogues:remove', { synagogueId: id });
+    closeSheet();
+    await refreshSynagogues();
+    toast('הקהילה נמחקה'); render();
+  } catch(e){ toast(errMsg(e)); }
+}
+
 /* ---------- Render ---------- */
 function render(){
   const app = $('#app');
@@ -444,11 +456,16 @@ function renderDetailSheet(){
       <button class="btn sec" type="submit" style="margin-top:12px">שמירת פרטים</button>
     </form>`;
   }
-  html += `<button class="btn danger" type="button" id="btnLeave" style="margin-top:18px">עזיבת הקהילה</button>`;
+  // גבאי או רב שנשאר לבד בקהילה לא יכול לעזוב, אבל יכול למחוק אותה
+  const canDelete = manager && S.members && S.members.length === 1;
+  html += canDelete
+    ? `<button class="btn danger" type="button" id="btnDeleteSyn" style="margin-top:18px">מחיקת הקהילה</button>`
+    : `<button class="btn danger" type="button" id="btnLeave" style="margin-top:18px">עזיבת הקהילה</button>`;
 
   openSheet(html);
   $('#sheet [data-close]').addEventListener('click', closeSheet);
-  $('#btnLeave').addEventListener('click', () => leaveSynagogue(s._id));
+  if (canDelete) $('#btnDeleteSyn').addEventListener('click', () => deleteSynagogue(s._id));
+  else $('#btnLeave').addEventListener('click', () => leaveSynagogue(s._id));
   if (!isActive) $('#btnSetActive').addEventListener('click', () => setActive(s._id));
   if (manager){
     $('#inviteForm').addEventListener('submit', e => { e.preventDefault(); inviteByEmail(e.target, s._id); });

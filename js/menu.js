@@ -2,7 +2,8 @@
  * כל דף טוען את הקובץ הזה, והוא מוסיף פס עליון עם כפתור תפריט, פס זהב מתחתיו, שורת היום
  * (שם הקהילה, השבת או החג הקרובים והתאריך) ומגירה עם שלושת הדפים.
  * הדף מעדכן את שם הקהילה ב-SiteMenu.setCommunity({ _id, name, il }); השם נשמר במכשיר כדי להופיע מיד בכניסה הבאה.
- * הקובץ גם רושם את ה-service worker, כך שכל דף מקבל את הגרסה העדכנית ולא עותק ישן ממטמון הדפדפן.
+ * הקובץ גם רושם את ה-service worker מכל דף. הדפים נפתחים מהעותק שבמכשיר; כשגרסה חדשה של האתר
+ * מסיימת לרדת ברקע, הדף מתרענן פעם אחת כדי להציג אותה (ואם המשתמש באמצע הקלדה – כשהוא עוזב את הדף).
  * הכתובות מחושבות ביחס למיקום הקובץ, כך שזה עובד גם מתיקיית משנה.
  */
 (function(){
@@ -118,6 +119,20 @@ window.SiteMenu = {
 };
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  // בכניסה הראשונה אין עדיין service worker שמנהל את הדף, ואז אין גרסה ישנה להחליף
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false;
+  const busy = () => {
+    const el = document.activeElement;
+    return (el && el.matches('input, textarea, select, [contenteditable="true"]'))
+      || !!document.querySelector('dialog[open], .sheet-wrap:not([hidden]), .sm-open');
+  };
+  const reload = () => { if (!reloading){ reloading = true; location.reload(); } };
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloading) return;
+    if (!busy()) return reload();
+    document.addEventListener('visibilitychange', () => { if (document.hidden) reload(); });
+  });
   navigator.serviceWorker.register(new URL('sw.js', ROOT).href).catch(() => {});
 }
 

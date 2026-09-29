@@ -2,11 +2,11 @@
  * Service worker: מאפשר לאתר לעבוד בלי אינטרנט.
  * קבצי האתר: מהמטמון, בלי לחכות לרשת, כדי שכל דף ייפתח מיד. CACHE משתנה בכל שינוי בתוכן הקבצים
  * (tools/build-sw.js), ולכן גרסה חדשה של האתר מתקינה service worker חדש שמוריד את כל הקבצים מחדש,
- * והיא מוצגת מהטעינה הבאה. ההורדה עוקפת את המטמון של הדפדפן, כי GitHub Pages מורה לשמור קבצים 10 דקות.
+ * וכשהוא נכנס לפעולה menu.js מרענן את הדף פעם אחת כדי להציג אותה. ההורדה עוקפת את המטמון של הדפדפן, כי GitHub Pages מורה לשמור קבצים 10 דקות.
  * בשרת המקומי (npm start) ובאפליקציה הקבצים נמצאים במכשיר, ולכן שם קודם מהרשת, כדי ששינוי יופיע מיד.
  * גופנים: מהמטמון, ואם אין – מהרשת.
  */
-const CACHE = 'luach-94356bb808';
+const CACHE = 'luach-ceb1115d17';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/app.js', 'js/astro.js', 'js/auth.js', 'js/community.js', 'js/config.js', 'js/convex-config.js', 'js/dates.js', 'js/dialog.js', 'js/font-fill.js', 'js/hebrew.js', 'js/image.js', 'js/luach.js', 'js/menu.js', 'js/moadim.js', 'js/render.js', 'js/settings-sync.js', 'js/template-read.js', 'js/template-render.js', 'js/template-ui.js', 'js/theme.js', 'js/zmanim.js',
