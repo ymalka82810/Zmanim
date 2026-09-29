@@ -29,10 +29,11 @@ button:hover:not(:disabled){box-shadow:var(--sh-md);transform:translateY(-1px)}
 button:active:not(:disabled){transform:translateY(0);box-shadow:var(--sh-sm)}
 button:disabled{box-shadow:none;transform:none;opacity:.55}
 :focus-visible{outline:2px solid var(--wine);outline-offset:2px}
+:root{--page-width:640px}
 .wrap{max-width:640px;margin:0 auto;padding:0 16px 48px}
 .empty{text-align:center;color:var(--muted);padding:40px 12px}
 /* כותרת הדף – כמו בלוח הזמנים */
-.hero{padding:22px 0 4px}
+.hero{padding:8px 0 4px}
 .hero h1{font-family:var(--serif);font-weight:900;font-size:1.85rem;margin:6px 0 4px;line-height:1.3;letter-spacing:.2px}
 .hero p.muted{margin:4px 0 12px;line-height:1.65;font-size:.98rem}
 #app>.btn,#app>a.btn,main>.btn,main>a.btn{display:flex;width:max-content;margin:20px 0 0}

@@ -109,8 +109,9 @@ function headerHTML(){
   const switcher = S.synagogues.length > 1
     ? `<select class="btn sec" id="synSwitch" aria-label="החלפת קהילה">${S.synagogues.map(x => `<option value="${x._id}"${x._id === S.sid ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select>`
     : '';
+  if (window.SiteMenu) SiteMenu.setCommunity({ _id: S.sid, name: s.name, il: s.il });
   return `<header class="top">
-    <div class="shul"><h1>${esc(s.name)}</h1><small>${esc(s.city || '')}${s.city ? ', ' : ''}${s.il ? 'ארץ ישראל' : 'חוץ לארץ'} | ${ROLE_LABEL[S.board.role]}</small></div>
+    <div class="shul"><h1>יומן קהילה</h1><small>${esc(s.city || '')}${s.city ? ', ' : ''}${s.il ? 'ארץ ישראל' : 'חוץ לארץ'} | ${ROLE_LABEL[S.board.role]}</small></div>
     ${switcher}
   </header>`;
 }

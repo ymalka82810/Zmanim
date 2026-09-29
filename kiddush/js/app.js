@@ -136,8 +136,9 @@ function renderMain(){
 }
 function headerHTML(){
   const s = syn(), unread = S.board.notifications.filter(n => !n.read).length;
+  if (window.SiteMenu) SiteMenu.setCommunity({ _id: S.sid, name: s.name, il: s.il });
   return `<header class="top">
-    <div class="shul"><h1>${esc(s.name)}</h1><small>${esc(s.city||'')}${s.city?', ':''}${s.il?'ארץ ישראל':'חוץ לארץ'} | ${ROLE_LABEL[myRole()]}</small></div>
+    <div class="shul"><h1>לוח קידושים</h1><small>${esc(s.city||'')}${s.city?', ':''}${s.il?'ארץ ישראל':'חוץ לארץ'} | ${ROLE_LABEL[myRole()]}</small></div>
     ${S.synagogues.length > 1?`<button class="iconbtn" data-act="switchSyn" aria-label="החלפת קהילה">${ICON.swap}</button>`:''}
     <button class="iconbtn" data-act="notes" aria-label="התראות">${ICON.bell}${unread?`<span class="dot">${unread}</span>`:''}</button>
   </header>`;

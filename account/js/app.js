@@ -324,6 +324,7 @@ async function leaveSynagogue(id){
 function render(){
   const app = $('#app');
   if (!S.ready){ app.innerHTML = '<div class="empty">טוען…</div>'; return; }
+  if (window.SiteMenu) SiteMenu.setCommunity(S.isAuthenticated ? S.synagogues.find(s => s._id === A.activeSynagogueId()) : null);
   if (!S.isAuthenticated) return renderSignedOut(app);
   renderSignedIn(app);
 }

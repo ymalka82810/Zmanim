@@ -125,6 +125,7 @@ async function load(){
   if (!synagogues.some(s => s._id === id)) { id = synagogues[0] ? synagogues[0]._id : null; Auth.setActiveSynagogueId(id); }
   if (!id) { onManager(null); return gate('עדיין לא הצטרפת לקהילה. אפשר להצטרף דרך הזמנה מהגבאי או לפתוח קהילה חדשה.', `<a class="btn-link" href="${ACCOUNT_URL}">לחשבון שלי</a>`); }
   const s = synagogues.find(x => x._id === id);
+  if (window.SiteMenu) SiteMenu.setCommunity(s);
   $('communityName').textContent = s.name;
   $('memberCommunityName').textContent = s.name;
   if (id !== sid || !unsubscribe) subscribe(id);

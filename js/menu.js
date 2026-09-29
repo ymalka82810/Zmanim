@@ -1,5 +1,8 @@
 /* תפריט המבורגר משותף לשלושת הדפים: לוח זמנים, לוח קידושים וקופת בית הכנסת.
- * כל דף טוען את הקובץ הזה, והוא מוסיף פס עליון עם כפתור תפריט, פס זהב מתחתיו ומגירה עם שלושת הדפים.
+ * כל דף טוען את הקובץ הזה, והוא מוסיף פס עליון עם כפתור תפריט, פס זהב מתחתיו, שורת היום
+ * (שם הקהילה, השבת או החג הקרובים והתאריך) ומגירה עם שלושת הדפים.
+ * הדף מעדכן את שם הקהילה ב-SiteMenu.setCommunity({ _id, name, il }); השם נשמר במכשיר כדי להופיע מיד בכניסה הבאה.
+ * הקובץ גם רושם את ה-service worker, כך שכל דף מקבל את הגרסה העדכנית ולא עותק ישן ממטמון הדפדפן.
  * הכתובות מחושבות ביחס למיקום הקובץ, כך שזה עובד גם מתיקיית משנה.
  */
 (function(){
@@ -41,8 +44,81 @@ const css = `
 :root[data-theme="dark"] .sm-theme{border-color:#2d3440}
 :root[data-theme="dark"] .sm-theme button{color:#9ba4b3}
 :root[data-theme="dark"] .sm-theme button[aria-pressed="true"]{background:#8fb0ec;color:#0f1524}
-@media print{.sm-bar,.sm-stripe,.sm-layer{display:none!important}}
+.sm-day{direction:rtl;color:#202a3f;font-family:"Assistant",Arial,sans-serif}
+.sm-day-in{box-sizing:border-box;max-width:var(--page-width,760px);margin:0 auto;padding:22px var(--page-gutter,16px) 0}
+.sm-day-syn{font-size:.92rem;font-weight:600;color:#726c59}
+.sm-day-title{font-family:"Frank Ruhl Libre",Georgia,serif;font-weight:900;font-size:clamp(2rem,6vw,2.6rem);line-height:1.15;margin:2px 0 4px;letter-spacing:.2px}
+.sm-day-dates{font-size:.95rem;color:#726c59}
+.sm-day-dates b{font-family:"Frank Ruhl Libre",Georgia,serif;font-weight:700;color:#202a3f}
+:root[data-theme="dark"] .sm-day,:root[data-theme="dark"] .sm-day-dates b{color:#e9ecf5}
+:root[data-theme="dark"] .sm-day-syn,:root[data-theme="dark"] .sm-day-dates{color:#98a2c0}
+@media print{.sm-bar,.sm-stripe,.sm-day,.sm-layer{display:none!important}}
 `;
+
+/* ---------- שורת היום ---------- */
+const COMMUNITY_KEY = 'site.community', ACTIVE_KEY = 'site.activeSynagogue', CONFIG_KEY = 'zmanim.config';
+const HEBCAL_SRC = new URL('vendor/hebcal/hebcal-core-6.9.3.min.js', ROOT).href;
+function read(key){ try { return JSON.parse(localStorage.getItem(key)); } catch (e) { return null; } }
+function readRaw(key){ try { return localStorage.getItem(key); } catch (e) { return null; } }
+function write(key, v){ try { v == null ? localStorage.removeItem(key) : localStorage.setItem(key, JSON.stringify(v)); } catch (e) { /* אין גישה לאחסון */ } }
+
+let day = null;
+const gLong = new Intl.DateTimeFormat('he-IL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+const noNiqqud = s => String(s).replace(/[֑-ׇ]/g, '');
+
+/* הקהילה הפעילה כפי שנשמרה במכשיר; בלי קהילה – שם בית הכנסת מהגדרות לוח הזמנים */
+function community(){
+  const saved = read(COMMUNITY_KEY), cfg = read(CONFIG_KEY) || {};
+  if (saved && saved._id === readRaw(ACTIVE_KEY)) return saved;
+  return { name: (cfg.shul || '').trim(), il: cfg.il !== false };
+}
+
+/* השבת או החג הקרובים (כמו בקופה): פרשת השבוע, או "שבת <חג>" כשהשבת היא חג */
+function occasion(date, il){
+  const H = window.hebcal;
+  if (!H) return { heb: new Intl.DateTimeFormat('he-u-ca-hebrew', { day: 'numeric', month: 'long', year: 'numeric' }).format(date), title: '' };
+  const hd = new H.HDate(date);
+  let title = '';
+  try {
+    const p = new H.Sedra(hd.getFullYear(), il).lookup(hd);
+    const name = p.parsha.map(x => noNiqqud(H.Locale.gettext(x, 'he'))).join('-');
+    title = p.chag ? 'שבת ' + name : 'פרשת ' + name;
+  } catch (e) { /* אין פרשה לתאריך הזה */ }
+  return { heb: hd.renderGematriya(true), title };
+}
+
+function renderDay(){
+  if (!day) return;
+  const c = community(), now = new Date(), o = occasion(now, c.il !== false);
+  day.syn.textContent = c.name || '';
+  day.syn.hidden = !c.name;
+  day.title.textContent = o.title;
+  day.title.hidden = !o.title;
+  day.dates.textContent = '';
+  const b = document.createElement('b');
+  b.textContent = o.heb;
+  day.dates.append(b, ' · ' + gLong.format(now));
+}
+
+function loadHebcal(){
+  if (window.hebcal) return;
+  const s = document.createElement('script');
+  s.src = HEBCAL_SRC;
+  s.onload = renderDay;
+  document.head.appendChild(s);
+}
+
+window.SiteMenu = {
+  /* s: { _id, name, il } של הקהילה הפעילה, או null כשאין */
+  setCommunity(s){
+    write(COMMUNITY_KEY, s && s.name ? { _id: s._id, name: s.name, il: !!s.il } : null);
+    renderDay();
+  }
+};
+
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  navigator.serviceWorker.register(new URL('sw.js', ROOT).href).catch(() => {});
+}
 
 function build(){
   const style = document.createElement('style');
@@ -112,7 +188,14 @@ function build(){
   stripe.className = 'sm-stripe';
   stripe.setAttribute('aria-hidden', 'true');
 
-  document.body.prepend(bar, stripe);
+  const dayBox = document.createElement('div');
+  dayBox.className = 'sm-day';
+  dayBox.innerHTML = '<div class="sm-day-in"><div class="sm-day-syn"></div><div class="sm-day-title"></div><div class="sm-day-dates"></div></div>';
+  day = { syn: dayBox.querySelector('.sm-day-syn'), title: dayBox.querySelector('.sm-day-title'), dates: dayBox.querySelector('.sm-day-dates') };
+  renderDay();
+  loadHebcal();
+
+  document.body.prepend(bar, stripe, dayBox);
   document.body.appendChild(layer);
 }
 

@@ -10,7 +10,6 @@ const iso=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
 const todayIso=()=>iso(new Date());
 const parseIso=s=>{const [y,m,d]=String(s).split("-").map(Number);return new Date(y,(m||1)-1,d||1)};
 const gFmt=new Intl.DateTimeFormat("he-IL",{day:"numeric",month:"numeric",year:"numeric"});
-const gLong=new Intl.DateTimeFormat("he-IL",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
 const noNiqqud=s=>String(s).replace(/[\u0591-\u05C7]/g,"").replace("שּׁ","ש");
 function toast(t){const e=$("#toast");e.textContent=t;e.classList.add("on");clearTimeout(toast._t);toast._t=setTimeout(()=>e.classList.remove("on"),2200)}
 
@@ -244,10 +243,8 @@ function viewMine(){
 function viewMessage(text,button){return `<div class="empty" style="margin-top:40px">${text}${button?`<div style="margin-top:14px">${button}</div>`:""}</div>`}
 
 function render(){
-  const t=todayIso(), h=heb(t), ready=stage==="ready", manager=ready&&isManager();
-  $("#synName").textContent=ready?settings.synName:"קופת בית הכנסת";
-  $("#todayParsha").textContent=h.parsha||"קופת בית הכנסת";
-  $("#todayDates").innerHTML=`<b>${esc(h.heb)}</b> · ${esc(gLong.format(new Date()))}`;
+  const ready=stage==="ready", manager=ready&&isManager();
+  if(ready&&window.SiteMenu)SiteMenu.setCommunity({_id:sid,name:settings.synName,il:settings.israel});
   document.querySelector("nav.tabs").hidden=!manager;
   $("#addBtn").hidden=!manager;
   $("#openSettings").hidden=!manager;
