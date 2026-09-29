@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { displayName, isManager, requireMember } from "./roles";
 import { logError } from "./errorLog";
+import { enabledFeatures, hasFeature, requireFeature } from "./features";
 import * as Notifications from "./notifications";
 import { addDays, daysBetween, hebrewDateText, isValidHebrewDate, nextYahrzeit, todayKey } from "./hebrewDate";
 
@@ -26,6 +27,10 @@ export const list = query({
   handler: async (ctx, args) => {
     const { userId, membership } = await requireMember(ctx, args.synagogueId);
     const manager = isManager(membership.role);
+    // האזכרות שייכות ל"השבוע שלי". כשהוא כבוי יומן הקהילה פשוט לא מציג אזכרות
+    if (!(await hasFeature(ctx, args.synagogueId, "week"))) {
+      return { role: membership.role, items: [] };
+    }
     const today = DATE_KEY_RE.test(args.today) ? args.today : todayKey();
     const docs = await ctx.db
       .query("yahrzeits")
@@ -85,6 +90,7 @@ function cleanFields(args: { name: string; relation: string; hDay: number; hMont
 
 async function editable(ctx: QueryCtx, synagogueId: Id<"synagogues">, id: Id<"yahrzeits">) {
   const { userId, membership } = await requireMember(ctx, synagogueId);
+  await requireFeature(ctx, synagogueId, "week");
   const y = await ctx.db.get(id);
   if (y === null || y.synagogueId !== synagogueId) {
     throw new ConvexError("האזכרה לא נמצאה");
@@ -99,6 +105,7 @@ export const add = mutation({
   args: { synagogueId: v.id("synagogues"), ...fields },
   handler: async (ctx, { synagogueId, ...rest }) => {
     const { userId } = await requireMember(ctx, synagogueId);
+    await requireFeature(ctx, synagogueId, "week");
     return await ctx.db.insert("yahrzeits", { synagogueId, userId, ...cleanFields(rest), createdAt: Date.now() });
   },
 });
@@ -136,7 +143,14 @@ export const sendReminders = internalMutation({
     try {
       const today = todayKey();
       const docs = await ctx.db.query("yahrzeits").collect();
+      const active = new Map<Id<"synagogues">, boolean>();
       for (const y of docs) {
+        if (!active.has(y.synagogueId)) {
+          active.set(y.synagogueId, enabledFeatures(await ctx.db.get(y.synagogueId)).includes("week"));
+        }
+        if (!active.get(y.synagogueId)) {
+          continue;
+        }
         const next = nextYahrzeit(y, addDays(today, 1));
         const days = next === null ? Infinity : daysBetween(today, next);
         if (next === null || next === y.remindedFor || days > REMIND_DAYS) {

@@ -32,6 +32,9 @@ const S = {
   dateKey: null, data: null, error: null, view: 'day',
 };
 const isManager = () => !!S.data?.manager;
+/* הפיצ'ר פעיל בקהילה (convex/features.ts). בלי אישור של כל הגבאים והרב הדף לא זמין */
+const featureOn = sid => !!S.synagogues.find(s => s._id === sid)?.features?.includes('aliyot');
+
 
 /* ---------- Boot & data ---------- */
 async function boot(){
@@ -76,7 +79,7 @@ function attach(sid){
   // בהחלפת תאריך הנתונים הקודמים נשארים עד שהחדשים מגיעים, כדי שהדף לא יהבהב
   if (sid !== S.sid){ S.data = null; }
   S.sid = sid; S.error = null;
-  if (!sid) return;
+  if (!sid || !featureOn(sid)) return;
   unsub = Auth.watch('aliyot:board', { synagogueId: sid, dateKey: S.dateKey }, data => { S.data = data; render(); },
     e => { console.warn(e); S.error = errMsg(e); render(); });
 }
@@ -111,6 +114,7 @@ function render(){
   if (!S.ready){ app.innerHTML = '<div class="empty">טוען…</div>'; return; }
   if (!S.signedIn){ app.innerHTML = hero('כדי לראות את חלוקת העליות יש להתחבר עם חשבון Google.', '<button class="btn btn-google" data-act="signIn">כניסה עם Google</button>'); return; }
   if (!S.sid){ app.innerHTML = hero('עדיין לא הצטרפת לקהילה. אפשר להצטרף דרך הזמנה מהגבאי או לפתוח קהילה חדשה.', `<a class="btn" href="${ACCOUNT_URL}">לחשבון שלי</a>`); return; }
+  if (!featureOn(S.sid)){ app.innerHTML = hero('חלוקת העליות אינה פעילה בקהילה זו. כדי להשתמש בה, כל הגבאים והרב צריכים לאשר אותה ב"החשבון שלי", בפרטי הקהילה.', `<a class="btn" href="${ACCOUNT_URL}">לחשבון שלי</a>`); return; }
   if (S.error && !S.data){ app.innerHTML = hero(esc(S.error), `<a class="btn" href="${ACCOUNT_URL}">לחשבון שלי</a>`); return; }
   if (!S.data){ app.innerHTML = '<div class="empty">טוען…</div>'; return; }
   app.innerHTML = headerHTML() + (isManager() ? managerHTML() : memberHTML());

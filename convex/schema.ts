@@ -44,6 +44,8 @@ export default defineSchema({
     address: v.optional(v.string()),
     // קוד העמוד הציבורי לאורחים (guest/?c=...). בלי קוד העמוד כבוי
     publicCode: v.optional(v.string()),
+    // פיצ'רים נוספים שכל הגבאים והרב אישרו (convex/features.ts). בלי – רק הפיצ'רים הבסיסיים
+    features: v.optional(v.array(v.string())),
   })
     .index("by_invite", ["inviteCode"])
     .index("by_public", ["publicCode"]),
@@ -73,6 +75,16 @@ export default defineSchema({
     .index("by_email", ["email"])
     .index("by_synagogue", ["synagogueId"])
     .index("by_synagogue_email", ["synagogueId", "email"]),
+
+  // בקשה של גבאי או רב להפעיל או לכבות פיצ'ר. מתבצעת כשכל הגבאים והרב אישרו (approvals)
+  featureRequests: defineTable({
+    synagogueId: v.id("synagogues"),
+    feature: v.string(),
+    enable: v.boolean(),
+    requestedBy: v.id("users"),
+    approvals: v.array(v.id("users")),
+    createdAt: v.number(),
+  }).index("by_synagogue", ["synagogueId"]),
 
   kiddushBookings: defineTable({
     synagogueId: v.id("synagogues"),

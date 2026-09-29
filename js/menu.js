@@ -11,13 +11,14 @@
 const ROOT = new URL('..', document.currentScript.src);
 /* "לוח זמנים" ו"יומן קהילה" מוצגים לסירוגין לפי תפקיד המשתמש בקהילה הפעילה (menu:counts, שדה manager):
  * חבר קהילה רגיל רואה את יומן הקהילה במקום לשונית עריכת לוח הזמנים, שנטו לגבאי/רב. אורח או גבאי/רב
- * רואים את לוח הזמנים כרגיל, ויומן הקהילה נשאר מחוץ למגירה (ברירת המחדל עד שידוע תפקיד המשתמש) */
+ * רואים את לוח הזמנים כרגיל, ויומן הקהילה נשאר מחוץ למגירה (ברירת המחדל עד שידוע תפקיד המשתמש).
+ * דף עם feature שייך לפיצ'ר שהקהילה צריכה להפעיל (convex/features.ts), ומוצג רק כשהוא ברשימת features של menu:counts */
 const PAGES = [
   { path: '',                   title: 'לוח זמנים', hideForMember: true },
-  { path: 'week/',              title: 'השבוע שלי' },
+  { path: 'week/',              title: 'השבוע שלי', feature: 'week' },
   { path: 'kiddush/',          title: 'לוח קידושים' },
   { path: 'gabbai/',            title: 'קופת בית הכנסת' },
-  { path: 'aliyot/',            title: 'חלוקת עליות' },
+  { path: 'aliyot/',            title: 'חלוקת עליות', feature: 'aliyot' },
   { path: 'account/',           title: 'החשבון שלי' },
   { path: 'community-calendar/', title: 'יומן קהילה', showForMember: true }
 ];
@@ -80,17 +81,17 @@ function read(key){ try { return JSON.parse(localStorage.getItem(key)); } catch 
 function readRaw(key){ try { return localStorage.getItem(key); } catch (e) { return null; } }
 function write(key, v){ try { v == null ? localStorage.removeItem(key) : localStorage.setItem(key, JSON.stringify(v)); } catch (e) { /* אין גישה לאחסון */ } }
 
-/* תפקיד המשתמש בקהילה הפעילה, מהתשובה האחרונה השמורה של menu:counts (ראו js/auth.js: cached/remember) –
- * לפני שיש חיבור ל-Convex ולפני ש-js/auth.js אפילו נטען (menu.js רץ לפניו). כשאין תשובה שמורה: null (לא ידוע).
- * ככה המגירה נבנית עם התפקיד הנכון כבר מההתחלה, ולא רק אחרי שה-watch האסינכרוני מתקן אותה */
-function cachedManager(){
+/* התשובה האחרונה השמורה של menu:counts לקהילה הפעילה (ראו js/auth.js: cached/remember) – תפקיד המשתמש
+ * והפיצ'רים, לפני שיש חיבור ל-Convex ולפני ש-js/auth.js אפילו נטען (menu.js רץ לפניו). כשאין תשובה שמורה: null.
+ * ככה המגירה נבנית נכון כבר מההתחלה, ולא רק אחרי שה-watch האסינכרוני מתקן אותה */
+function cachedCounts(){
   const sid = readRaw(ACTIVE_KEY);
   if (!sid || !readRaw(TOKEN_KEY)) return null;
   try {
     const raw = localStorage.getItem('site.cache.menu:counts:' + JSON.stringify({ synagogueId: sid }));
     if (raw == null) return null;
     const d = JSON.parse(raw);
-    return d && typeof d.manager === 'boolean' ? d.manager : null;
+    return d && typeof d.manager === 'boolean' ? d : null;
   } catch (e) { return null; }
 }
 
@@ -134,14 +135,21 @@ function loadHebcal(){
  * auth.js נטען אחרי הקובץ הזה, ולכן המעקב מתחיל רק כשהדף סיים להיטען, ומתחדש כשהקהילה הפעילה מתחלפת */
 const badges = { links: [], btn: null, total: null, data: null, sid: null, stop: null };
 
+/* d: תשובת menu:counts, או null כשעדיין לא ידוע */
+function hiddenPage(p, d){
+  if (p.feature && !(d && Array.isArray(d.features) && d.features.includes(p.feature))) return true;
+  const member = !!d && d.manager === false;
+  if (p.hideForMember) return member;
+  if (p.showForMember) return !member;
+  return false;
+}
+
 function renderCounts(){
   const d = badges.data || {};
-  const member = badges.data && badges.data.manager === false;
   let total = 0;
   for (const l of badges.links){
-    if (l.hideForMember) l.a.hidden = member;
-    else if (l.showForMember) l.a.hidden = !member;
-    const n = d[l.path] || 0;
+    l.a.hidden = hiddenPage(l.page, badges.data);
+    const n = l.a.hidden ? 0 : d[l.path] || 0;
     total += n;
     l.count.hidden = !n;
     l.count.textContent = n > 99 ? '99+' : String(n);
@@ -224,7 +232,7 @@ function build(){
   layer.hidden = true;
   layer.innerHTML = `<div class="sm-shade"></div><nav class="sm-drawer" id="sm-drawer" aria-label="דפי האתר"><h2>בית הכנסת</h2></nav>`;
   const nav = layer.querySelector('nav');
-  const mgr = cachedManager(); /* התפקיד הידוע כבר עכשיו, לפני שה-watch האסינכרוני מתחיל; null = לא ידוע */
+  const known = cachedCounts(); /* מה שידוע כבר עכשיו, לפני שה-watch האסינכרוני מתחיל; null = לא ידוע */
   for (const p of PAGES){
     const a = document.createElement('a');
     a.href = new URL(p.path, ROOT).href;
@@ -235,10 +243,9 @@ function build(){
     count.hidden = true;
     a.append(label, count);
     if (p === current) a.setAttribute('aria-current', 'page');
-    if (p.hideForMember) a.hidden = mgr === false;
-    else if (p.showForMember) a.hidden = mgr !== false;
+    a.hidden = hiddenPage(p, known);
     nav.appendChild(a);
-    badges.links.push({ path: p.path, title: p.title, a, count, hideForMember: !!p.hideForMember, showForMember: !!p.showForMember });
+    badges.links.push({ page: p, path: p.path, title: p.title, a, count });
   }
 
   if (window.SiteTheme){

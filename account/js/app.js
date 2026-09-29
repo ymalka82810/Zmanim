@@ -14,7 +14,14 @@ const roleOptions = (selected, disableRabbi) => Object.entries(ROLE)
 /* גבאי לא יכול לשנות תפקיד של גבאי אחר או של הרב; רק הרב יכול. */
 const canManageMember = (myRole, isSelf, targetRole) => isSelf || myRole === 'rabbi' || !isManager(targetRole);
 
-const S = { ready:false, isAuthenticated:false, me:null, synagogues:[], invitations:[], joinCode:null, joinInfo:undefined, detail:null, members:null, pending:null, errorLogs:null, membersSheetOpen:false, membersSearch:'' };
+/* פיצ'רים שהקהילה בוחרת אם להפעיל (convex/features.ts). הפעלה וכיבוי דורשים אישור של כל הגבאים והרב */
+const BASIC_FEATURES = ['החשבון שלי', 'לוח קידושים', 'קופת בית הכנסת', 'יומן קהילה', 'לוח זמנים (לגבאים ולרב)'];
+const FEATURES = {
+  aliyot: { title: 'חלוקת עליות', desc: 'רישום מי עלה לתורה, והצעה למי לתת עלייה לפי חיובים ולפי מי שלא עלה זמן רב.' },
+  week: { title: 'השבוע שלי', desc: 'מסך אישי לכל חבר: אזכרות, הרשמה למניין, הקידוש והחוב שלו בקופה.' },
+};
+
+const S = { ready:false, isAuthenticated:false, me:null, synagogues:[], invitations:[], joinCode:null, joinInfo:undefined, detail:null, members:null, pending:null, features:null, errorLogs:null, membersSheetOpen:false, membersSearch:'' };
 
 let toastT;
 function toast(msg){ let t = $('.toast'); if (!t){ t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role','status'); document.body.appendChild(t); } t.textContent = msg; clearTimeout(toastT); toastT = setTimeout(() => t.remove(), 3600); }
@@ -178,16 +185,17 @@ async function saveHebrewName(form){
 }
 
 async function loadManagerData(id){
-  const [members, pending] = await Promise.all([
+  const [members, pending, features] = await Promise.all([
     client.query('members:list', { synagogueId: id }).catch(() => []),
     client.query('invitations:listForSynagogue', { synagogueId: id }).catch(() => []),
+    client.query('features:status', { synagogueId: id }).catch(() => null),
   ]);
-  S.members = members; S.pending = pending;
+  S.members = members; S.pending = pending; S.features = features;
 }
 
 async function openDetail(id){
   refreshDetail(id);
-  S.members = null; S.pending = null;
+  S.members = null; S.pending = null; S.features = null;
   render();
   if (S.detail && isManager(S.detail.role)){
     await loadManagerData(id);
@@ -203,6 +211,41 @@ async function saveSynagogue(form, id){
     await client.mutation('synagogues:update', { synagogueId: id, name, city, il, address });
     await refreshSynagogues(); refreshDetail(id);
     toast('הפרטים נשמרו'); render();
+  } catch(e){ toast(errMsg(e)); }
+}
+
+async function refreshFeatures(synagogueId){
+  S.features = await client.query('features:status', { synagogueId }).catch(() => S.features);
+  await refreshSynagogues(); refreshDetail(synagogueId);
+  render();
+}
+async function requestFeature(synagogueId, feature, enable){
+  const f = FEATURES[feature];
+  const managers = (S.members || []).filter(m => isManager(m.role)).length;
+  const msg = managers > 1
+    ? `לבקש ${enable ? 'להפעיל' : 'לכבות'} את "${f.title}"? השינוי ייכנס לתוקף אחרי שכל הגבאים והרב יאשרו.`
+    : `${enable ? 'להפעיל' : 'לכבות'} את "${f.title}" בקהילה?`;
+  if (!await SiteDialog.confirm(msg, { ok: enable ? 'הפעלה' : 'כיבוי', danger: !enable, within: $('#sheet') })) return;
+  try {
+    await client.mutation('features:request', { synagogueId, feature, enable });
+    toast(managers > 1 ? 'הבקשה נשלחה לאישור הגבאים והרב' : enable ? `"${f.title}" הופעל` : `"${f.title}" כובה`);
+    await refreshFeatures(synagogueId);
+  } catch(e){ toast(errMsg(e)); }
+}
+async function approveFeature(synagogueId, requestId){
+  try {
+    await client.mutation('features:approve', { synagogueId, requestId });
+    toast('האישור נשמר');
+    await refreshFeatures(synagogueId);
+  } catch(e){ toast(errMsg(e)); }
+}
+async function rejectFeature(synagogueId, requestId, mine){
+  const msg = mine ? 'לבטל את הבקשה?' : "לדחות את הבקשה? הפיצ'ר יישאר במצבו הנוכחי.";
+  if (!await SiteDialog.confirm(msg, { ok: mine ? 'ביטול הבקשה' : 'דחייה', cancel: 'חזרה', danger: true, within: $('#sheet') })) return;
+  try {
+    await client.mutation('features:reject', { synagogueId, requestId });
+    toast(mine ? 'הבקשה בוטלה' : 'הבקשה נדחתה');
+    await refreshFeatures(synagogueId);
   } catch(e){ toast(errMsg(e)); }
 }
 
@@ -522,6 +565,9 @@ function renderDetailSheet(){
     ${s.address ? '' : '<p class="muted small">כדאי להוסיף כתובת למטה, ב"פרטי הקהילה", כדי שאורחים יוכלו לנווט.</p>'}`
     : `<button class="btn sec" type="button" id="btnGuestOn">הפעלת עמוד לאורחים</button>`}
 
+    <h3 style="margin-top:18px">פיצ'רים בקהילה</h3>
+    ${renderFeatures()}
+
     <h3 style="margin-top:18px">חברים</h3>
     <button class="btn sec members-btn" type="button" id="btnOpenMembers">
       <span>${S.members ? S.members.length + ' חברים בקהילה' : 'טוען…'}</span><span>‹</span>
@@ -562,8 +608,40 @@ function renderDetailSheet(){
     $('#editSynForm').addEventListener('submit', e => { e.preventDefault(); saveSynagogue(e.target, s._id); });
     $('#sheet').querySelectorAll('[data-cancel-invite]').forEach(b => b.addEventListener('click', () => cancelInvitation(s._id, b.dataset.cancelInvite)));
     $('#btnOpenMembers').addEventListener('click', () => openMembersSheet(s._id));
+    $('#sheet').querySelectorAll('[data-feature-on]').forEach(b => b.addEventListener('click', () => requestFeature(s._id, b.dataset.featureOn, true)));
+    $('#sheet').querySelectorAll('[data-feature-off]').forEach(b => b.addEventListener('click', () => requestFeature(s._id, b.dataset.featureOff, false)));
+    $('#sheet').querySelectorAll('[data-feature-approve]').forEach(b => b.addEventListener('click', () => approveFeature(s._id, b.dataset.featureApprove)));
+    $('#sheet').querySelectorAll('[data-feature-reject]').forEach(b => b.addEventListener('click', () => rejectFeature(s._id, b.dataset.featureReject, b.dataset.mine === '1')));
   }
   if (S.membersSheetOpen) renderMembersSheet(s._id);
+}
+
+function renderFeatures(){
+  const st = S.features;
+  if (!st) return '<p class="muted">טוען…</p>';
+  let html = `<p class="muted small">פעילים תמיד: ${BASIC_FEATURES.join(', ')}.</p>
+    <p class="muted small">פיצ'ר נוסף מופעל (או מכובה) רק כשכל הגבאים והרב מאשרים. עד אז הוא לא מוצג לאף אחד בקהילה.</p>`;
+  for (const [key, f] of Object.entries(FEATURES)){
+    const on = st.enabled.includes(key);
+    const req = st.requests.find(r => r.feature === key);
+    html += `<div class="feature-row">
+      <div class="info">
+        <div class="n">${esc(f.title)} <span class="feature-chip ${on ? 'on' : 'off'}">${on ? 'פעיל' : 'כבוי'}</span></div>
+        <div class="e">${esc(f.desc)}</div>`;
+    if (req){
+      html += `<div class="feature-req">בקשה ${req.enable ? 'להפעלה' : 'לכיבוי'} מאת ${esc(req.requestedBy)}.
+        אישרו: ${esc(req.approved.join(', ') || '—')}${req.waiting.length ? ` · ממתינים לאישור: ${esc(req.waiting.join(', '))}` : ''}</div>
+        <div class="row" style="margin-top:8px">${req.approvedByMe
+          ? `<button class="btn ghost" type="button" data-feature-reject="${req._id}" data-mine="1">ביטול הבקשה</button>`
+          : `<button class="btn" type="button" data-feature-approve="${req._id}">אישור</button><button class="btn ghost" type="button" data-feature-reject="${req._id}">דחייה</button>`}</div>`;
+    } else {
+      html += `<div class="row" style="margin-top:8px">${on
+        ? `<button class="btn ghost" type="button" data-feature-off="${key}">בקשה לכיבוי</button>`
+        : `<button class="btn sec" type="button" data-feature-on="${key}">בקשה להפעלה</button>`}</div>`;
+    }
+    html += `</div></div>`;
+  }
+  return html;
 }
 
 function filteredMembers(){

@@ -3,6 +3,7 @@ import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { displayName, isManager, requireManager, requireMember } from "./roles";
+import { requireFeature } from "./features";
 import * as Notifications from "./notifications";
 import { addDays, todayKey } from "./hebrewDate";
 
@@ -45,6 +46,7 @@ export const list = query({
   args: { synagogueId: v.id("synagogues"), from: v.string() },
   handler: async (ctx, args) => {
     const { userId, membership } = await requireMember(ctx, args.synagogueId);
+    await requireFeature(ctx, args.synagogueId, "week");
     const manager = isManager(membership.role);
     const from = DATE_KEY_RE.test(args.from) ? args.from : todayKey();
     const to = addDays(from, DAYS_AHEAD - 1);
@@ -89,6 +91,7 @@ export const rsvp = mutation({
   args: { synagogueId: v.id("synagogues"), minyanId: v.id("minyanim"), dateKey: v.string(), coming: v.boolean() },
   handler: async (ctx, args) => {
     const { userId } = await requireMember(ctx, args.synagogueId);
+    await requireFeature(ctx, args.synagogueId, "week");
     checkDateKey(args.dateKey);
     const m = await getMinyan(ctx, args.synagogueId, args.minyanId);
     const existing = await ctx.db
@@ -139,6 +142,7 @@ export const addMinyan = mutation({
   args: { synagogueId: v.id("synagogues"), ...minyanFields },
   handler: async (ctx, { synagogueId, ...rest }) => {
     const { userId } = await requireManager(ctx, synagogueId);
+    await requireFeature(ctx, synagogueId, "week");
     await ctx.db.insert("minyanim", { synagogueId, ...cleanMinyan(rest), createdBy: userId, createdAt: Date.now() });
   },
 });
@@ -147,6 +151,7 @@ export const updateMinyan = mutation({
   args: { synagogueId: v.id("synagogues"), id: v.id("minyanim"), ...minyanFields },
   handler: async (ctx, { synagogueId, id, ...rest }) => {
     await requireManager(ctx, synagogueId);
+    await requireFeature(ctx, synagogueId, "week");
     await getMinyan(ctx, synagogueId, id);
     await ctx.db.patch(id, cleanMinyan(rest));
   },
@@ -156,6 +161,7 @@ export const removeMinyan = mutation({
   args: { synagogueId: v.id("synagogues"), id: v.id("minyanim") },
   handler: async (ctx, args) => {
     await requireManager(ctx, args.synagogueId);
+    await requireFeature(ctx, args.synagogueId, "week");
     await getMinyan(ctx, args.synagogueId, args.id);
     const rsvps = await ctx.db
       .query("minyanRsvps")
@@ -173,6 +179,7 @@ export const call = mutation({
   args: { synagogueId: v.id("synagogues"), minyanId: v.id("minyanim"), dateKey: v.string() },
   handler: async (ctx, args) => {
     const { userId } = await requireManager(ctx, args.synagogueId);
+    await requireFeature(ctx, args.synagogueId, "week");
     checkDateKey(args.dateKey);
     const m = await getMinyan(ctx, args.synagogueId, args.minyanId);
     const count = (

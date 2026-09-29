@@ -14,6 +14,7 @@ import type * as crons from "../crons.js";
 import type * as email from "../email.js";
 import type * as errorLog from "../errorLog.js";
 import type * as events from "../events.js";
+import type * as features from "../features.js";
 import type * as fund from "../fund.js";
 import type * as guest from "../guest.js";
 import type * as hebrewDate from "../hebrewDate.js";
@@ -49,6 +50,7 @@ declare const fullApi: ApiFromModules<{
   email: typeof email;
   errorLog: typeof errorLog;
   events: typeof events;
+  features: typeof features;
   fund: typeof fund;
   guest: typeof guest;
   hebrewDate: typeof hebrewDate;

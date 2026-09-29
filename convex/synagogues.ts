@@ -4,6 +4,7 @@ import { internal } from "./_generated/api";
 import { internalMutation, mutation, query } from "./_generated/server";
 import { randomInviteCode } from "./inviteCode";
 import { isManager, requireManager } from "./roles";
+import { enabledFeatures } from "./features";
 
 export const create = mutation({
   args: {
@@ -61,6 +62,7 @@ export const mine = query({
           publicCode: synagogue.publicCode ?? null,
           role: membership.role,
           isFounder: synagogue.createdBy === userId,
+          features: enabledFeatures(synagogue),
         };
       }),
     );
@@ -129,6 +131,7 @@ export const purgeData = internalMutation({
       ...(await ctx.db.query("minyanim").withIndex("by_synagogue", (q) => q.eq("synagogueId", id)).take(PURGE_BATCH)),
       ...(await ctx.db.query("minyanRsvps").withIndex("by_synagogue_date", (q) => q.eq("synagogueId", id)).take(PURGE_BATCH)),
       ...(await ctx.db.query("zmanimSettings").withIndex("by_synagogue", (q) => q.eq("synagogueId", id)).take(PURGE_BATCH)),
+      ...(await ctx.db.query("featureRequests").withIndex("by_synagogue", (q) => q.eq("synagogueId", id)).take(PURGE_BATCH)),
       ...(await ctx.db.query("zmanimProfiles").withIndex("by_synagogue_name", (q) => q.eq("synagogueId", id)).take(PURGE_BATCH)),
     ];
     const files = [

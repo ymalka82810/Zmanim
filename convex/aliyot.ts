@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { addDays, hebrewYearOf, nextYahrzeit, todayKey } from "./hebrewDate";
 import { displayName, getMembership, isManager, requireManager, requireMember } from "./roles";
+import { requireFeature } from "./features";
 
 /** סוגי חיוב לעלייה, לפי סדר הקדימות: הראשון ברשימה קודם לכל האחרים */
 export const REASONS = {
@@ -69,6 +70,7 @@ export const board = query({
   args: { synagogueId: v.id("synagogues"), dateKey: v.string() },
   handler: async (ctx, args) => {
     const { userId, membership } = await requireMember(ctx, args.synagogueId);
+    await requireFeature(ctx, args.synagogueId, "aliyot");
     checkDateKey(args.dateKey);
     const synagogue = await ctx.db.get(args.synagogueId);
     const base = {
@@ -170,6 +172,7 @@ export const add = mutation({
   },
   handler: async (ctx, args) => {
     const { userId: callerId } = await requireManager(ctx, args.synagogueId);
+    await requireFeature(ctx, args.synagogueId, "aliyot");
     checkDateKey(args.dateKey);
     const aliyah = clip(args.aliyah, 40);
     if (!aliyah) {
@@ -203,6 +206,7 @@ export const remove = mutation({
   args: { synagogueId: v.id("synagogues"), id: v.id("aliyot") },
   handler: async (ctx, args) => {
     await requireManager(ctx, args.synagogueId);
+    await requireFeature(ctx, args.synagogueId, "aliyot");
     const aliyah = await ctx.db.get(args.id);
     if (aliyah === null || aliyah.synagogueId !== args.synagogueId) {
       throw new ConvexError("העלייה לא נמצאה");
@@ -223,6 +227,7 @@ export const addClaim = mutation({
   },
   handler: async (ctx, args) => {
     const { userId: callerId, membership } = await requireMember(ctx, args.synagogueId);
+    await requireFeature(ctx, args.synagogueId, "aliyot");
     checkDateKey(args.dateKey);
     const manager = isManager(membership.role);
     const target = manager ? args.userId : callerId;
@@ -253,6 +258,7 @@ export const removeClaim = mutation({
   args: { synagogueId: v.id("synagogues"), id: v.id("aliyahClaims") },
   handler: async (ctx, args) => {
     const { userId, membership } = await requireMember(ctx, args.synagogueId);
+    await requireFeature(ctx, args.synagogueId, "aliyot");
     const claim = await ctx.db.get(args.id);
     if (claim === null || claim.synagogueId !== args.synagogueId) {
       throw new ConvexError("החיוב לא נמצא");
@@ -269,6 +275,7 @@ export const setTribe = mutation({
   args: { synagogueId: v.id("synagogues"), userId: v.optional(v.id("users")), tribe: tribeValidator },
   handler: async (ctx, args) => {
     const { userId: callerId, membership: callerMembership } = await requireMember(ctx, args.synagogueId);
+    await requireFeature(ctx, args.synagogueId, "aliyot");
     const target = args.userId ?? callerId;
     if (target !== callerId && !isManager(callerMembership.role)) {
       throw new ConvexError("פעולה זו מותרת לגבאי או לרב בלבד");

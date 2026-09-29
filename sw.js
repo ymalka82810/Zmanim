@@ -6,7 +6,7 @@
  * בשרת המקומי (npm start) ובאפליקציה הקבצים נמצאים במכשיר, ולכן שם קודם מהרשת, כדי ששינוי יופיע מיד.
  * גופנים: מהמטמון, ואם אין – מהרשת.
  */
-const CACHE = 'luach-5523baa309';
+const CACHE = 'luach-cf3a46b5cc';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/app.js', 'js/astro.js', 'js/auth.js', 'js/community.js', 'js/config.js', 'js/convex-config.js', 'js/dates.js', 'js/dialog.js', 'js/font-fill.js', 'js/hebrew.js', 'js/image.js', 'js/luach.js', 'js/menu.js', 'js/moadim.js', 'js/native-files.js', 'js/render.js', 'js/settings-sync.js', 'js/template-place.js', 'js/template-read.js', 'js/template-render.js', 'js/template-ui.js', 'js/text-edit.js', 'js/theme.js', 'js/zmanim.js',

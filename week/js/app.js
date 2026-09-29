@@ -20,6 +20,8 @@ const S = {
   ready: false, fatal: null, signedIn: false, synagogues: [], sid: null, me: null,
   board: null, boardError: null, fund: null, events: [], yahrzeits: null, minyan: null, notes: [],
 };
+/* הפיצ'ר פעיל בקהילה (convex/features.ts). בלי אישור של כל הגבאים והרב הדף לא זמין */
+const featureOn = sid => !!S.synagogues.find(s => s._id === sid)?.features?.includes('week');
 const todayKey = () => dkey(new Date());
 const isManager = () => S.board && (S.board.role === 'gabbai' || S.board.role === 'rabbi');
 const daysUntil = k => Math.round((pkey(k) - pkey(todayKey())) / 864e5);
@@ -76,7 +78,7 @@ function attach(sid){
   unsubs = [];
   S.sid = sid; attachedDay = day;
   S.board = null; S.boardError = null; S.fund = null; S.events = []; S.yahrzeits = null; S.minyan = null; S.notes = [];
-  if (!sid) return;
+  if (!sid || !featureOn(sid)) return;
   const w = (name, args, set, onErr) => unsubs.push(Auth.watch(name, { synagogueId: sid, ...args }, d => { set(d); render(); }, onErr || (e => console.warn(e))));
   w('kiddush:board', {}, d => S.board = d, e => { console.warn(e); S.boardError = errMsg(e); render(); });
   w('fund:ledger', {}, d => S.fund = d);
@@ -101,6 +103,7 @@ function render(){
   if (!S.ready){ app.innerHTML = '<div class="empty">טוען…</div>'; return; }
   if (!S.signedIn){ app.innerHTML = hero('כדי לראות את השבוע שלך יש להתחבר עם חשבון Google.', '<button class="btn btn-google" data-act="signIn">כניסה עם Google</button>'); return; }
   if (!S.sid){ app.innerHTML = hero('עדיין לא הצטרפת לקהילה. אפשר להצטרף דרך הזמנה מהגבאי או לפתוח קהילה חדשה.', `<a class="btn" href="${ACCOUNT_URL}">לחשבון שלי</a>`); return; }
+  if (!featureOn(S.sid)){ app.innerHTML = hero('"השבוע שלי" אינו פעיל בקהילה זו. כדי להשתמש בו, כל הגבאים והרב צריכים לאשר אותו ב"החשבון שלי", בפרטי הקהילה.', `<a class="btn" href="${ACCOUNT_URL}">לחשבון שלי</a>`); return; }
   if (S.boardError){ app.innerHTML = hero(esc(S.boardError), `<a class="btn" href="${ACCOUNT_URL}">לחשבון שלי</a>`); return; }
   if (!S.board){ app.innerHTML = '<div class="empty">טוען…</div>'; return; }
   app.innerHTML = headerHTML() + notesHTML() + minyanHTML() + kiddushHTML() + fundHTML() + yahrzeitHTML() + eventsHTML();

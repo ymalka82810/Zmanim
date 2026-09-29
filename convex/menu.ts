@@ -4,8 +4,12 @@ import { query } from "./_generated/server";
 import { getMembership, isManager } from "./roles";
 import * as Notifications from "./notifications";
 import { todayKey } from "./hebrewDate";
+import { countAwaiting, enabledFeatures } from "./features";
 
-/** מספר הדברים שלא טופלו בכל דף, למגירת התפריט. המפתח הוא נתיב הדף (כמו ב-js/menu.js). null – אין משתמש או חברות */
+/**
+ * מספר הדברים שלא טופלו בכל דף, למגירת התפריט. המפתח הוא נתיב הדף (כמו ב-js/menu.js). null – אין משתמש או חברות.
+ * features – הפיצ'רים הנוספים שהקהילה הפעילה (convex/features.ts); דפים של פיצ'ר כבוי לא מוצגים בתפריט
+ */
 export const counts = query({
   args: { synagogueId: v.id("synagogues") },
   handler: async (ctx, args) => {
@@ -31,6 +35,7 @@ export const counts = query({
 
     let kiddush = unread(kiddushNotes);
     let schedule = 0;
+    let account = 0;
     if (manager) {
       // בקשת קידוש שממתינה לאישור נספרת פעם אחת, גם אם ההתראה עליה עוד לא נקראה
       const pending = (
@@ -48,14 +53,18 @@ export const counts = query({
         .order("desc")
         .take(100);
       schedule = files.filter((f) => f.status === "pending" && f.deletedAt === undefined).length;
+      account = await countAwaiting(ctx, args.synagogueId, userId);
     }
+    const features = enabledFeatures(await ctx.db.get(args.synagogueId));
 
     return {
       manager,
+      features,
       "": schedule,
-      "week/": unread(yahrzeitNotes) + unread(minyanNotes),
+      "week/": features.includes("week") ? unread(yahrzeitNotes) + unread(minyanNotes) : 0,
       "kiddush/": kiddush,
       "gabbai/": unread(fundNotes),
+      "account/": account,
     };
   },
 });
