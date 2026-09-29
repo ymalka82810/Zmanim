@@ -111,14 +111,10 @@ function render(){
 
 function headerHTML(){
   const s = S.board.synagogue;
-  const switcher = S.synagogues.length > 1
-    ? `<select class="btn sec" id="synSwitch" aria-label="החלפת קהילה">${S.synagogues.map(x => `<option value="${x._id}"${x._id === S.sid ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select>`
-    : '';
   if (window.SiteMenu) SiteMenu.setCommunity({ _id: S.sid, name: s.name, il: s.il });
   const name = S.me?.name ? ' ' + S.me.name.split(' ')[0] : '';
   return `<header class="top">
     <div class="shul"><h1>שלום${esc(name)}</h1><small>${esc(s.name)} | ${ROLE_LABEL[S.board.role]}</small></div>
-    ${switcher}
   </header>`;
 }
 
@@ -296,6 +292,7 @@ function minyanFormSheet(m){
      <datalist id="mnNames"><option value="שחרית"><option value="ותיקין"><option value="מנחה"><option value="ערבית"><option value="מנחה וערבית"></datalist>
      <label class="f" for="mnTime">שעה (לא חובה)</label><input type="text" id="mnTime" maxlength="20" placeholder="לדוגמה: 13:30, או 10 דקות לפני השקיעה" value="${esc(m?.time || '')}">
      <label class="f">ימים</label><div class="days">${DAY_NAMES.map((n, i) => `<label><input type="checkbox" class="mnDay" value="${i}"${days.includes(i) ? ' checked' : ''}> ${n}</label>`).join('')}</div>
+     <p class="small muted">התפילה נרשמת גם בהגדרות לוח הזמנים: ימי חול בתבנית "ימות השבוע" ושבת בתבנית "שבתות". תפילה בשם שכבר קיים בלוח (למשל "מנחה") קובעת את השעה בימים שלה.</p>
      <div class="row" style="margin-top:16px"><button class="btn" type="button" data-act="saveMinyan" data-id="${m?._id || ''}">שמירה</button>
      ${m ? `<button class="btn danger" type="button" data-act="delMinyan" data-id="${m._id}">מחיקה</button>` : ''}<button class="btn ghost" type="button" data-act="manageMinyan">חזרה</button></div>`);
 }
@@ -323,9 +320,9 @@ const A = {
     const days = [...document.querySelectorAll('.mnDay:checked')].map(c => +c.value);
     if (!name.trim()) return toast('נא למלא שם לתפילה');
     if (!days.length) return toast('נא לבחור לפחות יום אחד');
-    if (d.id) await call('minyan:updateMinyan', { id: d.id, name, time, days });
-    else await call('minyan:addMinyan', { name, time, days });
-    toast('נשמר'); minyanManageSheet();
+    const res = d.id ? await call('minyan:updateMinyan', { id: d.id, name, time, days }) : await call('minyan:addMinyan', { name, time, days });
+    toast(res && res.scheduled ? 'נשמר, וגם נרשם בלוח הזמנים' : 'נשמר. כדי שהתפילה תופיע בלוח הזמנים, כתבו שעה כמו 13:30 או "10 דקות לפני השקיעה"');
+    minyanManageSheet();
   }),
   delMinyan: guard(async d => {
     if (!await SiteDialog.confirm('למחוק את התפילה? ההרשמות אליה יימחקו.', { ok: 'מחיקה', danger: true })) return;
@@ -356,8 +353,7 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   const id = e.target.id;
-  if (id === 'synSwitch'){ Auth.setActiveSynagogueId(e.target.value); attach(e.target.value); render(); }
-  else if (id === 'yzYear' || id === 'yzMonth') refreshHebrewSelects(+$('#yzDay').value, +$('#yzMonth').value, +$('#yzYear').value);
+  if (id === 'yzYear' || id === 'yzMonth') refreshHebrewSelects(+$('#yzDay').value, +$('#yzMonth').value, +$('#yzYear').value);
   else if (id === 'yzGreg' || id === 'yzEve') fromGregorian();
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#sheetWrap').hidden) closeSheet(); });

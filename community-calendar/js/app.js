@@ -132,13 +132,9 @@ function render(){
 
 function headerHTML(){
   const s = S.board.synagogue;
-  const switcher = S.synagogues.length > 1
-    ? `<select class="btn sec" id="synSwitch" aria-label="החלפת קהילה">${S.synagogues.map(x => `<option value="${x._id}"${x._id === S.sid ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select>`
-    : '';
   if (window.SiteMenu) SiteMenu.setCommunity({ _id: S.sid, name: s.name, il: s.il });
   return `<header class="top">
     <div class="shul"><h1>יומן קהילה</h1><small>${esc(s.city || '')}${s.city ? ', ' : ''}${s.il ? 'ארץ ישראל' : 'חוץ לארץ'} | ${ROLE_LABEL[S.board.role]}</small></div>
-    ${switcher}
   </header>`;
 }
 
@@ -298,9 +294,6 @@ document.addEventListener('click', e => {
   const t = e.target.closest('[data-act]');
   if (t){ const f = A[t.dataset.act]; if (f){ e.preventDefault(); f(t.dataset, t); } return; }
   if (e.target === $('#sheetWrap')) closeSheet();
-});
-document.addEventListener('change', e => {
-  if (e.target.id === 'synSwitch'){ Auth.setActiveSynagogueId(e.target.value); attach(e.target.value); render(); }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#sheetWrap').hidden) closeSheet(); });
 

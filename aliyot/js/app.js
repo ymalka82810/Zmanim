@@ -122,13 +122,9 @@ function render(){
 
 function headerHTML(){
   const s = S.data.synagogue;
-  const switcher = S.synagogues.length > 1
-    ? `<select class="btn sec" id="synSwitch" aria-label="החלפת קהילה">${S.synagogues.map(x => `<option value="${x._id}"${x._id === S.sid ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select>`
-    : '';
   if (window.SiteMenu) SiteMenu.setCommunity({ _id: S.sid, name: s.name, il: s.il });
   return `<header class="top">
     <div class="shul"><h1>חלוקת עליות</h1><small>${esc(s.name)} | ${ROLE_LABEL[S.data.role]}</small></div>
-    ${switcher}
   </header>`;
 }
 
@@ -329,8 +325,7 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', guard(async e => {
   const t = e.target;
-  if (t.id === 'synSwitch'){ Auth.setActiveSynagogueId(t.value); attach(t.value); render(); }
-  else if (t.id === 'pickDate') setDate(t.value);
+  if (t.id === 'pickDate') setDate(t.value);
   else if (t.id === 'fAliyah') $('#otherWrap').hidden = t.value !== '__other';
   else if (t.id === 'fPerson') $('#guestWrap').hidden = t.value !== 'guest';
   else if (t.dataset.tribeFor !== undefined){

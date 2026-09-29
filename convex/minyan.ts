@@ -1,13 +1,19 @@
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
-import type { QueryCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { displayName, isManager, requireManager, requireMember } from "./roles";
 import { requireFeature } from "./features";
 import * as Notifications from "./notifications";
 import { addDays, todayKey } from "./hebrewDate";
+import { checkConfig } from "./zmanimSettings";
+// ההגדרות של לוח הזמנים באתר, כדי שהכללים שנוספים כאן ייבנו בדיוק כמו שם
+import { BASES, DAY_APPLIES, TEXT_BASES, appliesOnDay, normalize } from "../js/config.js";
 
-/** "אני מגיע" למניין: הגבאי או הרב מגדירים תפילות קבועות (שם, שעה וימים), וחברי הקהילה נרשמים לתאריך מסוים. */
+const BASE_KEYS = BASES as Record<string, string>;
+
+/** "אני מגיע" למניין: הגבאי או הרב מגדירים תפילות קבועות (שם, שעה וימים), וחברי הקהילה נרשמים לתאריך מסוים.
+ * כל תפילה נרשמת גם כתפילה בהגדרות לוח הזמנים (syncSchedule). */
 
 const QUORUM = 10;
 /** כמה ימים קדימה מוצגים ואפשר להירשם */
@@ -138,30 +144,126 @@ function cleanMinyan(args: { name: string; time: string; days: number[] }) {
   return { name, time: clip(args.time, 20), days };
 }
 
+/* ---------- התפילה בלוח הזמנים ---------- */
+
+type Rule = { name: string; when: string; applies: string; base: string; offset: string; round: string; minyanId?: string };
+type Template = { id: string; rules: Rule[] };
+
+/**
+ * השעה של התפילה ככלל בלוח הזמנים: שעה קבועה ("13:30"), או הפרש מזמן היום ("10 דקות לפני השקיעה").
+ * null – השעה ריקה או לא מזוהה, ואז התפילה לא נכנסת ללוח.
+ */
+function ruleTiming(time: string) {
+  const t = time.trim();
+  const fixed = t.match(/^(\d{1,2})[:.](\d{2})$/);
+  if (fixed) {
+    return +fixed[1] < 24 && +fixed[2] < 60 ? { base: "שעה קבועה", offset: fixed[1].padStart(2, "0") + ":" + fixed[2] } : null;
+  }
+  // הזמן הארוך קודם, כדי ש"צאת הכוכבים" לא ייתפס כזמן קצר יותר שמוכל בו
+  const base = Object.keys(BASE_KEYS)
+    .filter((l) => l !== "שעה קבועה" && !TEXT_BASES.includes(BASE_KEYS[l]))
+    .sort((a, b) => b.length - a.length)
+    .find((l) => t.includes(l));
+  if (!base) {
+    return null;
+  }
+  const minutes = +(t.match(/\d+/)?.[0] ?? 0);
+  return { base, offset: String(/לפני/.test(t) ? -minutes : minutes) };
+}
+
+/** הימים בשבוע (0–5) שהערך של "חל על" בלוח ימות השבוע מכסה, או null אם הוא תלוי בערב שבת וחג */
+function dowsOf(applies: string) {
+  const on = (erev: boolean) => [0, 1, 2, 3, 4, 5].filter((dow) => appliesOnDay(applies, { dow, erev })).join();
+  return on(false) === on(true) ? on(false) : null;
+}
+
+/** ערכי "חל על" לימים (0–5): ערך אחד אם יש כזה בדיוק לימים האלה, אחרת ערך לכל יום */
+function weekApplies(days: number[]): string[] {
+  const exact = (key: string) => (DAY_APPLIES as string[]).find((a) => dowsOf(a) === key);
+  const all = exact(days.join());
+  return all ? [all] : days.map((d) => exact(String(d))!);
+}
+
+/**
+ * התפילה נרשמת גם בהגדרות לוח הזמנים של הקהילה: ימי חול בתבנית "ימות השבוע" ושבת בתבנית "שבתות".
+ * הכללים מסומנים ב-minyanId, כך שעריכה או מחיקה של התפילה מעדכנות אותם. m=null – מחיקה.
+ * כלל ספציפי גובר בלוח על כלל כללי באותו שם, ולכן תפילה בשם קיים (למשל "מנחה") קובעת את השעה בימים שלה.
+ * מחזיר האם התפילה נמצאת עכשיו בלוח.
+ */
+async function syncSchedule(
+  ctx: MutationCtx,
+  synagogueId: Id<"synagogues">,
+  userId: Id<"users">,
+  minyanId: Id<"minyanim">,
+  m: { name: string; time: string; days: number[] } | null,
+) {
+  const doc = await ctx.db
+    .query("zmanimSettings")
+    .withIndex("by_synagogue", (q) => q.eq("synagogueId", synagogueId))
+    .unique();
+  const cfg = normalize(doc ? JSON.parse(doc.config) : null) as unknown as { templates: Template[] };
+  let changed = false;
+  for (const t of cfg.templates) {
+    const rules = t.rules.filter((r) => r.minyanId !== minyanId);
+    changed ||= rules.length !== t.rules.length;
+    t.rules = rules;
+  }
+  const timing = m && ruleTiming(m.time);
+  if (m && timing) {
+    // בראש הרשימה, כדי שבשוויון עם כלל קיים באותו שם ובאותם ימים התפילה תגבר
+    const add = (id: string, applies: string[]) => {
+      const t = cfg.templates.find((x) => x.id === id);
+      t?.rules.unshift(...applies.map((a) => ({ name: m.name, when: "כל יום", applies: a, ...timing, round: "ללא", minyanId })));
+    };
+    const week = m.days.filter((d) => d < 6);
+    if (week.length) add("week", weekApplies(week));
+    if (m.days.includes(6)) add("shabbat", ["שבת בלבד"]);
+    changed = true;
+  }
+  if (!changed) {
+    return !!timing;
+  }
+  const config = JSON.stringify(cfg);
+  checkConfig(config);
+  const now = Date.now();
+  if (doc === null) {
+    await ctx.db.insert("zmanimSettings", { synagogueId, config, rev: 1, updatedBy: userId, updatedAt: now });
+  } else {
+    await ctx.db.patch(doc._id, { config, rev: doc.rev + 1, updatedBy: userId, updatedAt: now });
+  }
+  return !!timing;
+}
+
+/** מחזירות { scheduled }: האם התפילה נכנסה גם ללוח הזמנים (לא נכנסת כשהשעה ריקה או לא מזוהה) */
 export const addMinyan = mutation({
   args: { synagogueId: v.id("synagogues"), ...minyanFields },
   handler: async (ctx, { synagogueId, ...rest }) => {
     const { userId } = await requireManager(ctx, synagogueId);
     await requireFeature(ctx, synagogueId, "week");
-    await ctx.db.insert("minyanim", { synagogueId, ...cleanMinyan(rest), createdBy: userId, createdAt: Date.now() });
+    const m = cleanMinyan(rest);
+    const id = await ctx.db.insert("minyanim", { synagogueId, ...m, createdBy: userId, createdAt: Date.now() });
+    return { scheduled: await syncSchedule(ctx, synagogueId, userId, id, m) };
   },
 });
 
 export const updateMinyan = mutation({
   args: { synagogueId: v.id("synagogues"), id: v.id("minyanim"), ...minyanFields },
   handler: async (ctx, { synagogueId, id, ...rest }) => {
-    await requireManager(ctx, synagogueId);
+    const { userId } = await requireManager(ctx, synagogueId);
     await requireFeature(ctx, synagogueId, "week");
     await getMinyan(ctx, synagogueId, id);
-    await ctx.db.patch(id, cleanMinyan(rest));
+    const m = cleanMinyan(rest);
+    await ctx.db.patch(id, m);
+    return { scheduled: await syncSchedule(ctx, synagogueId, userId, id, m) };
   },
 });
 
 export const removeMinyan = mutation({
   args: { synagogueId: v.id("synagogues"), id: v.id("minyanim") },
   handler: async (ctx, args) => {
-    await requireManager(ctx, args.synagogueId);
+    const { userId } = await requireManager(ctx, args.synagogueId);
     await requireFeature(ctx, args.synagogueId, "week");
+    await syncSchedule(ctx, args.synagogueId, userId, args.id, null);
     await getMinyan(ctx, args.synagogueId, args.id);
     const rsvps = await ctx.db
       .query("minyanRsvps")

@@ -105,11 +105,15 @@ function community(){
   return { name: (cfg.shul || '').trim(), il: cfg.il !== false };
 }
 
-/* התאריך העברי של היום */
+/* התאריך העברי של היום באותיות. עד ש-hebcal נטען (למשל מיד אחרי ריענון) – התאריך השמור מהטעינה הקודמת
+ * של אותו יום, ובלעדיו ריק; לא התאריך העברי של הדפדפן, שיוצא במספרים ("7 בתשרי 5787") */
+const HEBDATE_KEY = 'site.hebDate';
 function hebDate(date){
-  const H = window.hebcal;
-  if (!H) return new Intl.DateTimeFormat('he-u-ca-hebrew', { day: 'numeric', month: 'long', year: 'numeric' }).format(date);
-  return new H.HDate(date).renderGematriya(true);
+  const H = window.hebcal, d = date.toDateString();
+  if (!H) { const s = read(HEBDATE_KEY); return s && s.d === d ? s.t : ''; }
+  const t = new H.HDate(date).renderGematriya(true);
+  write(HEBDATE_KEY, { d, t });
+  return t;
 }
 
 function renderDay(){
@@ -118,9 +122,11 @@ function renderDay(){
   day.syn.textContent = c.name || '';
   day.syn.hidden = !c.name;
   day.dates.textContent = '';
+  const heb = hebDate(now), greg = gLong.format(now);
+  if (!heb) { day.dates.append(greg); return; }
   const b = document.createElement('b');
-  b.textContent = hebDate(now);
-  day.dates.append(b, ' · ' + gLong.format(now));
+  b.textContent = heb;
+  day.dates.append(b, ' · ' + greg);
 }
 
 function loadHebcal(){
