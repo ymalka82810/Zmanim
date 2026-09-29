@@ -3,7 +3,7 @@ import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { requireManager } from "./roles";
-import { acceptUpload } from "./storage";
+import { acceptUpload, MAX_DESIGN_BYTES } from "./storage";
 
 const MAX_CONFIG = 500 * 1024;
 const HASH_RE = /^[0-9a-f]{64}$/;
@@ -99,7 +99,7 @@ export const addDesign = mutation({
       await ctx.storage.delete(args.storageId);
       return null;
     }
-    const accepted = await acceptUpload(ctx, args.synagogueId, args.storageId);
+    const accepted = await acceptUpload(ctx, args.synagogueId, args.storageId, MAX_DESIGN_BYTES);
     if (accepted.error !== undefined) {
       return { error: "לא ניתן לשמור את עיצוב הלוח בקהילה: " + accepted.error };
     }

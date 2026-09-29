@@ -529,7 +529,7 @@ function renderStorage(st){
   const trashBytes = trash.reduce((sum, f) => sum + f.size, 0);
   let html = `<div class="usage ${level}" role="meter" aria-valuemin="0" aria-valuemax="${st.quota}" aria-valuenow="${st.used}" aria-label="אחסון הקהילה">
       <div class="usage-bar"><span style="width:${pct.toFixed(1)}%"></span></div>
-      <div class="small"><b>${fmtSize(st.used)}</b> בשימוש מתוך ${fmtSize(st.quota)} · עד ${fmtSize(st.maxFile)} לקובץ</div>
+      <div class="small"><b>${fmtSize(st.used)}</b> בשימוש מתוך ${fmtSize(st.quota)} · עד ${fmtSize(st.maxSchedule)} לתמונת לוח ועד ${fmtSize(st.maxDesign)} לעיצוב</div>
     </div>`;
   if (level === 'full') html += `<div class="warn">האחסון של הקהילה כמעט מלא. כדי להעלות לוחות ועיצובים חדשים יש למחוק לצמיתות קבצים מיותרים.</div>`;
   html += active.length ? active.map(fileRow).join('') : '<p class="muted small">אין קבצים.</p>';

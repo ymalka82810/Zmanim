@@ -4,8 +4,10 @@ import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { requireManager } from "./roles";
 
-export const MAX_FILE_BYTES = 7 * 1024 * 1024;
-export const QUOTA_BYTES = 30 * 1024 * 1024;
+// תמונת לוח נפתחת אצל כל חברי הקהילה, ולכן היא מוגבלת יותר מעיצוב שרק הגבאי מעלה
+export const MAX_SCHEDULE_BYTES = 7 * 1024 * 1024;
+export const MAX_DESIGN_BYTES = 12 * 1024 * 1024;
+export const QUOTA_BYTES = 50 * 1024 * 1024;
 export const TRASH_DAYS = 30;
 
 const mb = (bytes: number) => (bytes / (1024 * 1024)).toFixed(1) + "MB";
@@ -44,6 +46,7 @@ export async function acceptUpload(
   ctx: MutationCtx,
   synagogueId: Id<"synagogues">,
   storageId: Id<"_storage">,
+  maxBytes: number,
   contentType?: string,
   freedBytes = 0,
 ): Promise<{ size: number; error?: undefined } | { error: string }> {
@@ -54,8 +57,8 @@ export async function acceptUpload(
     return { error };
   };
   if (contentType !== undefined && meta.contentType !== contentType) return await reject("הקובץ לא תקין");
-  if (meta.size > MAX_FILE_BYTES) {
-    return await reject(`הקובץ שוקל ${mb(meta.size)}, והמקסימום לקובץ הוא ${mb(MAX_FILE_BYTES)}`);
+  if (meta.size > maxBytes) {
+    return await reject(`הקובץ שוקל ${mb(meta.size)}, והמקסימום לקובץ כזה הוא ${mb(maxBytes)}`);
   }
   const used = (await usedBytes(ctx, synagogueId)) - freedBytes;
   if (used + meta.size > QUOTA_BYTES) {
@@ -141,7 +144,8 @@ export const overview = query({
     return {
       used: files.reduce((sum, f) => sum + f.size, 0),
       quota: QUOTA_BYTES,
-      maxFile: MAX_FILE_BYTES,
+      maxSchedule: MAX_SCHEDULE_BYTES,
+      maxDesign: MAX_DESIGN_BYTES,
       trashDays: TRASH_DAYS,
       files,
     };

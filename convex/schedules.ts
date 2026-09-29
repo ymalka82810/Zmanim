@@ -3,7 +3,7 @@ import { internalMutation, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { isManager, requireManager, requireMember } from "./roles";
-import { acceptUpload, TRASH_DAYS } from "./storage";
+import { acceptUpload, MAX_SCHEDULE_BYTES, TRASH_DAYS } from "./storage";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const modeValidator = v.union(v.literal("holy"), v.literal("days"));
@@ -103,7 +103,7 @@ export const submit = mutation({
     // קובץ ממתין קודם של אותו לוח יוחלף, ולכן המקום שלו לא נספר
     const replaced = (await samePeriod(ctx, args)).filter((f) => f.status === "pending");
     const freed = replaced.reduce((sum, f) => sum + (f.size ?? 0), 0);
-    const accepted = await acceptUpload(ctx, args.synagogueId, args.storageId, "image/png", freed);
+    const accepted = await acceptUpload(ctx, args.synagogueId, args.storageId, MAX_SCHEDULE_BYTES, "image/png", freed);
     if (accepted.error !== undefined) {
       return { error: accepted.error };
     }
