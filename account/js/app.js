@@ -12,7 +12,7 @@ const roleOptions = (selected, disableRabbi) => Object.entries(ROLE)
   .filter(([v]) => v !== 'rabbi' || !disableRabbi || v === selected)
   .map(([v, t]) => `<option value="${v}" ${v === selected ? 'selected' : ''}>${t}</option>`).join('');
 
-const S = { ready:false, isAuthenticated:false, me:null, synagogues:[], invitations:[], joinCode:null, joinInfo:undefined, detail:null, members:null, pending:null };
+const S = { ready:false, isAuthenticated:false, me:null, synagogues:[], invitations:[], joinCode:null, joinInfo:undefined, detail:null, members:null, pending:null, errorLogs:null };
 
 let toastT;
 function toast(msg){ let t = $('.toast'); if (!t){ t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role','status'); document.body.appendChild(t); } t.textContent = msg; clearTimeout(toastT); toastT = setTimeout(() => t.remove(), 3600); }
@@ -51,6 +51,7 @@ async function loadAll(){
         toast('ההתחברות פגה. נא להתחבר מחדש.');
       } else {
         S.me = me;
+        if (me.isOwner) refreshErrorLogs();
       }
     } catch(e){ console.warn(e); }
     if (S.isAuthenticated && S.joinCode){
@@ -93,6 +94,10 @@ async function refreshSynagogues(){
   if (!S.synagogues.some(s => s._id === active)) A.setActiveSynagogueId(S.synagogues.length ? S.synagogues[0]._id : null);
 }
 async function refreshInvitations(){ S.invitations = await client.query('invitations:mine', {}); }
+async function refreshErrorLogs(){
+  try { S.errorLogs = await client.query('errorLog:recent', {}); render(); }
+  catch(e){ console.warn(e); }
+}
 function refreshDetail(id){ S.detail = S.synagogues.find(s => s._id === id) || null; }
 
 function setActive(id){
@@ -345,6 +350,7 @@ function renderSignedIn(app){
       </div>`).join('');
   }
   html += `</div><button class="btn sec" id="btnNewSyn">פתיחת קהילה חדשה</button>`;
+  if (me.isOwner) html += renderErrorLogs();
   app.innerHTML = html;
   $('#btnSignOut').addEventListener('click', signOut);
   $('#btnNewSyn').addEventListener('click', sheetCreateSynagogue);
@@ -355,6 +361,25 @@ function renderSignedIn(app){
     el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openDetail(el.dataset.open); } });
   });
   if (S.detail) renderDetailSheet();
+}
+
+function renderErrorLogs(){
+  let html = `<div class="sechead"><h2>יומן כשלים</h2></div><div class="card">`;
+  if (S.errorLogs === null){
+    html += `<p class="muted">טוען…</p>`;
+  } else if (!S.errorLogs.length){
+    html += `<p class="muted">אין כשלים רשומים.</p>`;
+  } else {
+    html += S.errorLogs.map(l => `
+      <div class="member-row">
+        <div class="info">
+          <div class="n">${esc(l.source)} · ${esc(new Date(l.at).toLocaleString('he-IL'))}</div>
+          <div class="e">${esc(l.message)}${l.detail ? '<br>' + esc(l.detail) : ''}</div>
+        </div>
+      </div>`).join('');
+  }
+  html += `</div>`;
+  return html;
 }
 
 function sheetCreateSynagogue(){

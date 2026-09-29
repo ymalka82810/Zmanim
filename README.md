@@ -48,7 +48,13 @@ npm start          # האתר ב-http://localhost:8080
 ב-GitHub: **Settings ← Pages ← Source: Deploy from a branch ← main / (root)**. אחרי דקה האתר זמין בכתובת
 `https://<שם-המשתמש>.github.io/Zmanim/`.
 
-אחרי שינוי בקבצי האתר, מעלים את מספר הגרסה ב-`CACHE` שבקובץ `sw.js` (למשל `luach-v2`), כדי שמכשירים שכבר התקינו את האתר ינקו את המטמון הישן.
+אחרי שינוי בקבצי האתר, ולפני commit/deploy, מריצים:
+
+```bash
+npm run build:sw
+```
+
+זה סורק את תיקיות האתר, מעדכן את רשימת הקבצים ב-`SHELL` שבקובץ `sw.js`, ומחשב hash מתוכן הקבצים בפועל כדי לקבוע את `CACHE`. כך `CACHE` משתנה אוטומטית בכל שינוי בתוכן, ומכשירים שכבר התקינו את האתר ינקו את המטמון הישן.
 
 ## מבנה
 
@@ -77,7 +83,7 @@ npm start          # האתר ב-http://localhost:8080
 | `vendor/hebcal/` | ספריית Hebcal ללוח הקידושים ולקופה |
 | `sw.js`, `manifest.webmanifest`, `icons/` | התקנה ועבודה אופליין |
 | `test/verify.js` | בדיקה מול ספרייה חיצונית |
-| `tools/` | שרת מקומי ויצירת אייקונים |
+| `tools/` | שרת מקומי, יצירת אייקונים, ועדכון `sw.js` (`npm run build:sw`) |
 
 ## שיטת החישוב
 

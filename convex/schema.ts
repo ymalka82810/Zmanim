@@ -2,6 +2,7 @@ import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { roleValidator } from "./roles";
+import { notificationTypeValidator } from "./notifications";
 
 export const fundTypeValidator = v.union(
   v.literal("donation"),
@@ -70,7 +71,11 @@ export default defineSchema({
     createdAt: v.number(),
     decidedBy: v.optional(v.id("users")),
     decidedAt: v.optional(v.number()),
-  }).index("by_synagogue_date", ["synagogueId", "dateKey"]),
+    // שנה עברית של dateKey, להכנה לטעינה עתידית של רישומים לפי תקופה
+    hebrewYear: v.optional(v.number()),
+  })
+    .index("by_synagogue_date", ["synagogueId", "dateKey"])
+    .index("by_synagogue_hebrewYear", ["synagogueId", "hebrewYear"]),
 
   kiddushTerms: defineTable({
     synagogueId: v.id("synagogues"),
@@ -81,16 +86,6 @@ export default defineSchema({
     editedBy: v.id("users"),
     editedAt: v.number(),
   }).index("by_synagogue_version", ["synagogueId", "version"]),
-
-  kiddushNotifications: defineTable({
-    synagogueId: v.id("synagogues"),
-    to: v.union(v.id("users"), v.literal("managers")),
-    dateKey: v.string(),
-    text: v.string(),
-    at: v.number(),
-    by: v.id("users"),
-    readBy: v.array(v.id("users")),
-  }).index("by_synagogue_at", ["synagogueId", "at"]),
 
   fundTransactions: defineTable({
     synagogueId: v.id("synagogues"),
@@ -110,18 +105,27 @@ export default defineSchema({
     createdAt: v.number(),
     createdBy: v.id("users"),
     lastReminderDate: v.optional(v.string()),
+    // שנה עברית של date, להכנה לטעינה עתידית של רישומים לפי תקופה
+    hebrewYear: v.optional(v.number()),
   })
     .index("by_synagogue", ["synagogueId"])
-    .index("by_synagogue_donor", ["synagogueId", "donorId"]),
+    .index("by_synagogue_donor", ["synagogueId", "donorId"])
+    .index("by_synagogue_hebrewYear", ["synagogueId", "hebrewYear"]),
 
-  fundNotifications: defineTable({
+  // התראות קידוש וקופה משותפות. dateKey/by רלוונטיים לקידוש בלבד, transactionId לקופה בלבד
+  notifications: defineTable({
     synagogueId: v.id("synagogues"),
-    userId: v.id("users"),
-    transactionId: v.id("fundTransactions"),
+    type: notificationTypeValidator,
+    to: v.union(v.id("users"), v.literal("managers")),
     text: v.string(),
     at: v.number(),
-    read: v.boolean(),
-  }).index("by_synagogue_user_at", ["synagogueId", "userId", "at"]),
+    readBy: v.array(v.id("users")),
+    by: v.optional(v.id("users")),
+    dateKey: v.optional(v.string()),
+    transactionId: v.optional(v.id("fundTransactions")),
+  })
+    .index("by_synagogue_type_at", ["synagogueId", "type", "at"])
+    .index("by_synagogue_type_to_at", ["synagogueId", "type", "to", "at"]),
 
   scheduleFiles: defineTable({
     synagogueId: v.id("synagogues"),
@@ -171,4 +175,12 @@ export default defineSchema({
     storageId: v.id("_storage"),
     createdAt: v.number(),
   }).index("by_synagogue_hash", ["synagogueId", "hash"]),
+
+  // יומן כשלים כללי (שליחת מיילים, cron וכו'), גלוי לבעל האתר בלבד ב"החשבון שלי"
+  errorLogs: defineTable({
+    source: v.string(),
+    message: v.string(),
+    detail: v.optional(v.string()),
+    at: v.number(),
+  }).index("by_at", ["at"]),
 });

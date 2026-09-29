@@ -26,6 +26,10 @@ export const sendInvitationEmail = internalAction({
         status: "failed",
         error: "מפתח שליחת מייל לא מוגדר",
       });
+      await ctx.runMutation(internal.errorLog.log, {
+        source: "invitation-email",
+        message: `מפתח שליחת מייל לא מוגדר (${args.email})`,
+      });
       return;
     }
     const from = process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev";
@@ -71,6 +75,11 @@ export const sendInvitationEmail = internalAction({
           status: "failed",
           error: `שגיאת שרת (${response.status})`,
         });
+        await ctx.runMutation(internal.errorLog.log, {
+          source: "invitation-email",
+          message: `שליחת מייל הזמנה נכשלה (${response.status}): ${args.email}`,
+          detail: body,
+        });
         return;
       }
 
@@ -84,6 +93,11 @@ export const sendInvitationEmail = internalAction({
         invitationId: args.invitationId,
         status: "failed",
         error: "שגיאת רשת בשליחת המייל",
+      });
+      await ctx.runMutation(internal.errorLog.log, {
+        source: "invitation-email",
+        message: `שליחת מייל הזמנה נכשלה (שגיאת רשת): ${args.email}`,
+        detail: err instanceof Error ? err.message : String(err),
       });
     }
   },

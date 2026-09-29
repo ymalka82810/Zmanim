@@ -75,3 +75,24 @@ export async function assertRabbiAvailable(
 }
 
 export const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
+export function isOwnerEmail(email: string | undefined) {
+  if (email === undefined) {
+    return false;
+  }
+  const ownerEmails = (process.env.OWNER_EMAIL ?? "")
+    .split(",")
+    .map((e) => e.trim())
+    .filter((e) => e.length > 0);
+  return ownerEmails.includes(email);
+}
+
+/** בעל האתר בלבד (לפי OWNER_EMAIL). */
+export async function requireOwner(ctx: QueryCtx) {
+  const userId = await requireUser(ctx);
+  const user = await ctx.db.get(userId);
+  if (user === null || !isOwnerEmail(user.email)) {
+    throw new ConvexError("פעולה זו מותרת לבעל האתר בלבד");
+  }
+  return userId;
+}

@@ -1,5 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { query } from "./_generated/server";
+import { isOwnerEmail } from "./roles";
 
 export const me = query({
   args: {},
@@ -12,16 +13,12 @@ export const me = query({
     if (user === null) {
       return null;
     }
-    const ownerEmails = (process.env.OWNER_EMAIL ?? "")
-      .split(",")
-      .map((email) => email.trim())
-      .filter((email) => email.length > 0);
     return {
       userId,
       name: user.name ?? null,
       email: user.email ?? null,
       image: user.image ?? null,
-      isOwner: user.email !== undefined && ownerEmails.includes(user.email),
+      isOwner: isOwnerEmail(user.email),
     };
   },
 });

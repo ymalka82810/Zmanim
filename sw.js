@@ -4,15 +4,14 @@
  * הבקשה לרשת עוקפת את המטמון של הדפדפן, כי GitHub Pages מורה לשמור קבצים 10 דקות.
  * גופנים: מהמטמון, ואם אין – מהרשת.
  */
-const CACHE = 'luach-v30';
+const CACHE = 'luach-c0d9c97274';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
-  'js/app.js', 'js/menu.js', 'js/dialog.js', 'js/theme.js', 'js/astro.js', 'js/config.js', 'js/dates.js', 'js/hebrew.js', 'js/image.js', 'js/luach.js', 'js/moadim.js', 'js/template-read.js', 'js/template-render.js', 'js/template-ui.js', 'js/font-fill.js', 'js/render.js', 'js/zmanim.js',
-  'js/convex-config.js', 'js/auth.js', 'js/community.js', 'js/settings-sync.js',
-  'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
+  'js/app.js', 'js/astro.js', 'js/auth.js', 'js/community.js', 'js/config.js', 'js/convex-config.js', 'js/dates.js', 'js/dialog.js', 'js/font-fill.js', 'js/hebrew.js', 'js/image.js', 'js/luach.js', 'js/menu.js', 'js/moadim.js', 'js/render.js', 'js/settings-sync.js', 'js/template-read.js', 'js/template-render.js', 'js/template-ui.js', 'js/theme.js', 'js/zmanim.js',
+  'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon.svg', 'icons/maskable-512.png',
   'vendor/hebcal/hebcal-core-6.9.3.min.js',
   'vendor/convex/convex-browser-1.46.0.js',
-  'kiddush/', 'kiddush/index.html', 'kiddush/css/styles.css', 'kiddush/js/calendar.js', 'kiddush/js/app.js',
+  'kiddush/', 'kiddush/index.html', 'kiddush/css/styles.css', 'kiddush/js/app.js', 'kiddush/js/calendar.js',
   'gabbai/', 'gabbai/index.html', 'gabbai/css/styles.css', 'gabbai/js/app.js',
   'account/', 'account/index.html', 'account/css/styles.css', 'account/js/app.js',
   'community-calendar/', 'community-calendar/index.html', 'community-calendar/js/app.js'

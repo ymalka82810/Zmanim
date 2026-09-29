@@ -85,9 +85,9 @@ function daysHtml(l, editing) {
 
 /** l – לוח אחרי withEdits. editing – מצב עריכה: מוצגים גם שדות ריקים (שם בית הכנסת, הודעה) כדי שאפשר יהיה לכתוב בהם */
 export function luachHtml(l, editing) {
-  let h = '<div class="stripe"></div><div class="stripe s"></div><div class="stripe"></div>';
+  let h = '<div class="l-head"><div class="stripe"></div><div class="stripe s"></div><div class="stripe"></div>';
   if (l.shul || editing) h += '<div class="l-shul">' + E(l, 'shul', l.shul, 'שם בית הכנסת') + '</div>';
-  h += '<h2 class="l-title">' + E(l, 'title', l.title) + '</h2><div class="l-dates">' + E(l, 'dates', l.dates) + '</div>';
+  h += '<h2 class="l-title">' + E(l, 'title', l.title) + '</h2><div class="l-dates">' + E(l, 'dates', l.dates) + '</div></div>';
   if (l.type === 'days') h += daysHtml(l, editing);
   else l.sections.forEach((s, i) => {
     h += '<table class="l-sec"><tr><th>' + E(l, 's' + i + '.title', s.title) + '</th><th class="d">' + E(l, 's' + i + '.date', s.date) + '</th></tr>';

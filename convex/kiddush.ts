@@ -1,8 +1,10 @@
 import { ConvexError, v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { isManager, requireManager, requireMember } from "./roles";
+import { hebrewYearOf } from "./hebrewDate";
+import * as Notifications from "./notifications";
 
 const DEFAULT_TERMS = {
   intro:
@@ -114,7 +116,7 @@ async function notify(
   dateKey: string,
   text: string,
 ) {
-  await ctx.db.insert("kiddushNotifications", { synagogueId, to, dateKey, text, at: Date.now(), by, readBy: [] });
+  await Notifications.create(ctx, { synagogueId, type: "kiddush", to, text, by, dateKey });
 }
 
 async function userName(ctx: QueryCtx, userId: Id<"users">) {
@@ -178,15 +180,7 @@ export const board = query({
       })),
     );
 
-    const noteDocs = await ctx.db
-      .query("kiddushNotifications")
-      .withIndex("by_synagogue_at", (q) => q.eq("synagogueId", args.synagogueId))
-      .order("desc")
-      .take(200);
-    const notifications = noteDocs
-      .filter((n) => n.by !== userId && (n.to === userId || (n.to === "managers" && manager)))
-      .slice(0, 80)
-      .map((n) => ({ _id: n._id, text: n.text, at: n.at, read: n.readBy.includes(userId) }));
+    const notifications = await Notifications.listVisible(ctx, args.synagogueId, "kiddush", userId, manager);
 
     return {
       synagogue: {
@@ -235,6 +229,7 @@ export const register = mutation({
       termsVersion: await currentTermsVersion(ctx, args.synagogueId),
       termsAckAt: Date.now(),
       createdAt: Date.now(),
+      hebrewYear: hebrewYearOf(args.dateKey),
     });
     if (phone && membership.phone !== phone) {
       await ctx.db.patch(membership._id, { phone });
@@ -344,6 +339,7 @@ export const block = mutation({
       blockLabel,
       termsVersion: 0,
       createdAt: Date.now(),
+      hebrewYear: hebrewYearOf(args.dateKey),
     });
   },
 });
@@ -384,6 +380,7 @@ export const registerManual = mutation({
       createdAt: Date.now(),
       decidedBy: userId,
       decidedAt: Date.now(),
+      hebrewYear: hebrewYearOf(args.dateKey),
     });
   },
 });
@@ -461,25 +458,22 @@ export const markRead = mutation({
   handler: async (ctx, args) => {
     const { userId, membership } = await requireMember(ctx, args.synagogueId);
     const manager = isManager(membership.role);
-    const notes = await ctx.db
-      .query("kiddushNotifications")
-      .withIndex("by_synagogue_at", (q) => q.eq("synagogueId", args.synagogueId))
-      .order("desc")
-      .take(200);
-    for (const n of notes) {
-      const visible = n.by !== userId && (n.to === userId || (n.to === "managers" && manager));
-      if (visible && !n.readBy.includes(userId)) {
-        await ctx.db.patch(n._id, { readBy: [...n.readBy, userId] });
+    await Notifications.markVisibleRead(ctx, args.synagogueId, "kiddush", userId, manager, NOTIFICATION_TTL_MS);
+  },
+});
+
+/** מילוי חד-פעמי של hebrewYear לרישומים קיימים שנוצרו לפני הוספת השדה. אינו נוגע ברישומים שכבר מולאו */
+export const backfillHebrewYear = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const bookings = await ctx.db.query("kiddushBookings").collect();
+    let updated = 0;
+    for (const b of bookings) {
+      if (b.hebrewYear === undefined) {
+        await ctx.db.patch(b._id, { hebrewYear: hebrewYearOf(b.dateKey) });
+        updated++;
       }
     }
-    if (manager) {
-      const old = await ctx.db
-        .query("kiddushNotifications")
-        .withIndex("by_synagogue_at", (q) => q.eq("synagogueId", args.synagogueId).lt("at", Date.now() - NOTIFICATION_TTL_MS))
-        .take(50);
-      for (const n of old) {
-        await ctx.db.delete(n._id);
-      }
-    }
+    return { total: bookings.length, updated };
   },
 });

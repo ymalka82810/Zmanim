@@ -131,6 +131,63 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 .l-notes { margin-top: calc(20px * var(--fit-gap, 1)); padding: calc(12px * var(--fit-gap, 1)) 14px; background: var(--note); border-radius: 10px; font-size: .95rem; white-space: pre-line; }
 .luach-empty { text-align: center; color: var(--muted); }
 
+/* תבניות תצוגה (LAYOUTS ב-config.js). התבנית הקלאסית היא העיצוב שלמעלה; כל שינוי כאן צריך להתאים גם ל-image.js */
+/* פס צבעוני */
+.luach[data-layout="banner"] .stripe { display: none; }
+.luach[data-layout="banner"] .l-head { background: var(--blue); color: var(--paper); border-radius: 12px; padding: calc(16px * var(--fit-gap, 1)) 16px calc(14px * var(--fit-gap, 1)); }
+.luach[data-layout="banner"] .l-title { color: var(--paper); }
+.luach[data-layout="banner"] .l-shul { color: var(--paper); opacity: .9; margin-top: 0; }
+.luach[data-layout="banner"] .l-dates { color: var(--paper); opacity: .85; margin-bottom: 0; padding-bottom: 0; }
+.luach[data-layout="banner"] .l-dates::after { display: none; }
+.luach[data-layout="banner"] .l-sec th { background: var(--soft); border-bottom: none; padding-inline: 10px; }
+.luach[data-layout="banner"] .l-sec th:first-child { border-radius: 0 8px 8px 0; }
+.luach[data-layout="banner"] .l-sec th:last-child { border-radius: 8px 0 0 8px; }
+.luach[data-layout="banner"] .l-sec td { border-bottom: none; padding-inline: 10px; }
+.luach[data-layout="banner"] .l-sec tr:nth-child(odd):not(:first-child) td:not(.z) { background: var(--note); }
+.luach[data-layout="banner"] .l-grid thead th { background: var(--soft); border-bottom: none; }
+.luach[data-layout="banner"] .l-grid tbody tr:nth-child(even):not(.z) > * { background: var(--note); }
+.luach[data-layout="banner"] .l-grid tbody > tr > * { border-bottom: none; }
+/* מסגרת מעוטרת */
+.luach[data-layout="framed"] { padding: 34px 36px 36px; }
+.luach[data-layout="framed"]::before { content: ""; position: absolute; inset: 10px; border: 4px double var(--blue); border-radius: 8px; pointer-events: none; }
+.luach[data-layout="framed"] .stripe { display: none; }
+.luach[data-layout="framed"] .l-shul { margin-top: 0; }
+.luach[data-layout="framed"] .l-dates { padding-bottom: calc(18px * var(--fit-gap, 1)); }
+.luach[data-layout="framed"] .l-dates::before { content: ""; position: absolute; bottom: .35rem; left: 50%; transform: translateX(-50%); width: 120px; height: 1px; background: var(--blue); }
+.luach[data-layout="framed"] .l-dates::after { content: "◆"; width: auto; height: auto; padding: 0 8px; background: var(--paper); color: var(--blue); font-size: .7rem; line-height: 1; border-radius: 0; }
+.luach[data-layout="framed"] .l-sec th { text-align: center; border-bottom: 3px double var(--blue); }
+.luach[data-layout="framed"] .l-sec th.d { text-align: left; }
+.luach[data-layout="framed"] .l-sec td:not(.z) { border-bottom: 1px dotted var(--line); }
+.luach[data-layout="framed"] .l-grid thead th { border-bottom: 3px double var(--blue); }
+.luach[data-layout="framed"] .l-grid td, .luach[data-layout="framed"] .l-grid tbody th { border-bottom-style: dotted; border-bottom-color: var(--line); }
+/* נקי ומודרני */
+.luach[data-layout="minimal"] .stripe { display: none; }
+.luach[data-layout="minimal"] .l-head { border-inline-start: 4px solid var(--blue); padding-inline-start: 14px; }
+.luach[data-layout="minimal"] .l-shul, .luach[data-layout="minimal"] .l-title, .luach[data-layout="minimal"] .l-dates { text-align: right; }
+.luach[data-layout="minimal"] .l-shul { margin-top: 0; font-size: .9rem; color: var(--muted); }
+.luach[data-layout="minimal"] .l-title { margin-top: 2px; }
+.luach[data-layout="minimal"] .l-dates { padding-bottom: 0; }
+.luach[data-layout="minimal"] .l-dates::after { display: none; }
+.luach[data-layout="minimal"] .l-sec th { font-family: var(--f-body); font-size: .95rem; color: var(--blue); border-bottom: 1px solid var(--line); }
+.luach[data-layout="minimal"] .l-sec td { border-bottom-color: transparent; }
+.luach[data-layout="minimal"] .l-sec td.t { color: var(--ink); }
+.luach[data-layout="minimal"] .l-grid thead th { font-family: var(--f-body); border-bottom: 1px solid var(--line); }
+.luach[data-layout="minimal"] .l-grid td { color: var(--ink); }
+.luach[data-layout="minimal"] .l-grid td, .luach[data-layout="minimal"] .l-grid tbody th { border-bottom-color: transparent; }
+
+/* בחירת תבנית תצוגה בהגדרות: דוגמה מוקטנת של כל תבנית */
+.lay-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin: 8px 0 14px; }
+.lay-card { display: flex; flex-direction: column; gap: 6px; padding: 8px; text-align: right; border: 2px solid var(--line); border-radius: 12px; background: var(--bg); color: inherit; cursor: pointer; }
+.lay-card[aria-pressed="true"] { background: var(--bg); color: inherit; border-color: var(--blue); box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 25%, transparent); }
+.lay-card b { font-size: .95rem; }
+.lay-card small { font-size: .78rem; opacity: .75; line-height: 1.35; }
+.lay-thumb { height: 150px; overflow: hidden; border-radius: 8px; border: 1px solid var(--line); pointer-events: none; }
+.lay-thumb .luach { width: 480px; zoom: .3; border: none; border-radius: 0; box-shadow: none; }
+.lay-thumb img { display: block; width: 100%; height: auto; }
+.lay-card[data-upload] { border-style: dashed; }
+.lay-card[data-upload] .lay-thumb { display: grid; place-items: center; border-style: dashed; }
+.lay-plus { font-size: 2.6rem; line-height: 1; color: var(--blue); }
+
 .lp { position: relative; }
 
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(8px); background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 999px; font-size: .9rem; opacity: 0; pointer-events: none; box-shadow: var(--sh-lg); transition: opacity .2s ease, transform .2s ease; max-width: calc(100% - 32px); }
@@ -229,6 +286,9 @@ button[aria-pressed="true"] { background: linear-gradient(135deg, var(--blue), v
 /* מדידת הלוח ברוחב ובגודל של ההדפסה (A4 בלי השוליים), לפני ההדפסה */
 .luach.fit-measure { zoom: var(--fit-zoom, 1); width: calc(182mm / var(--fit-zoom, 1)); max-width: none; border: none; box-shadow: none; padding: 0; font-size: 18px; border-radius: 0; }
 .luach.fit-measure .l-title { font-size: calc(2.4rem * var(--s-title, 1)); }
+/* המסגרת המעוטרת צריכה ריווח גם בהדפסה */
+.luach[data-layout="framed"].fit-measure { padding: 30px 32px; }
+@media print { .luach[data-layout="framed"] { padding: 30px 32px; } }
 
 /* קהילה */
 .gate { text-align: center; padding: 32px 18px; }

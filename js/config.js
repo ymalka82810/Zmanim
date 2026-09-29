@@ -76,6 +76,14 @@ export const THEMES = [
   ['mono', 'שחור-לבן', { ink: '#111111', blue: '#111111', line: '#cccccc', soft: '#eeeeee', muted: '#555555', note: '#f4f4f4', paper: '#ffffff' }]
 ];
 
+/** תבניות תצוגה ללוח שהאתר מעצב (לא לעיצוב מלוח קיים): [מזהה, שם, תיאור קצר] */
+export const LAYOUTS = [
+  ['classic', 'קלאסי', 'פסים בראש הלוח וכותרת במרכז'],
+  ['banner', 'פס צבעוני', 'כותרת בתוך פס צבעוני, ושורות בצבעים מתחלפים'],
+  ['framed', 'מסגרת מעוטרת', 'מסגרת כפולה סביב הלוח וקישוט מתחת לכותרת'],
+  ['minimal', 'נקי ומודרני', 'כותרת בצד, בלי פסים וקישוטים']
+];
+
 /** צבעי ערכת הצבעים שנבחרה */
 export function themeColors(key) {
   const t = THEMES.find(x => x[0] === key) || THEMES[0];
@@ -159,7 +167,7 @@ export const DEFAULT_CONFIG = {
 /** תבנית חדשה של המשתמש. rules – זמני התפילות להתחלה */
 export function newTemplate(name, kind, rules) {
   return { id: 'u' + Date.now().toString(36), name, kind, moadim: [], rules: clone(rules || []), design: null,
-    font: 'classic', theme: 'classic', sizes: { ...DEFAULT_SIZES } };
+    font: 'classic', theme: 'classic', layout: 'classic', sizes: { ...DEFAULT_SIZES } };
 }
 
 /** העיצוב של התבנית. { ref } – העיצוב של תבנית אחרת (למשל חגים שמשתמשים בעיצוב של שבתות) */
@@ -200,6 +208,7 @@ export function normalize(c) {
     // עד גרסה 2 הגופן היה אחד לכל הלוחות (cfg.font), ועכשיו הוא עובר לכל תבנית
     if (!FONTS.some(f => f[0] === t.font)) t.font = FONTS.some(f => f[0] === cfg.font) ? cfg.font : 'classic';
     if (!THEMES.some(x => x[0] === t.theme)) t.theme = 'classic';
+    if (!LAYOUTS.some(x => x[0] === t.layout)) t.layout = 'classic';
     const sizes = t.sizes && typeof t.sizes === 'object' ? t.sizes : {};
     t.sizes = {};
     for (const [k] of SIZE_PARTS) t.sizes[k] = SIZES.indexOf(Number(sizes[k])) >= 0 ? Number(sizes[k]) : 100;

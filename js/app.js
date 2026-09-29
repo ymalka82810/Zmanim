@@ -3,7 +3,7 @@
  * ועותק שלהן נשמר בדפדפן. הלוחות המאושרים נשמרים בקהילה (community.js).
  */
 
-import { CITIES, BASES, WHEN, WHEN_LABELS, APPLIES, ROUND, FONTS, THEMES, SIZE_PARTS, SIZES, DEFAULT_CONFIG, DAY_APPLIES, BUILTIN, isBuiltin, newTemplate, designOf, activeDesign,
+import { CITIES, BASES, WHEN, WHEN_LABELS, APPLIES, ROUND, FONTS, THEMES, LAYOUTS, SIZE_PARTS, SIZES, DEFAULT_CONFIG, DAY_APPLIES, BUILTIN, isBuiltin, newTemplate, designOf, activeDesign,
   prayerBases, fontFamilies, fontsHref, themeColors, normalize, loadConfig, saveConfig, clearConfig } from './config.js';
 import { findOccasion, templateFor, periodFor, occasionParts, buildLuach, buildDaysLuach, dayPages } from './luach.js';
 import { MOADIM } from './moadim.js';
@@ -132,13 +132,15 @@ function build(p) {
 }
 /** העמודים של הלוח כקנבסים: עמוד לכל יום בעיצוב מקובץ, או עמוד אחד בעיצוב של האתר */
 const drawLuach = async l => l.design ? Promise.all(l.pages.map(v => templateCanvas(l.design, v)))
-  : [await luachCanvas(l, l.tpl.font, l.tpl.sizes, l.tpl.theme)];
+  : [await luachCanvas(l, l.tpl.font, l.tpl.sizes, l.tpl.theme, l.tpl.layout)];
 
 /**
- * החלת הגופן, ערכת הצבעים והגדלים של התבנית t על el (הלוח, או הדוגמה בהגדרות).
+ * החלת הגופן, ערכת הצבעים, הגדלים ותבנית התצוגה של התבנית t על el (הלוח, או הדוגמה בהגדרות).
  * הגופן נטען מ-Google Fonts, קישור לכל גופן כך שכמה תבניות יכולות להשתמש בגופנים שונים.
+ * layout – תבנית תצוגה אחרת משל t (לדוגמאות בבחירת התבנית)
  */
-function applyDesign(el, t) {
+function applyDesign(el, t, layout = t.layout) {
+  el.dataset.layout = layout;
   const id = 'fontLink-' + t.font;
   if (!document.getElementById(id)) {
     const link = document.createElement('link');
@@ -208,6 +210,8 @@ function renderLuach() {
   renderMixOffer(p);
   if (current.design) {
     const l = current;
+    // עיצוב מלוח קיים הוא תמונה, ותבנית התצוגה (למשל מסגרת) לא חלה עליו
+    delete $('luach').dataset.layout;
     $('luach').innerHTML = l.pages.map((v, i) => '<div class="lp" data-p="' + i + '"><img class="luach-img" alt="' + esc(v.title) + '"></div>').join('');
     drawLuach(l).then(pages => {
       if (current !== l) return;
@@ -474,7 +478,74 @@ function renderFont() {
     '<select id="size-' + k + '" data-size="' + k + '">' +
     SIZES.map(v => '<option value="' + v + '"' + (v === t.sizes[k] ? ' selected' : '') + '>' + v + '%</option>').join('') + '</select></div>').join('');
   renderFontSample();
+  renderLayouts();
 }
+
+/** לוחות לדוגמה לבחירת תבנית התצוגה, לפי סוג הלוח */
+const LAYOUT_SAMPLES = {
+  holy: {
+    type: 'holy', shul: 'בית הכנסת', title: 'שבת פרשת בראשית', dates: 'כ״ה תשרי תשפ״ז', notes: '', sections: [
+      { title: 'ערב שבת', date: 'ו׳ 2.10', rows: [{ name: 'מנחה וקבלת שבת', text: '18:15' }], zmanim: [['הדלקת נרות', '17:52'], ['שקיעה', '18:12']] },
+      { title: 'יום השבת', date: 'ש׳ 3.10', rows: [{ name: 'שחרית', text: '08:00' }, { name: 'מנחה', text: '17:30' }, { name: 'ערבית', text: '18:55' }], zmanim: [] }
+    ]
+  },
+  days: {
+    type: 'days', shul: 'בית הכנסת', title: 'ימות השבוע', dates: 'כ״ו תשרי – א׳ חשוון תשפ״ז', notes: '',
+    days: ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי'].map((name, i) => ({ name, date: (4 + i) + '.10', special: '' })),
+    rows: [['שחרית', '06:30'], ['מנחה', '17:55'], ['ערבית', '18:40']].map(([name, v]) => ({ name, cells: Array(5).fill(v) })),
+    zmanim: [{ name: 'שקיעה', cells: ['18:10', '18:09', '18:08', '18:07', '18:06'] }]
+  }
+};
+/**
+ * לוחות שהועלו בקהילה ושאפשר להציג בהם את התבנית t: עיצוב שנשמר בתבנית עצמה (לא שיוך),
+ * רק מתבניות מאותו סוג, כי האזורים בקובץ בנויים לפי סוג הלוח
+ */
+const uploadedDesigns = t => cfg.templates.filter(x => x.kind === t.kind && x.design && !x.design.ref);
+
+/** תבניות התצוגה: המוכנות של האתר, ואחריהן הלוחות שהועלו בקהילה והעלאת לוח חדש */
+function renderLayouts() {
+  const t = selTpl(), sample = withEdits(LAYOUT_SAMPLES[t.kind], {});
+  const active = activeDesign(cfg, t) ? (t.design.ref || t.id) : null;
+  const card = (attr, pressed, thumb, name, about) => '<button type="button" class="lay-card" ' + attr + ' aria-pressed="' + pressed + '">' +
+    '<div class="lay-thumb" aria-hidden="true">' + thumb + '</div><b>' + esc(name) + '</b><small>' + esc(about) + '</small></button>';
+  $('layouts').innerHTML =
+    LAYOUTS.map(([id, name, about]) => card('data-layout="' + id + '"', !active && id === t.layout, '<div class="luach"></div>', name, about)).join('') +
+    uploadedDesigns(t).map(x => card('data-design="' + esc(x.id) + '"', active === x.id, '<img src="' + esc(x.design.image) + '" alt="">',
+      x === t ? 'הלוח שהועלה לתבנית הזו' : 'הלוח של "' + x.name + '"', 'לוח שהועלה בקהילה: ' + x.design.name)).join('') +
+    card('data-upload="1"', false, '<span class="lay-plus">+</span>', 'העלאת לוח משלכם', 'PDF או תמונה של לוח ישן. הוא יתווסף לתבניות של הקהילה');
+  $('layouts').querySelectorAll('.lay-card[data-layout]').forEach(c => {
+    const el = c.querySelector('.luach');
+    applyDesign(el, t, c.dataset.layout);
+    el.innerHTML = luachHtml(sample);
+  });
+}
+
+/** הצגת התבנית t בלוח שהועלה לתבנית src (או לה עצמה). עיצוב שהועלה ל-t נשמר לתבניות שמשתמשות בו */
+async function useDesign(t, src) {
+  if (src === t) t.design.enabled = true;
+  else {
+    if (t.design && !t.design.ref) {
+      if (!await SiteDialog.confirm('לתבנית "' + t.name + '" יש לוח שהועלה אליה. להחליף אותו בלוח של "' + src.name + '"?', { ok: 'החלפה' })) return;
+      for (const x of cfg.templates) if (x.design && x.design.ref === t.id) x.design = { ...t.design, enabled: x.design.enabled !== false };
+    }
+    const prev = t.design;
+    t.design = { ref: src.id, enabled: true };
+    if (!store()) { t.design = prev; toast('לא ניתן לשמור במכשיר הזה', true); return; }
+  }
+  renderTemplateStatus(); renderLayouts(); changed();
+}
+
+$('layouts').addEventListener('click', e => {
+  const c = e.target.closest('.lay-card');
+  if (!c) return;
+  const t = selTpl();
+  if (c.dataset.upload) { $('tplFile').click(); return; }
+  if (c.dataset.design) { const src = cfg.templates.find(x => x.id === c.dataset.design); if (src) useDesign(t, src); return; }
+  t.layout = c.dataset.layout;
+  // הלוח שהועלה נשאר שמור, ואפשר לחזור אליו מכאן
+  if (t.design) t.design.enabled = false;
+  renderTemplateStatus(); renderLayouts(); changed();
+});
 function renderFontSample() {
   const t = selTpl(), el = $('fontSample');
   applyDesign(el, t);
@@ -487,7 +558,7 @@ $('sizes').addEventListener('input', e => {
   const k = e.target.dataset.size;
   if (!k) return;
   selTpl().sizes[k] = Number(e.target.value);
-  renderFontSample(); changed();
+  renderFontSample(); renderLayouts(); changed();
 });
 
 /* ---------- ייבוא מתבנית אחרת: זמנים, עיצוב, גופן וגדלים ---------- */
@@ -566,8 +637,8 @@ async function doImport(box) {
     if (!store()) { t.design = null; toast('אין מספיק מקום במכשיר לעותק של העיצוב', true); return; }
     toast('העיצוב יובא מ' + src.name + '. זמני התפילות בו לפי התבנית "' + t.name + '"');
   } else {
-    t.font = src.font; t.theme = src.theme; t.sizes = { ...src.sizes };
-    toast('הגופן, ערכת הצבעים והגדלים יובאו מ' + src.name);
+    t.font = src.font; t.theme = src.theme; t.layout = src.layout; t.sizes = { ...src.sizes };
+    toast('תבנית התצוגה, הגופן, ערכת הצבעים והגדלים יובאו מ' + src.name);
   }
   closeImport(box);
   renderRules(); renderTemplateStatus(); renderFont();
@@ -817,8 +888,8 @@ bind('tz', v => { cfg.tz = v; cursor = null; });
 bind('il', v => { cfg.il = v === '1'; cursor = null; });
 bind('havdalah', v => { cfg.havdalah = v; });
 bind('notes', v => { cfg.notes = v; });
-bind('font', v => { selTpl().font = v; renderFontSample(); });
-bind('theme', v => { selTpl().theme = v; renderFontSample(); });
+bind('font', v => { selTpl().font = v; renderFontSample(); renderLayouts(); });
+bind('theme', v => { selTpl().theme = v; renderFontSample(); renderLayouts(); });
 
 /* ---------- עיצוב מלוח קיים ---------- */
 
@@ -913,7 +984,7 @@ $('tplRemove').onclick = async () => {
 $('tplUse').onchange = () => {
   // בעיצוב משותף ההפעלה נשמרת בתבנית עצמה, כך שאפשר לכבות אותו רק בחגים למשל
   selTpl().design.enabled = $('tplUse').checked;
-  changed();
+  renderLayouts(); changed();
 };
 
 /* ---------- גיבוי ---------- */

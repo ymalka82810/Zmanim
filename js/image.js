@@ -1,6 +1,6 @@
 /**
  * ציור הלוח כתמונה (canvas) ויצירת PNG ו-PDF ממנה, בלי ספריות חיצוניות.
- * העיצוב תואם לתצוגת הלוח באתר.
+ * העיצוב תואם לתצוגת הלוח באתר, בכל אחת מתבניות התצוגה.
  */
 
 let C = { ink: '#1d2b45', blue: '#2c4a7c', muted: '#5d6b82', soft: '#e3e9f2', note: '#eef3fa', bg: '#ffffff' };
@@ -8,6 +8,7 @@ import { fontFamilies, themeColors } from './config.js';
 
 let SERIF, SANS;   // גופן הכותרת וגופן הטקסט, לפי התבנית
 let SZ = { title: 1, name: 1, time: 1, zman: 1 };   // גדלי הטקסט של התבנית (1 = רגיל)
+let LAY = 'classic';   // תבנית התצוגה (LAYOUTS ב-config.js)
 const px = (n, k) => Math.round(n * SZ[k] * 10) / 10;
 const W = 800, M = 56, SCALE = 2;   // רוחב לוגי, שוליים, רזולוציה (1600 פיקסלים)
 
@@ -26,43 +27,98 @@ function wrap(ctx, text, width) {
   return lines;
 }
 
-/** עובר על כל הלוח. אם draw=false רק מודד ומחזיר את הגובה. */
-function layout(ctx, l, draw) {
+/** קו מופרד בין שורות, לפי תבנית התצוגה */
+function rowLine(rect, y) {
+  const inner = W - 2 * M;
+  if (LAY === 'classic') rect(M, y - 1, inner, 1, C.soft);
+  else if (LAY === 'framed') for (let x = M; x < W - M; x += 5) rect(x, y - 1, 2, 1, C.line);
+}
+
+/** קו מתחת לכותרת של קטע או של טבלת הימים, לפי תבנית התצוגה. מחזיר את ה-y שאחריו */
+function headLine(rect, y) {
+  const inner = W - 2 * M;
+  if (LAY === 'framed') { rect(M, y, inner, 1.5, C.blue); rect(M, y + 4, inner, 1.5, C.blue); return y + 6; }
+  if (LAY === 'minimal') { rect(M, y, inner, 1, C.line); return y + 3; }
+  if (LAY === 'classic') rect(M, y, inner, 3, C.blue);
+  return y + 3;
+}
+
+/** עובר על כל הלוח. אם draw=false רק מודד ומחזיר את הגובה. H – גובה הלוח (בציור) */
+function layout(ctx, l, draw, H) {
   const R = W - M, inner = W - 2 * M;
   const text = (s, x, y, font, color, align) => {
     if (!draw) return;
     ctx.font = font; ctx.fillStyle = color; ctx.textAlign = align; ctx.fillText(s, x, y);
   };
   const rect = (x, y, w, h, color) => { if (draw) { ctx.fillStyle = color; ctx.fillRect(x, y, w, h); } };
+  const round = (x, y, w, h, r, color) => {
+    if (!draw) return;
+    ctx.fillStyle = color; ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h);
+    ctx.fill();
+  };
+
+  if (LAY === 'framed' && draw) {
+    ctx.strokeStyle = C.blue;
+    ctx.lineWidth = 3; ctx.strokeRect(16, 16, W - 32, H - 32);
+    ctx.lineWidth = 1; ctx.strokeRect(23.5, 23.5, W - 47, H - 47);
+  }
 
   let y = 40;
-  rect(M, y, inner, 8, C.blue); rect(M, y + 13, inner, 3, C.blue); rect(M, y + 21, inner, 8, C.blue);
-  y += 29;
-
-  if (l.shul) { y += 40; text(l.shul, W / 2, y, '700 22px ' + SANS, C.blue, 'center'); }
-
   const tf = '900 ' + px(50, 'title') + 'px ' + SERIF;
-  ctx.font = tf;
-  for (const line of wrap(ctx, l.title, inner)) { y += px(60, 'title'); text(line, W / 2, y, tf, C.ink, 'center'); }
-  y += 32; text(l.dates, W / 2, y, '400 18px ' + SANS, C.muted, 'center');
+  if (LAY === 'banner') {
+    ctx.font = tf;
+    const lines = wrap(ctx, l.title, inner - 40);
+    round(M, y, inner, (l.shul ? 40 : 0) + lines.length * px(60, 'title') + 54, 12, C.blue);
+    if (l.shul) { y += 40; text(l.shul, W / 2, y, '700 22px ' + SANS, C.bg, 'center'); }
+    for (const line of lines) { y += px(60, 'title'); text(line, W / 2, y, tf, C.bg, 'center'); }
+    y += 32; text(l.dates, W / 2, y, '400 18px ' + SANS, C.bg, 'center');
+    y += 22;
+  } else {
+    const minimal = LAY === 'minimal', top = y;
+    const ax = minimal ? R - 18 : W / 2, al = minimal ? 'right' : 'center';
+    if (LAY === 'classic') { rect(M, y, inner, 8, C.blue); rect(M, y + 13, inner, 3, C.blue); rect(M, y + 21, inner, 8, C.blue); }
+    if (!minimal) y += 29;
+    if (l.shul) { y += minimal ? 24 : 40; text(l.shul, ax, y, '700 ' + (minimal ? 19 : 22) + 'px ' + SANS, minimal ? C.muted : C.blue, al); }
+    ctx.font = tf;
+    for (const line of wrap(ctx, l.title, minimal ? inner - 18 : inner)) { y += px(60, 'title'); text(line, ax, y, tf, C.ink, al); }
+    y += 32; text(l.dates, ax, y, '400 18px ' + SANS, C.muted, al);
+    if (minimal) rect(R - 4, top, 4, y + 10 - top, C.blue);
+    if (LAY === 'framed') {
+      y += 24;
+      rect(W / 2 - 60, y, 120, 1, C.blue);
+      rect(W / 2 - 14, y - 7, 28, 15, C.bg);
+      if (draw) { ctx.fillStyle = C.blue; ctx.beginPath(); ctx.moveTo(W / 2, y - 5.5); ctx.lineTo(W / 2 + 5.5, y + .5); ctx.lineTo(W / 2, y + 6.5); ctx.lineTo(W / 2 - 5.5, y + .5); ctx.fill(); }
+    }
+  }
 
-  if (l.type === 'days') y = daysGrid(ctx, l, y, text, rect);
+  if (l.type === 'days') y = daysGrid(ctx, l, y, text, rect, round);
   else for (const s of l.sections) {
     y += 52;
-    text(s.title, R, y, '700 24px ' + SANS, C.ink, 'right');
-    text(s.date, M, y, '400 16px ' + SANS, C.muted, 'left');
-    y += 12; rect(M, y, inner, 3, C.blue); y += 3;
+    const bar = LAY === 'banner' ? 12 : 0;
+    if (bar) round(M, y - 31, inner, 44, 8, C.soft);
+    const minimal = LAY === 'minimal';
+    const sf = '700 ' + (minimal ? 20 : 24) + 'px ' + SANS;
+    if (LAY === 'framed') {
+      // הכותרת במרכז המקום שמימין לתאריך, כמו בתצוגה באתר
+      ctx.font = '400 16px ' + SANS;
+      text(s.title, (R + M + ctx.measureText(s.date).width + 12) / 2, y, sf, C.ink, 'center');
+    } else text(s.title, R - bar, y, sf, minimal ? C.blue : C.ink, 'right');
+    text(s.date, M + bar, y, '400 16px ' + SANS, C.muted, 'left');
+    y = headLine(rect, y + (bar ? 13 : 12));
 
-    for (const r of s.rows) {
+    s.rows.forEach((r, k) => {
       const nf = '400 ' + px(21, 'name') + 'px ' + SANS, lh = px(28, 'name');
       ctx.font = nf;
-      const lines = wrap(ctx, r.name, inner - px(110, 'time'));
+      const lines = wrap(ctx, r.name, inner - px(110, 'time') - 2 * bar);
       const top = y, base = top + 10 + Math.max(px(22, 'name'), px(22, 'time'));
-      lines.forEach((line, i) => text(line, R, base + i * lh, nf, C.ink, 'right'));
-      text(r.text, M, base, '700 ' + px(22, 'time') + 'px ' + SANS, C.ink, 'left');
-      y = base + 14 + (lines.length - 1) * lh;
-      rect(M, y - 1, inner, 1, C.soft);
-    }
+      const next = base + 14 + (lines.length - 1) * lh;
+      if (bar && k % 2) round(M, top, inner, next - top, 6, C.note);
+      lines.forEach((line, i) => text(line, R - bar, base + i * lh, nf, C.ink, 'right'));
+      text(r.text, M + bar, base, '700 ' + px(22, 'time') + 'px ' + SANS, C.ink, 'left');
+      y = next;
+      rowLine(rect, y);
+    });
 
     if (s.zmanim.length) {
       // זמני היום: פריטים מימין לשמאל, עם מעבר שורה כשצריך
@@ -101,12 +157,14 @@ function layout(ctx, l, draw) {
 }
 
 /** לוח ימי חול: עמודת שמות מימין ועמודה לכל יום. מחזיר את ה-y בסוף הטבלה */
-function daysGrid(ctx, l, y, text, rect) {
+function daysGrid(ctx, l, y, text, rect, round) {
   const R = W - M, inner = W - 2 * M, labelW = 150, n = l.days.length, colW = (inner - labelW) / n;
   const cx = i => R - labelW - colW * (i + 0.5);
   const specials = l.days.some(d => d.special);
+  const banner = LAY === 'banner';
 
   y += 50;
+  if (banner) round(M, y - 30, inner, (specials ? 70 : 32) + 28, 8, C.soft);
   l.days.forEach((d, i) => {
     text(d.name, cx(i), y, '700 19px ' + SANS, C.ink, 'center');
     text(d.date, cx(i), y + 22, '400 15px ' + SANS, C.muted, 'center');
@@ -116,18 +174,20 @@ function daysGrid(ctx, l, y, text, rect) {
         .forEach((line, k) => text(line, cx(i), y + 42 + k * 16, '700 13px ' + SANS, C.blue, 'center'));
     }
   });
-  y += specials ? 70 : 32;
-  rect(M, y, inner, 3, C.blue); y += 3;
+  y = headLine(rect, y + (specials ? 70 : 32));
 
-  // ns – גודל השם, ts – גודל השעות
-  const row = (r, ns, ts, color) => {
+  // ns – גודל השם, ts – גודל השעות. fill – רקע לשורה (שורות מתחלפות בתבנית פס צבעוני)
+  const pad = banner ? 8 : 0;
+  const row = (r, ns, ts, color, fill) => {
     ctx.font = '400 ' + ns + 'px ' + SANS;
-    const lines = wrap(ctx, r.name, labelW - 10), top = y, size = Math.max(ns, ts);
-    lines.forEach((line, k) => text(line, R, top + size + 12 + k * (ns + 7), '400 ' + ns + 'px ' + SANS, color, 'right'));
+    const lines = wrap(ctx, r.name, labelW - 10 - pad), top = y, size = Math.max(ns, ts);
+    const next = top + size + 24 + (lines.length - 1) * (ns + 7);
+    if (fill) round(M, top, inner, next - top, 6, C.note);
+    lines.forEach((line, k) => text(line, R - pad, top + size + 12 + k * (ns + 7), '400 ' + ns + 'px ' + SANS, color, 'right'));
     r.cells.forEach((c, i) => { if (c != null) text(c, cx(i), top + size + 12, '700 ' + ts + 'px ' + SANS, color, 'center'); });
-    y = top + size + 24 + (lines.length - 1) * (ns + 7);
+    y = next;
   };
-  for (const r of l.rows) { row(r, px(20, 'name'), px(20, 'time'), C.ink); rect(M, y - 1, inner, 1, C.soft); }
+  l.rows.forEach((r, k) => { row(r, px(20, 'name'), px(20, 'time'), C.ink, banner && k % 2); rowLine(rect, y); });
   y += 6;
   for (const r of l.zmanim) row(r, px(15, 'zman'), px(15, 'zman'), C.muted);
   return y;
@@ -150,11 +210,15 @@ async function loadFonts(font) {
   } catch (e) { /* בלי חיבור ובלי מטמון – גופן חלופי */ }
 }
 
-/** מצייר את הלוח ומחזיר canvas. font/theme – מזהי הגופן וערכת הצבעים של התבנית, sizes – הגדלים שלה באחוזים */
-export async function luachCanvas(l, font, sizes = {}, theme) {
+/**
+ * מצייר את הלוח ומחזיר canvas. font/theme/layout – מזהי הגופן, ערכת הצבעים ותבנית התצוגה של התבנית,
+ * sizes – הגדלים שלה באחוזים
+ */
+export async function luachCanvas(l, font, sizes = {}, theme, lay) {
   ({ title: SERIF, body: SANS } = fontFamilies(font));
   const t = themeColors(theme);
-  C = { ink: t.ink, blue: t.blue, muted: t.muted, soft: t.soft, note: t.note, bg: t.paper };
+  C = { ink: t.ink, blue: t.blue, muted: t.muted, soft: t.soft, note: t.note, line: t.line, bg: t.paper };
+  LAY = lay || 'classic';
   SZ = {};
   for (const k of ['title', 'name', 'time', 'zman']) SZ[k] = (Number(sizes[k]) || 100) / 100;
   await loadFonts(font);
@@ -168,7 +232,7 @@ export async function luachCanvas(l, font, sizes = {}, theme) {
   ctx.direction = 'rtl';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, h);
-  layout(ctx, l, true);
+  layout(ctx, l, true, h);
   return canvas;
 }
 

@@ -4,6 +4,9 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { getMembership, isManager, requireManager, requireMember } from "./roles";
 import { fundTypeValidator } from "./schema";
+import { logError } from "./errorLog";
+import * as Notifications from "./notifications";
+import { hebrewYearOf } from "./hebrewDate";
 
 const PLEDGE_TYPES = v.union(v.literal("donation"), v.literal("mitzvah"));
 const REMINDER_DAYS = 5;
@@ -71,6 +74,7 @@ async function clean(ctx: MutationCtx, synagogueId: Id<"synagogues">, tx: TxInpu
     type: tx.type,
     amount: Math.round(tx.amount * 100) / 100,
     date: tx.date,
+    hebrewYear: hebrewYearOf(tx.date),
     donorId,
     name: withDonor ? clip(tx.name, 80) : "",
     desc: clip(tx.desc, 500),
@@ -103,12 +107,7 @@ const forClient = (t: Doc<"fundTransactions">) => ({
 });
 
 async function myNotifications(ctx: QueryCtx, synagogueId: Id<"synagogues">, userId: Id<"users">) {
-  const notes = await ctx.db
-    .query("fundNotifications")
-    .withIndex("by_synagogue_user_at", (q) => q.eq("synagogueId", synagogueId).eq("userId", userId))
-    .order("desc")
-    .take(50);
-  return notes.map((n) => ({ _id: n._id, text: n.text, at: n.at, read: n.read }));
+  return await Notifications.listForRecipient(ctx, synagogueId, "fund", userId);
 }
 
 /** גבאי ורב מקבלים את כל הקופה. חבר קהילה מקבל רק תרומות ומצוות שמשויכות אליו, וכן תזכורות תשלום אישיות. */
@@ -200,15 +199,7 @@ export const markNotificationsRead = mutation({
   args: { synagogueId: v.id("synagogues") },
   handler: async (ctx, args) => {
     const { userId } = await requireMember(ctx, args.synagogueId);
-    const notes = await ctx.db
-      .query("fundNotifications")
-      .withIndex("by_synagogue_user_at", (q) => q.eq("synagogueId", args.synagogueId).eq("userId", userId))
-      .collect();
-    for (const n of notes) {
-      if (!n.read) {
-        await ctx.db.patch(n._id, { read: true });
-      }
-    }
+    await Notifications.markRecipientRead(ctx, args.synagogueId, "fund", userId);
   },
 });
 
@@ -221,30 +212,39 @@ function pledgeText(t: Doc<"fundTransactions">) {
 export const sendDueReminders = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const today = new Date().toISOString().slice(0, 10);
-    const isTenth = today.slice(8, 10) === "10";
-    const txs = await ctx.db.query("fundTransactions").collect();
-    for (const t of txs) {
-      if (t.paid || !t.donorId || !DONOR_TYPES.has(t.type)) {
-        continue;
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const isTenth = today.slice(8, 10) === "10";
+      const txs = await ctx.db.query("fundTransactions").collect();
+      for (const t of txs) {
+        if (t.paid || !t.donorId || !DONOR_TYPES.has(t.type)) {
+          continue;
+        }
+        const since = t.lastReminderDate ?? new Date(t.createdAt).toISOString().slice(0, 10);
+        if (since === today) {
+          continue;
+        }
+        const daysSince = Math.round((Date.parse(today) - Date.parse(since)) / 864e5);
+        if (daysSince < REMINDER_DAYS && !isTenth) {
+          continue;
+        }
+        await Notifications.create(ctx, {
+          synagogueId: t.synagogueId,
+          type: "fund",
+          to: t.donorId,
+          text: pledgeText(t),
+          transactionId: t._id,
+        });
+        await ctx.db.patch(t._id, { lastReminderDate: today });
       }
-      const since = t.lastReminderDate ?? new Date(t.createdAt).toISOString().slice(0, 10);
-      if (since === today) {
-        continue;
-      }
-      const daysSince = Math.round((Date.parse(today) - Date.parse(since)) / 864e5);
-      if (daysSince < REMINDER_DAYS && !isTenth) {
-        continue;
-      }
-      await ctx.db.insert("fundNotifications", {
-        synagogueId: t.synagogueId,
-        userId: t.donorId,
-        transactionId: t._id,
-        text: pledgeText(t),
-        at: Date.now(),
-        read: false,
-      });
-      await ctx.db.patch(t._id, { lastReminderDate: today });
+    } catch (err) {
+      console.error("שליחת תזכורות תשלום נכשלה", err);
+      await logError(
+        ctx,
+        "fund-reminders",
+        "שליחת תזכורות תשלום נכשלה",
+        err instanceof Error ? err.message : String(err),
+      );
     }
   },
 });
@@ -337,5 +337,21 @@ export const importLocal = mutation({
       await ctx.db.insert("fundSettings", { synagogueId: args.synagogueId, openMain: args.openMain || 0, openPetty: args.openPetty || 0 });
     }
     return args.txs.length;
+  },
+});
+
+/** מילוי חד-פעמי של hebrewYear לרישומים קיימים שנוצרו לפני הוספת השדה. אינו נוגע ברישומים שכבר מולאו */
+export const backfillHebrewYear = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const txs = await ctx.db.query("fundTransactions").collect();
+    let updated = 0;
+    for (const t of txs) {
+      if (t.hebrewYear === undefined) {
+        await ctx.db.patch(t._id, { hebrewYear: hebrewYearOf(t.date) });
+        updated++;
+      }
+    }
+    return { total: txs.length, updated };
   },
 });
