@@ -57,6 +57,8 @@ export const mine = query({
           city: synagogue.city,
           il: synagogue.il,
           inviteCode: isManager(membership.role) ? synagogue.inviteCode : null,
+          address: synagogue.address ?? "",
+          publicCode: synagogue.publicCode ?? null,
           role: membership.role,
         };
       }),
@@ -71,6 +73,7 @@ export const update = mutation({
     name: v.string(),
     city: v.string(),
     il: v.boolean(),
+    address: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await requireManager(ctx, args.synagogueId);
@@ -78,6 +81,7 @@ export const update = mutation({
       name: args.name,
       city: args.city,
       il: args.il,
+      ...(args.address !== undefined ? { address: args.address.trim().slice(0, 200) } : {}),
     });
   },
 });
@@ -120,6 +124,9 @@ export const purgeData = internalMutation({
       ...(await ctx.db.query("fundSettings").withIndex("by_synagogue", (q) => q.eq("synagogueId", id)).take(PURGE_BATCH)),
       ...(await ctx.db.query("notifications").withIndex("by_synagogue_type_at", (q) => q.eq("synagogueId", id)).take(PURGE_BATCH)),
       ...(await ctx.db.query("communityEvents").withIndex("by_synagogue_date", (q) => q.eq("synagogueId", id)).take(PURGE_BATCH)),
+      ...(await ctx.db.query("yahrzeits").withIndex("by_synagogue", (q) => q.eq("synagogueId", id)).take(PURGE_BATCH)),
+      ...(await ctx.db.query("minyanim").withIndex("by_synagogue", (q) => q.eq("synagogueId", id)).take(PURGE_BATCH)),
+      ...(await ctx.db.query("minyanRsvps").withIndex("by_synagogue_date", (q) => q.eq("synagogueId", id)).take(PURGE_BATCH)),
       ...(await ctx.db.query("zmanimSettings").withIndex("by_synagogue", (q) => q.eq("synagogueId", id)).take(PURGE_BATCH)),
       ...(await ctx.db.query("zmanimProfiles").withIndex("by_synagogue_name", (q) => q.eq("synagogueId", id)).take(PURGE_BATCH)),
     ];

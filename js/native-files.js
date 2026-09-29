@@ -1,7 +1,7 @@
 /* שמירת קבצים, שיתוף והדפסה שעובדים גם באפליקציית אנדרואיד, שבה הורדת blob:, navigator.share ו-window.print() לא עושים כלום.
  * NativeFiles.save(blob, name, {open}) – בדפדפן הורדה רגילה; באפליקציה שמירה בתיקיית ההורדות,
  *   או עם {open: true} פתיחה באפליקציה שמטפלת בקובץ (למשל .ics ביומן). מחזיר 'downloaded' | 'saved' | 'opened' | 'shared'.
- * NativeFiles.share({file, title, text, url}) – חלון שיתוף של קובץ או של טקסט/קישור.
+ * NativeFiles.share({file, title, text, url}) – חלון שיתוף של קובץ או של טקסט/קישור. עם קובץ, text נשלח ככיתוב (למשל בוואטסאפ).
  *   מחזיר 'shared' | 'cancelled' | 'unsupported' (דפדפן בלי שיתוף – המטפל מחליט מה לעשות במקום).
  * NativeFiles.print({title, paper, landscape}) – באפליקציה חלון ההדפסה של אנדרואיד, ומתממש כשהוא נסגר.
  * החלק ה-native ב-android/.../NativeFilesPlugin.java.
@@ -18,9 +18,9 @@ const toBase64 = blob => new Promise((resolve, reject) => {
   r.readAsDataURL(blob);
 });
 
-async function nativeSave(blob, name, mode, title) {
+async function nativeSave(blob, name, mode, title, text) {
   const mime = (blob.type || 'application/octet-stream').split(';')[0];
-  const r = await call('save', { name, mime, mode, title, data: await toBase64(blob) });
+  const r = await call('save', { name, mime, mode, title, text, data: await toBase64(blob) });
   return r.result;
 }
 
@@ -36,10 +36,10 @@ async function save(blob, name, { open = false } = {}) {
 
 async function share({ file, title = '', text = '', url = '' } = {}) {
   if (isApp()) {
-    if (file) return nativeSave(file, file.name, 'share', title || file.name);
+    if (file) return nativeSave(file, file.name, 'share', title || file.name, text);
     return (await call('shareText', { title, text: [text, url].filter(Boolean).join('\n') })).result;
   }
-  const data = file ? { files: [file], title } : { title, text: text || undefined, url: url || undefined };
+  const data = file ? { files: [file], title, text: text || undefined } : { title, text: text || undefined, url: url || undefined };
   if (!navigator.share || (file && !(navigator.canShare && navigator.canShare(data)))) return 'unsupported';
   try { await navigator.share(data); return 'shared'; }
   catch (e) { if (e.name === 'AbortError') return 'cancelled'; throw e; }

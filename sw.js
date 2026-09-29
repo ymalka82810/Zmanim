@@ -6,7 +6,7 @@
  * בשרת המקומי (npm start) ובאפליקציה הקבצים נמצאים במכשיר, ולכן שם קודם מהרשת, כדי ששינוי יופיע מיד.
  * גופנים: מהמטמון, ואם אין – מהרשת.
  */
-const CACHE = 'luach-9e2bf3efd8';
+const CACHE = 'luach-84b6917c14';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/app.js', 'js/astro.js', 'js/auth.js', 'js/community.js', 'js/config.js', 'js/convex-config.js', 'js/dates.js', 'js/dialog.js', 'js/font-fill.js', 'js/hebrew.js', 'js/image.js', 'js/luach.js', 'js/menu.js', 'js/moadim.js', 'js/native-files.js', 'js/render.js', 'js/settings-sync.js', 'js/template-place.js', 'js/template-read.js', 'js/template-render.js', 'js/template-ui.js', 'js/text-edit.js', 'js/theme.js', 'js/zmanim.js',
@@ -15,8 +15,11 @@ const SHELL = [
   'vendor/convex/convex-browser-1.46.0.js',
   'kiddush/', 'kiddush/index.html', 'kiddush/css/styles.css', 'kiddush/js/app.js', 'kiddush/js/calendar.js',
   'gabbai/', 'gabbai/index.html', 'gabbai/css/styles.css', 'gabbai/js/app.js',
+  'aliyot/', 'aliyot/index.html', 'aliyot/js/app.js',
   'account/', 'account/index.html', 'account/css/styles.css', 'account/js/app.js',
-  'community-calendar/', 'community-calendar/index.html', 'community-calendar/js/app.js'
+  'community-calendar/', 'community-calendar/index.html', 'community-calendar/js/app.js',
+  'guest/', 'guest/index.html', 'guest/css/styles.css', 'guest/js/app.js',
+  'week/', 'week/index.html', 'week/js/app.js'
 ];
 
 const LOCAL = location.hostname === 'localhost' || location.hostname === '127.0.0.1';

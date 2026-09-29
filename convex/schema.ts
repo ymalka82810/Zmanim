@@ -26,7 +26,13 @@ export default defineSchema({
     // נוסח ההכרזה על הקידוש, שהגבאי או הרב קובעים: השורה הראשונה, והמילים שלפני שם בעל הקידוש
     kiddushHeading: v.optional(v.string()),
     kiddushBy: v.optional(v.string()),
-  }).index("by_invite", ["inviteCode"]),
+    // כתובת בית הכנסת, לעמוד הציבורי לאורחים
+    address: v.optional(v.string()),
+    // קוד העמוד הציבורי לאורחים (guest/?c=...). בלי קוד העמוד כבוי
+    publicCode: v.optional(v.string()),
+  })
+    .index("by_invite", ["inviteCode"])
+    .index("by_public", ["publicCode"]),
 
   memberships: defineTable({
     userId: v.id("users"),
@@ -34,6 +40,8 @@ export default defineSchema({
     role: roleValidator,
     joinedAt: v.number(),
     phone: v.optional(v.string()),
+    // כהן או לוי, לחלוקת עליות. בלי – ישראל
+    tribe: v.optional(v.union(v.literal("kohen"), v.literal("levi"))),
   })
     .index("by_user", ["userId"])
     .index("by_synagogue", ["synagogueId"])
@@ -116,7 +124,8 @@ export default defineSchema({
   notifications: defineTable({
     synagogueId: v.id("synagogues"),
     type: notificationTypeValidator,
-    to: v.union(v.id("users"), v.literal("managers")),
+    // משתמש מסוים, כל הגבאים והרב, או כל חברי הקהילה (קריאה למניין)
+    to: v.union(v.id("users"), v.literal("managers"), v.literal("members")),
     text: v.string(),
     at: v.number(),
     readBy: v.array(v.id("users")),
@@ -159,6 +168,71 @@ export default defineSchema({
     createdAt: v.number(),
     editedBy: v.optional(v.id("users")),
     editedAt: v.optional(v.number()),
+  }).index("by_synagogue_date", ["synagogueId", "dateKey"]),
+
+  // אזכרות (יום השנה לפטירה). תאריך הפטירה העברי בחודשי hebcal: 1=ניסן ... 12=אדר/אדר א׳, 13=אדר ב׳
+  yahrzeits: defineTable({
+    synagogueId: v.id("synagogues"),
+    userId: v.id("users"),
+    name: v.string(),
+    relation: v.string(),
+    hDay: v.number(),
+    hMonth: v.number(),
+    hYear: v.number(),
+    // מוצג לכל חברי הקהילה ביומן. הגבאי והרב רואים תמיד, כדי לדעת למי לתת עלייה
+    shared: v.boolean(),
+    // התאריך (YYYY-MM-DD) של האזכרה שכבר נשלחה עליה תזכורת, כדי לא לשלוח פעמיים
+    remindedFor: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_synagogue", ["synagogueId"])
+    .index("by_synagogue_user", ["synagogueId", "userId"]),
+
+  // תפילות קבועות שאפשר להירשם אליהן ("אני מגיע"). days: ימי השבוע, 0=ראשון ... 6=שבת
+  minyanim: defineTable({
+    synagogueId: v.id("synagogues"),
+    name: v.string(),
+    time: v.string(),
+    days: v.array(v.number()),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+  }).index("by_synagogue", ["synagogueId"]),
+
+  minyanRsvps: defineTable({
+    synagogueId: v.id("synagogues"),
+    minyanId: v.id("minyanim"),
+    dateKey: v.string(),
+    userId: v.id("users"),
+    at: v.number(),
+  })
+    .index("by_synagogue_date", ["synagogueId", "dateKey"])
+    .index("by_minyan_date_user", ["minyanId", "dateKey", "userId"]),
+
+  // עליות לתורה שחולקו. userId לחבר קהילה; אורח נרשם בשם בלבד. reason: החיוב שבגללו ניתנה העלייה, אם היה
+  aliyot: defineTable({
+    synagogueId: v.id("synagogues"),
+    dateKey: v.string(),
+    aliyah: v.string(),
+    userId: v.optional(v.id("users")),
+    name: v.string(),
+    reason: v.optional(v.string()),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+    hebrewYear: v.optional(v.number()),
+  })
+    .index("by_synagogue_date", ["synagogueId", "dateKey"])
+    .index("by_synagogue_user", ["synagogueId", "userId"]),
+
+  // חיובים לעלייה שנרשמו מראש לתאריך מסוים: חתן, בר מצווה, אבי הבן/הבת, אזכרה שלא ברשימת האזכרות
+  aliyahClaims: defineTable({
+    synagogueId: v.id("synagogues"),
+    dateKey: v.string(),
+    reason: v.string(),
+    userId: v.optional(v.id("users")),
+    name: v.string(),
+    note: v.string(),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
   }).index("by_synagogue_date", ["synagogueId", "dateKey"]),
 
   fundSettings: defineTable({

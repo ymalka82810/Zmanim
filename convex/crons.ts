@@ -10,6 +10,12 @@ crons.daily(
 );
 
 crons.daily(
+  "yahrzeit reminders",
+  { hourUTC: 5, minuteUTC: 10 },
+  internal.yahrzeits.sendReminders,
+);
+
+crons.daily(
   "purge old schedule trash",
   { hourUTC: 2, minuteUTC: 0 },
   internal.schedules.purgeOldTrash,

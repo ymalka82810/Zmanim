@@ -182,9 +182,10 @@ async function openDetail(id){
 
 async function saveSynagogue(form, id){
   const name = form.name.value.trim(), city = form.city.value.trim(), il = form.il.value === '1';
+  const address = form.address.value.trim();
   if (!name || !city) return toast('נא למלא שם ועיר');
   try {
-    await client.mutation('synagogues:update', { synagogueId: id, name, city, il });
+    await client.mutation('synagogues:update', { synagogueId: id, name, city, il, address });
     await refreshSynagogues(); refreshDetail(id);
     toast('הפרטים נשמרו'); render();
   } catch(e){ toast(errMsg(e)); }
@@ -236,6 +237,31 @@ async function shareInvite(code, name){
   let r;
   try { r = await NativeFiles.share({ title: name, url: inviteUrl(code) }); } catch(e){ r = 'unsupported'; }
   if (r === 'unsupported') copyInvite(code);
+}
+
+/* העמוד הציבורי לאורחים (guest/?c=...), בלי התחברות. בלי קוד העמוד כבוי */
+function guestUrl(code){
+  const url = new URL('../guest/', location.href);
+  url.searchParams.set('c', code);
+  return A.publicUrl(url.toString());
+}
+async function setGuestPage(id, on, rotate){
+  if (!on && !await SiteDialog.confirm('לכבות את עמוד האורחים? הקישור יפסיק לעבוד אצל כל מי שקיבל אותו.', { ok: 'כיבוי', danger: true, within: $('#sheet') })) return;
+  if (rotate && !await SiteDialog.confirm('להחליף את הקישור? הקישור הישן יפסיק לעבוד.', { ok: 'החלפה', within: $('#sheet') })) return;
+  try {
+    await client.mutation(on ? 'guest:enable' : 'guest:disable', on ? { synagogueId: id, rotate: !!rotate } : { synagogueId: id });
+    await refreshSynagogues(); refreshDetail(id);
+    toast(!on ? 'עמוד האורחים כובה' : rotate ? 'הקישור לעמוד האורחים הוחלף' : 'עמוד האורחים הופעל'); render();
+  } catch(e){ toast(errMsg(e)); }
+}
+async function copyGuest(code){
+  try { await navigator.clipboard.writeText(guestUrl(code)); toast('הקישור הועתק'); }
+  catch(e){ toast('העתקה נכשלה'); }
+}
+async function shareGuest(code, name){
+  let r;
+  try { r = await NativeFiles.share({ title: 'זמני ' + name, url: guestUrl(code) }); } catch(e){ r = 'unsupported'; }
+  if (r === 'unsupported') copyGuest(code);
 }
 
 /* הרב היחיד או הגבאי היחיד לא יכול לעזוב או לרדת מתפקידו לפני שמינה מישהו אחר במקומו. */
@@ -454,6 +480,19 @@ function renderDetailSheet(){
       <button class="btn ghost" type="button" id="btnRotateInvite">החלפת קישור</button>
     </div>
 
+    <h3 style="margin-top:18px">עמוד לאורחים</h3>
+    <p class="muted small">קישור קבוע לקריאה בלבד, בלי התחברות: לוחות הזמנים המאושרים של השבוע וכתובת בית הכנסת, למי שמתארח אצלכם.</p>
+    ${s.publicCode ? `
+    <div class="invite-box"><code>${esc(guestUrl(s.publicCode))}</code></div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn sec" type="button" id="btnCopyGuest">העתקה</button>
+      <button class="btn sec" type="button" id="btnShareGuest">שיתוף</button>
+      <button class="btn ghost" type="button" id="btnRotateGuest">החלפת קישור</button>
+      <button class="btn ghost" type="button" id="btnGuestOff">כיבוי</button>
+    </div>
+    ${s.address ? '' : '<p class="muted small">כדאי להוסיף כתובת למטה, ב"פרטי הקהילה", כדי שאורחים יוכלו לנווט.</p>'}`
+    : `<button class="btn sec" type="button" id="btnGuestOn">הפעלת עמוד לאורחים</button>`}
+
     <h3 style="margin-top:18px">חברים</h3>
     <button class="btn sec members-btn" type="button" id="btnOpenMembers">
       <span>${S.members ? S.members.length + ' חברים בקהילה' : 'טוען…'}</span><span>‹</span>
@@ -463,6 +502,7 @@ function renderDetailSheet(){
     <form id="editSynForm">
       <label class="f">שם</label><input type="text" name="name" value="${esc(s.name)}" required>
       <label class="f">עיר</label><input type="text" name="city" value="${esc(s.city)}" required>
+      <label class="f">כתובת בית הכנסת</label><input type="text" name="address" value="${esc(s.address || '')}" placeholder="רחוב ומספר (מוצג בעמוד לאורחים)">
       <label class="f">לוח פרשיות</label>
       <select name="il"><option value="1" ${s.il ? 'selected' : ''}>ארץ ישראל</option><option value="0" ${!s.il ? 'selected' : ''}>חוץ לארץ</option></select>
       <button class="btn sec" type="submit" style="margin-top:12px">שמירת פרטים</button>
@@ -484,6 +524,12 @@ function renderDetailSheet(){
     $('#btnCopyInvite').addEventListener('click', () => copyInvite(s.inviteCode));
     $('#btnShareInvite').addEventListener('click', () => shareInvite(s.inviteCode, s.name));
     $('#btnRotateInvite').addEventListener('click', () => rotateInvite(s._id));
+    if (s.publicCode){
+      $('#btnCopyGuest').addEventListener('click', () => copyGuest(s.publicCode));
+      $('#btnShareGuest').addEventListener('click', () => shareGuest(s.publicCode, s.name));
+      $('#btnRotateGuest').addEventListener('click', () => setGuestPage(s._id, true, true));
+      $('#btnGuestOff').addEventListener('click', () => setGuestPage(s._id, false));
+    } else $('#btnGuestOn').addEventListener('click', () => setGuestPage(s._id, true));
     $('#editSynForm').addEventListener('submit', e => { e.preventDefault(); saveSynagogue(e.target, s._id); });
     $('#sheet').querySelectorAll('[data-cancel-invite]').forEach(b => b.addEventListener('click', () => cancelInvitation(s._id, b.dataset.cancelInvite)));
     $('#btnOpenMembers').addEventListener('click', () => openMembersSheet(s._id));

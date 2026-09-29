@@ -2,16 +2,22 @@ import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 
-export const notificationTypeValidator = v.union(v.literal("kiddush"), v.literal("fund"));
-export type NotificationType = "kiddush" | "fund";
+export const notificationTypeValidator = v.union(
+  v.literal("kiddush"),
+  v.literal("fund"),
+  v.literal("yahrzeit"),
+  v.literal("minyan"),
+);
+export type NotificationType = "kiddush" | "fund" | "yahrzeit" | "minyan";
+type Recipient = Id<"users"> | "managers" | "members";
 
-/** יצירת התראה. dateKey/by לקידוש בלבד, transactionId לקופה בלבד */
+/** יצירת התראה. dateKey/by לקידוש ולמניין, transactionId לקופה בלבד. to: "members" – כל חברי הקהילה */
 export async function create(
   ctx: MutationCtx,
   args: {
     synagogueId: Id<"synagogues">;
     type: NotificationType;
-    to: Id<"users"> | "managers";
+    to: Recipient;
     text: string;
     by?: Id<"users">;
     dateKey?: string;
@@ -31,7 +37,10 @@ export async function create(
   });
 }
 
-/** התראות שמיועדות למשתמש (ישירות אליו או "managers" אם הוא גבאי/רב), בלי אלה שהוא עצמו יצר. לשימוש קידוש */
+const visibleTo = (n: { by?: Id<"users">; to: Recipient }, userId: Id<"users">, manager: boolean) =>
+  n.by !== userId && (n.to === userId || n.to === "members" || (n.to === "managers" && manager));
+
+/** התראות שמיועדות למשתמש (ישירות אליו, לכל הקהילה, או "managers" אם הוא גבאי/רב), בלי אלה שהוא עצמו יצר. לשימוש קידוש, אזכרות ומניין */
 export async function listVisible(
   ctx: QueryCtx,
   synagogueId: Id<"synagogues">,
@@ -46,7 +55,7 @@ export async function listVisible(
     .order("desc")
     .take(200);
   return notes
-    .filter((n) => n.by !== userId && (n.to === userId || (n.to === "managers" && manager)))
+    .filter((n) => visibleTo(n, userId, manager))
     .slice(0, limit)
     .map((n) => ({ _id: n._id, text: n.text, at: n.at, read: n.readBy.includes(userId) }));
 }
@@ -66,8 +75,7 @@ export async function markVisibleRead(
     .order("desc")
     .take(200);
   for (const n of notes) {
-    const visible = n.by !== userId && (n.to === userId || (n.to === "managers" && manager));
-    if (visible && !n.readBy.includes(userId)) {
+    if (visibleTo(n, userId, manager) && !n.readBy.includes(userId)) {
       await ctx.db.patch(n._id, { readBy: [...n.readBy, userId] });
     }
   }

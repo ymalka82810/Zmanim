@@ -5,7 +5,7 @@
  */
 (function(){
 "use strict";
-const { H, esc, pkey, gShort, gFull, heMonth, heYear, heDay, heFull, getSlots, slotFor, slotTitle, monthRange } = window.KiddushCalendar || {};
+const { H, esc, dkey, pkey, gShort, gFull, heMonth, heYear, heDay, heFull, getSlots, slotFor, slotTitle, monthRange } = window.KiddushCalendar || {};
 const $ = s => document.querySelector(s);
 const Auth = window.SiteAuth;
 const ROLE_LABEL = { gabbai: 'גבאי', rabbi: 'רב', member: 'חבר קהילה' };
@@ -21,7 +21,7 @@ const ICON = {
 
 const S = {
   ready: false, fatal: null, signedIn: false, synagogues: [], sid: null,
-  board: null, boardError: null, schedule: null, fund: null, events: [],
+  board: null, boardError: null, schedule: null, fund: null, events: [], yahrzeits: [],
   anchor: (window.KiddushCalendar ? today0() : new Date()),
 };
 function today0(){ const d = new Date(); d.setHours(0,0,0,0); return d; }
@@ -63,13 +63,14 @@ function useSynagogues(synagogues){
   render();
 }
 
-let unsubBoard = null, unsubSchedule = null, unsubFund = null, unsubEvents = null;
+let unsubBoard = null, unsubSchedule = null, unsubFund = null, unsubEvents = null, unsubYahrzeits = null;
 function attach(sid){
   if (sid === S.sid && unsubBoard) return;
-  [unsubBoard, unsubSchedule, unsubFund, unsubEvents].forEach(u => u && u());
-  unsubBoard = unsubSchedule = unsubFund = unsubEvents = null;
-  S.sid = sid; S.board = null; S.boardError = null; S.schedule = null; S.fund = null; S.events = [];
+  [unsubBoard, unsubSchedule, unsubFund, unsubEvents, unsubYahrzeits].forEach(u => u && u());
+  unsubBoard = unsubSchedule = unsubFund = unsubEvents = unsubYahrzeits = null;
+  S.sid = sid; S.board = null; S.boardError = null; S.schedule = null; S.fund = null; S.events = []; S.yahrzeits = [];
   if (!sid) return;
+  unsubYahrzeits = Auth.watch('yahrzeits:list', { synagogueId: sid, today: dkey(today0()) }, data => { S.yahrzeits = data.items; render(); }, () => {});
   unsubBoard = Auth.watch('kiddush:board', { synagogueId: sid }, board => { S.board = board; render(); },
     e => { console.warn(e); S.boardError = errMsg(e); render(); });
   unsubSchedule = Auth.watch('schedules:list', { synagogueId: sid }, data => { S.schedule = data; render(); }, () => {});
@@ -81,6 +82,21 @@ function errMsg(e){ return (e && typeof e.data === 'string') ? e.data : 'הפע�
 async function call(name, args){ return await Auth.client().mutation(name, { synagogueId: S.sid, ...args }); }
 function guard(fn){ return async (...a) => { try { await fn(...a); } catch(e){ console.warn(e); toast(errMsg(e)); } }; }
 function eventsOf(k){ return S.events.filter(e => e.dateKey === k); }
+/** האזכרות שחלות בין start ל-end, לפי כללי hebcal (אדר, חשוון וכסלו), כ-{ key, y } */
+function yahrzeitsIn(start, end){
+  const out = [], years = new Set([new H.HDate(start).getFullYear(), new H.HDate(end).getFullYear()]);
+  for (const y of S.yahrzeits){
+    const death = new H.HDate(y.hDay, y.hMonth, y.hYear);
+    for (const hy of years){
+      const h = H.HebrewCalendar.getYahrzeit(hy, death);
+      if (!h) continue;
+      const d = h.greg();
+      if (d >= start && d <= end) out.push({ key: dkey(d), y });
+    }
+  }
+  return out;
+}
+const yahrzeitsOf = k => { const d = pkey(k); return yahrzeitsIn(d, d).map(x => x.y); };
 
 /* ---------- Derived data ---------- */
 function currentScheduleFile(){
@@ -164,6 +180,13 @@ function calendarHTML(){
     if (d < start || d > end || slotKeys.has(e.dateKey) || extra.some(x => x.key === e.dateKey)) continue;
     extra.push({ key: e.dateKey, date: d, hd: new H.HDate(d), kind: 'אירוע קהילתי', name: '', subs: [] });
   }
+  const yz = yahrzeitsIn(start, end);
+  for (const { key } of yz){
+    if (slotKeys.has(key) || extra.some(x => x.key === key)) continue;
+    const d = pkey(key);
+    extra.push({ key, date: d, hd: new H.HDate(d), kind: 'אזכרה', name: '', subs: [] });
+  }
+  const yzOf = k => yz.filter(x => x.key === k).map(x => x.y);
   const rows = [...slots, ...extra].sort((a, b) => a.date - b.date);
   const hs = new H.HDate(start);
   const title = heMonth(hs) + ' ' + heYear(hs.getFullYear());
@@ -174,13 +197,19 @@ function calendarHTML(){
   const rowsHtml = rows.map(sl => {
     const b = bookingOf(sl.key), past = sl.date < today0(), isToday = +sl.date === +today0();
     const big = heDay(sl.hd), small = gShort(sl.date);
-    const evts = eventsOf(sl.key);
-    const name = sl.name || evts[0]?.title || '';
+    const evts = eventsOf(sl.key), yzs = yzOf(sl.key);
+    const kind = !slotKeys.has(sl.key) && evts.length ? 'אירוע קהילתי' : sl.kind;
+    const name = sl.name || evts[0]?.title || (yzs.length ? 'אזכרה ל' + yzs[0].name : '');
     const evtLine = evts.length ? (sl.name ? evts.map(e => e.title).join(' · ') : (evts.length > 1 ? `+${evts.length - 1} אירועים נוספים` : '')) : '';
+    const yzNames = (sl.name || evts.length ? yzs : yzs.slice(1)).map(y => y.name);
+    const yzLine = yzNames.length ? 'אזכרה: ' + yzNames.join(', ') : '';
+    const chip = slotKeys.has(sl.key) ? kiddushChip(b, past)
+      : evts.length ? `<span class="chip appr">${evts.length} אירוע${evts.length > 1 ? 'ים' : ''}</span>`
+      : `<span class="chip block">${yzs.length} אזכר${yzs.length > 1 ? 'ות' : 'ה'}</span>`;
     return `<button type="button" class="slot${past ? ' past' : ''}${isToday ? ' today' : ''}" data-act="day" data-k="${sl.key}">
       <div class="date"><div class="big">${big}</div><div class="small">${esc(small)}</div></div>
-      <div><div class="kind">${esc(sl.kind)}</div><h3>${esc(name)}</h3>${sl.subs.length ? `<div class="sub">${esc(sl.subs.join(', '))}</div>` : ''}${evtLine ? `<div class="sub">${esc(evtLine)}</div>` : ''}</div>
-      <div class="stcol">${slotKeys.has(sl.key) ? kiddushChip(b, past) : `<span class="chip appr">${evts.length} אירוע${evts.length > 1 ? 'ים' : ''}</span>`}</div></button>`;
+      <div><div class="kind">${esc(kind)}</div><h3>${esc(name)}</h3>${sl.subs.length ? `<div class="sub">${esc(sl.subs.join(', '))}</div>` : ''}${evtLine ? `<div class="sub">${esc(evtLine)}</div>` : ''}${yzLine ? `<div class="sub">${esc(yzLine)}</div>` : ''}</div>
+      <div class="stcol">${chip}</div></button>`;
   }).join('');
   const addBtn = isManager() ? `<div class="row" style="margin:10px 0"><button class="btn sec" type="button" data-act="addEventAny">+ הוספת אירוע</button></div>` : '';
   return `<div class="monthbar">
@@ -220,6 +249,12 @@ function daySheet(k){
   }
   html += `<h3 style="margin-top:16px">אירועים קהילתיים</h3>`;
   html += evts.length ? `<div class="list">${evts.map(eventLine).join('')}</div>` : '<p class="muted small">אין אירועים ביום זה.</p>';
+  const yzs = yahrzeitsOf(k);
+  if (yzs.length){
+    html += `<h3 style="margin-top:16px">אזכרות</h3><div class="list">${yzs.map(y => `<div class="li"><div class="grow"><div class="t">${esc(y.name)}${y.relation ? ` <span class="muted small">(${esc(y.relation)})</span>` : ''}</div>
+      <div class="meta">נפטר/ה ${esc(y.hebrewDate)} · ${esc(y.owner)} · היארצייט מתחיל בערב שלפני</div></div></div>`).join('')}</div>
+      <div class="row" style="margin-top:10px"><a class="btn sec" href="../week/">האזכרות שלי</a></div>`;
+  }
   if (isManager()) html += `<div class="row" style="margin-top:14px"><button class="btn" type="button" data-act="addEvent" data-k="${k}">הוספת אירוע ליום זה</button></div>`;
   openSheet(html);
 }

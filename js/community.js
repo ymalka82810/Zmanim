@@ -10,7 +10,7 @@ const MODE = { holy: 'שבתות וחגים', days: 'ימות השבוע', event
 const MAX_FILE_BYTES = 7 * 1024 * 1024;
 const fmtDate =ymd => { const [y, m, d] = ymd.split('-'); return `${d}/${m}/${y}`; };
 
-let sid = null, role = null, files = [], unsubscribe = null, unsubscribeKiddush = null, unsubscribeEvents = null, getLuachFile = null, toast = () => {}, onKiddush = () => {}, onEvents = () => {}, onManager = () => {};
+let sid = null, synagogue = null, role = null, files = [], unsubscribe = null, unsubscribeKiddush = null, unsubscribeEvents = null, getLuachFile = null, toast = () => {}, onKiddush = () => {}, onEvents = () => {}, onManager = () => {};
 
 /* מצב הדגמה מקומי: כשמריצים את האתר ב-localhost בלי להתחבר, מציגים את הלוח בלי קהילה (בלי סנכרון),
  * כדי שאפשר יהיה לבדוק את הכלי בלי חשבון Google אמיתי. לא פעיל בשום כתובת אחרת */
@@ -42,11 +42,59 @@ function gate(text, button){
 const isNativeApp = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 const fileImg = f => f.url ? `<a href="${esc(f.url)}"${isNativeApp() ? '' : ' target="_blank" rel="noopener"'}><img class="luach-img" src="${esc(f.url)}" alt="${esc(f.title)}" loading="lazy"></a>` : '';
 
+const shareBtn = f => f.url ? `<button type="button" data-share="${f._id}">שיתוף בוואטסאפ</button>` : '';
+const bindShare = box => box.querySelectorAll('[data-share]').forEach(b => b.onclick = () => {
+  const f = files.find(x => x._id === b.dataset.share);
+  if (f) shareLuach(f, fetchImage(f));
+});
+
 function renderMember(){
   const list = files.filter(f => f.status === 'approved');
   $('communityList').innerHTML = list.length
-    ? list.map(f => `<div class="panel community-file"><h2>${esc(f.title)}</h2><p class="hint">${MODE[f.mode]} · אושר ${f.approvedAt ? fmtDate(new Date(f.approvedAt).toISOString().slice(0, 10)) : ''}</p>${fileImg(f)}</div>`).join('')
+    ? list.map(f => `<div class="panel community-file"><h2>${esc(f.title)}</h2><p class="hint">${MODE[f.mode]} · אושר ${f.approvedAt ? fmtDate(new Date(f.approvedAt).toISOString().slice(0, 10)) : ''}</p>${fileImg(f)}<div class="actions left">${shareBtn(f)}</div></div>`).join('')
     : '<div class="panel gate"><p>עדיין אין לוח זמנים מאושר. הלוח יופיע כאן אחרי שהגבאי או הרב יאשרו אותו.</p></div>';
+  bindShare($('communityList'));
+}
+
+/* ---------- שיתוף לוח מאושר לקבוצת הוואטסאפ של הקהילה ----------
+ * התמונה נטענת מראש (עוד לפני האישור), כדי שחלון השיתוף ייפתח מיד בלחיצה: הדפדפן מתיר שיתוף רק סמוך ללחיצה. */
+
+function guestUrl(){
+  if (!synagogue || !synagogue.publicCode) return '';
+  const url = new URL('guest/', location.href);
+  url.search = '?c=' + encodeURIComponent(synagogue.publicCode);
+  return Auth.publicUrl(url.toString());
+}
+
+const shareText = f => [f.title, synagogue ? synagogue.name : '', guestUrl() ? 'הזמנים גם כאן: ' + guestUrl() : '']
+  .filter(Boolean).join('\n');
+
+function fetchImage(f){
+  if (!f.url) return Promise.resolve(null);
+  return fetch(f.url).then(r => r.ok ? r.blob() : null).catch(() => null);
+}
+
+async function shareLuach(f, imagePromise){
+  const text = shareText(f);
+  const blob = await imagePromise;
+  const file = blob ? new File([blob], f.title.replace(/[\\/:*?"<>|]/g, '') + '.png', { type: blob.type || 'image/png' }) : null;
+  let r;
+  try { r = await NativeFiles.share(file ? { file, title: f.title, text } : { title: f.title, text, url: f.url }); }
+  catch (e) { r = 'unsupported'; }
+  if (r !== 'unsupported') return;
+  // דפדפן בלי שיתוף קבצים (למשל מחשב): וואטסאפ ווב עם ההודעה וקישור לתמונה
+  const link = 'https://wa.me/?text=' + encodeURIComponent(guestUrl() ? text : text + '\n' + f.url);
+  window.open(link, '_blank', 'noopener');
+}
+
+async function approve(fileId){
+  const f = files.find(x => x._id === fileId);
+  const image = f ? fetchImage(f) : null;
+  try { await Auth.client().mutation('schedules:approve', { synagogueId: sid, fileId }); }
+  catch (e) { return toast(errText(e, 'הפעולה נכשלה'), true); }
+  toast('הלוח אושר ופורסם לקהילה');
+  if (f && f.url && await SiteDialog.confirm('הלוח אושר. לשתף אותו עכשיו בקבוצת הוואטסאפ של הקהילה?', { ok: 'שיתוף', cancel: 'לא עכשיו' }))
+    shareLuach(f, image);
 }
 
 function renderManager(){
@@ -57,12 +105,13 @@ function renderManager(){
       ${fileImg(f)}
       <div class="actions left">
         ${f.status === 'pending' ? `<button type="button" class="primary" data-approve="${f._id}">אישור ופרסום</button><button type="button" class="danger" data-remove="${f._id}">דחייה</button>`
-          : `<button type="button" class="danger" data-remove="${f._id}">הסרה מהקהילה</button>`}
+          : `${shareBtn(f)}<button type="button" class="danger" data-remove="${f._id}">הסרה מהקהילה</button>`}
       </div></div>`;
   $('communityFiles').innerHTML =
     (pending.length ? '<h3>ממתינים לאישור</h3>' + pending.map(row).join('') : '<p class="hint">אין קבצים שממתינים לאישור.</p>') +
     (approved.length ? '<details><summary>קבצים מאושרים (' + approved.length + ')</summary>' + approved.map(row).join('') + '</details>' : '');
-  $('communityFiles').querySelectorAll('[data-approve]').forEach(b => b.onclick = () => act('schedules:approve', b.dataset.approve, 'הלוח אושר ופורסם לקהילה'));
+  $('communityFiles').querySelectorAll('[data-approve]').forEach(b => b.onclick = () => approve(b.dataset.approve));
+  bindShare($('communityFiles'));
   $('communityFiles').querySelectorAll('[data-remove]').forEach(b => b.onclick = async () => {
     if (await SiteDialog.confirm('להעביר את הקובץ לסל המחזור? אפשר לשחזר אותו או למחוק אותו לצמיתות למטה, תחת "קבצים ואחסון".', { ok: 'העברה לסל', danger: true }))
       act('schedules:remove', b.dataset.remove, 'הקובץ הועבר לסל המחזור');
@@ -226,6 +275,7 @@ function useSynagogues(synagogues){
   if (!synagogues.some(s => s._id === id)) { id = synagogues[0] ? synagogues[0]._id : null; Auth.setActiveSynagogueId(id); }
   if (!id) { onManager(null); return gate('עדיין לא הצטרפת לקהילה. אפשר להצטרף דרך הזמנה מהגבאי או לפתוח קהילה חדשה.', `<a class="btn-link" href="${ACCOUNT_URL}">לחשבון שלי</a>`); }
   const s = synagogues.find(x => x._id === id);
+  synagogue = s;
   if (window.SiteMenu) SiteMenu.setCommunity(s);
   $('communityName').textContent = s.name;
   $('memberCommunityName').textContent = s.name;

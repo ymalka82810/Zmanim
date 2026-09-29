@@ -11,8 +11,10 @@
 const ROOT = new URL('..', document.currentScript.src);
 const PAGES = [
   { path: '',                   title: 'לוח זמנים' },
-  { path: 'kiddush/',           title: 'לוח קידושים' },
+  { path: 'week/',              title: 'השבוע שלי' },
+  { path: 'kiddush/',          title: 'לוח קידושים' },
   { path: 'gabbai/',            title: 'קופת בית הכנסת' },
+  { path: 'aliyot/',            title: 'חלוקת עליות' },
   { path: 'account/',           title: 'החשבון שלי' },
   { path: 'community-calendar/', title: 'יומן קהילה', hidden: true } /* לא במגירה, רק כותרת הפס */
 ];

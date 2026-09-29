@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="theme-color" content="#2c4a7c">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>השבוע שלי</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;700;900&family=Assistant:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="../vendor/hebcal/hebcal-core-6.9.3.min.js"></script>
+<link rel="stylesheet" href="../kiddush/css/styles.css">
+<style>
+.mrow{display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.mrow:last-child{border-bottom:0}
+.mrow .grow{flex:1;min-width:0}
+.dayhead{font-weight:700;color:var(--muted);font-size:.9rem;margin:12px 0 2px}
+.dayhead:first-child{margin-top:0}
+.days{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.days label{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:999px;padding:4px 10px;background:var(--surface2);font-size:.9rem}
+.hdate{display:grid;grid-template-columns:1fr 1.4fr 1.2fr;gap:6px}
+</style>
+<script src="../js/theme.js"></script>
+</head>
+<body>
+<div class="wrap" id="app"><div class="empty">טוען…</div></div>
+<div class="sheet-wrap" id="sheetWrap" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
+<script src="../js/menu.js"></script>
+<script src="../js/dialog.js"></script>
+<script src="../js/convex-config.js"></script>
+<script src="../vendor/convex/convex-browser-1.46.0.js"></script>
+<script src="../js/auth.js"></script>
+<script src="../kiddush/js/calendar.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

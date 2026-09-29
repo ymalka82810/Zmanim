@@ -1,0 +1,13 @@
+/* העמוד הציבורי לאורחים. המשתנים והכפתורים מ-kiddush/css/styles.css */
+.wrap{padding-top:calc(12px + env(safe-area-inset-top,0px))}
+.guest-head{padding:14px 0 6px}
+.guest-head h1{font-family:var(--serif);font-weight:900;font-size:1.9rem;line-height:1.25;margin:0 0 4px}
+.guest-head .where{color:var(--muted);font-size:1rem;margin:0}
+.guest-actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 4px}
+.guest-actions a.btn{text-decoration:none}
+.guest-file{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-top:14px;box-shadow:var(--sh-sm)}
+.guest-file h2{font-family:var(--serif);font-weight:700;font-size:1.3rem;margin:0 0 2px}
+.guest-file .kind{color:var(--muted);font-size:.9rem;margin:0 0 10px}
+.guest-file img{display:block;width:100%;height:auto;border-radius:8px;background:#fff}
+.guest-foot{color:var(--muted);font-size:.85rem;text-align:center;margin-top:24px}
+.guest-toast{position:fixed;bottom:calc(20px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:600;z-index:10}

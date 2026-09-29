@@ -97,6 +97,8 @@ public class NativeFilesPlugin extends Plugin {
             String title = call.getString("title", name);
             Intent send = new Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM, uri)
                 .putExtra(Intent.EXTRA_SUBJECT, title).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            String text = call.getString("text", "");
+            if (!text.isEmpty()) send.putExtra(Intent.EXTRA_TEXT, text);   // כיתוב לתמונה, למשל בוואטסאפ
             getActivity().startActivity(Intent.createChooser(send, title));
             ret.put("result", "shared");
             call.resolve(ret);
