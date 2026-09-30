@@ -308,6 +308,15 @@ export default defineSchema({
     size: v.optional(v.number()),
   }).index("by_synagogue_hash", ["synagogueId", "hash"]),
 
+  // ה-APK האחרון של אפליקציית האנדרואיד, שה-workflow מעלה (convex/appUpdate.ts). נשמרת רק הגרסה האחרונה
+  appReleases: defineTable({
+    versionCode: v.number(),
+    versionName: v.string(),
+    storageId: v.id("_storage"),
+    size: v.number(),
+    uploadedAt: v.number(),
+  }).index("by_versionCode", ["versionCode"]),
+
   // יומן כשלים כללי (שליחת מיילים, cron וכו'), גלוי לבעל האתר בלבד ב"החשבון שלי"
   errorLogs: defineTable({
     source: v.string(),

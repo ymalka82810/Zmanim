@@ -71,3 +71,19 @@ jobs:
           name: zmanim-apk-${{ github.run_number }}
           path: zmanim-1.0.${{ github.run_number }}.apk
           if-no-files-found: error
+
+      # מכאן האפליקציה מציעה להתעדכן (js/app-update.js); הקישור ניתן רק למשתמש מחובר (convex/appUpdate.ts)
+      - name: Publish the update to the app
+        env:
+          APP_RELEASE_SECRET: ${{ secrets.APP_RELEASE_SECRET }}
+          CONVEX_SITE_URL: https://scintillating-coyote-982.eu-west-1.convex.site
+        run: |
+          if [ -z "$APP_RELEASE_SECRET" ]; then
+            echo "::warning::Missing APP_RELEASE_SECRET secret, the app won't be offered this version."
+            exit 0
+          fi
+          curl --fail-with-body -sS -X POST \
+            -H "Authorization: Bearer $APP_RELEASE_SECRET" \
+            -H "Content-Type: application/vnd.android.package-archive" \
+            --data-binary "@zmanim-1.0.${{ github.run_number }}.apk" \
+            "$CONVEX_SITE_URL/app-release?versionCode=${{ github.run_number }}&versionName=1.0.${{ github.run_number }}"

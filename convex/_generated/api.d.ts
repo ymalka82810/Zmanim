@@ -9,6 +9,7 @@
  */
 
 import type * as aliyot from "../aliyot.js";
+import type * as appUpdate from "../appUpdate.js";
 import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
 import type * as email from "../email.js";
@@ -45,6 +46,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   aliyot: typeof aliyot;
+  appUpdate: typeof appUpdate;
   auth: typeof auth;
   crons: typeof crons;
   email: typeof email;

@@ -50,4 +50,6 @@
          ועד אנדרואיד 11 הבקשה נכשלת אם FINE לא מוצהר -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+    <!-- התקנת עדכון שהאפליקציה הורידה מ-GitHub Releases (AppUpdaterPlugin, js/app-update.js) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>
