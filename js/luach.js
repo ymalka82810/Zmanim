@@ -251,9 +251,9 @@ function kiddushRow(rule, ctx) {
   // שורת הסיבה כבר כוללת את הסוג: "לרגל בר המצווה", "לעילוי נשמת … ז״ל"
   // כמה סיבות מגיעות מופרדות בירידת שורה, וכל אחת נשארת בשורה משלה
   const occasions = String(info.occasion || '').split('\n').map(o => line(o));
-  // כל בעל קידוש בשורה משלו, כל אחד עם "ע״י"
+  // כל בעל קידוש בשורה משלו; מהשני ואילך עם וי״ו החיבור: "ע״י משפחת לוי" / "וע״י משפחת כהן"
   const names = info.sponsorLines && info.sponsorLines.length ? info.sponsorLines : [info.sponsorName];
-  const sponsors = names.map(n => line(info.by, n));
+  const sponsors = names.map((n, i) => line(i && info.by ? 'ו' + info.by : info.by, n));
   const text = [line(info.heading), ...sponsors, ...occasions].filter(Boolean).join('\n');
   return { text, key: 9998 };
 }
