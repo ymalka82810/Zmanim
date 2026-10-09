@@ -23,7 +23,7 @@ const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // נוסח ההכרזה: שורה קבועה של הגבאי, "ע״י" + בעל הקידוש, ואז "לרגל / לזכות / לעילוי נשמת…" + שם
 const DEFAULT_KIDDUSH_HEADING = "קידוש לאחר התפילה";
-const DEFAULT_KIDDUSH_BY = "ע״י";
+export const DEFAULT_KIDDUSH_BY = "ע״י";
 const LIVING_SUFFIXES = ["שיחי׳", "שתחי׳", "שיחיו"];
 const MEMORIAL_SUFFIXES = ["ז״ל", "ע״ה"];
 const MEMORIAL_TYPE = "לעילוי נשמת";
@@ -80,11 +80,11 @@ function announceFields(args: { sponsorName: string; sponsorSuffix?: string; occ
 
 const withSuffix = (name: string, suffix?: string) => (suffix ? name + " " + suffix : name);
 /** "משפחת לוי שיחיו" */
-function sponsorLine(b: Doc<"kiddushBookings">) {
+export function sponsorLine(b: Doc<"kiddushBookings">) {
   return withSuffix(b.sponsorName, b.sponsorSuffix);
 }
 /** "לזכות בנם משה שיחי׳". רישום ישן בלי סוג: "לרגל …". כמה סיבות: כל אחת בשורה משלה (ירידת שורה) */
-function occasionLine(b: Doc<"kiddushBookings">) {
+export function occasionLine(b: Doc<"kiddushBookings">) {
   const one = (type: string | undefined, occasion: string, suffix: string | undefined) =>
     occasion ? (type || "לרגל") + " " + withSuffix(occasion, suffix) : "";
   return [
@@ -101,7 +101,7 @@ const cosponsorLine = (c: Cosponsor) => withSuffix(c.sponsorName, c.sponsorSuffi
 const hasPendingCosponsor = (b: Doc<"kiddushBookings">) => (b.cosponsors ?? []).some((c) => c.status === "pending");
 
 /** הנרשם והשותפים שאישרו: "משפחת לוי וע״י משפחת כהן". ה"ע״י" הראשון מתווסף בלקוח, כמו תמיד */
-function fullSponsorLine(b: Doc<"kiddushBookings">, by: string) {
+export function fullSponsorLine(b: Doc<"kiddushBookings">, by: string) {
   const lines = [sponsorLine(b), ...(b.cosponsors ?? []).filter((c) => c.status === "confirmed").map(cosponsorLine)];
   return lines.join(by ? ` ו${by} ` : " ו");
 }

@@ -36,6 +36,7 @@ const css = `
 .sm-btn .sm-count{position:absolute;top:1px;left:0;min-width:18px;height:18px;padding:0 4px;font-size:.7rem;line-height:18px;box-shadow:0 0 0 2px #2c4a7c}
 :root[data-theme="dark"] .sm-count{background:#e5534b}
 :root[data-theme="dark"] .sm-btn .sm-count{box-shadow:0 0 0 2px #1b2d56}
+.sm-search{margin-inline-start:auto}
 .sm-title{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-weight:700;font-size:1.05rem}
 .sm-shade{position:fixed;inset:0;background:rgba(10,14,20,.45);z-index:900;opacity:0;transition:opacity .2s}
 .sm-drawer{position:fixed;top:0;bottom:0;right:0;width:min(280px,82vw);background:#fff;color:#1d2b45;z-index:901;transform:translateX(100%);transition:transform .2s;padding:calc(12px + env(safe-area-inset-top,0px)) 10px 12px;box-shadow:-6px 0 24px rgba(10,20,40,.2);font-family:"Assistant",Arial,sans-serif;direction:rtl}
@@ -188,6 +189,13 @@ if (document.readyState === 'loading') document.addEventListener('DOMContentLoad
 else setTimeout(startCounts);
 
 window.SiteMenu = {
+  /* הדפים שהמשתמש רואה במגירה (לפי תפקידו והפיצ'רים של הקהילה), לחיפוש: [{ path, title, href }] */
+  visiblePages(){
+    const d = badges.data || cachedCounts();
+    return PAGES.filter(p => !hiddenPage(p, d)).map(p => ({ path: p.path, title: p.title, href: new URL(p.path, ROOT).href }));
+  },
+  href(path){ return new URL(path, ROOT).href; },
+  openSearch,
   /* s: { _id, name, il } של הקהילה הפעילה, או null כשאין */
   setCommunity(s){
     write(COMMUNITY_KEY, s && s.name ? { _id: s._id, name: s.name, il: !!s.il } : null);
@@ -229,7 +237,10 @@ function build(){
   bar.className = 'sm-bar';
   bar.innerHTML = `<button type="button" class="sm-btn" aria-label="תפריט" aria-expanded="false" aria-controls="sm-drawer">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
-    </button><span class="sm-title"></span>`;
+    </button><span class="sm-title"></span>
+    <button type="button" class="sm-btn sm-search" aria-label="חיפוש" title="חיפוש (Ctrl+K)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+    </button>`;
   bar.querySelector('.sm-title').textContent = current.title;
 
   const layer = document.createElement('div');
@@ -296,6 +307,10 @@ function build(){
     btn.focus();
   }
   btn.addEventListener('click', open);
+  bar.querySelector('.sm-search').addEventListener('click', openSearch);
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k'){ e.preventDefault(); openSearch(); }
+  });
   closeMenu = () => { if (layer.hidden) return false; close(); return true; };
   layer.querySelector('.sm-shade').addEventListener('click', close);
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !layer.hidden) close(); });
@@ -314,6 +329,21 @@ function build(){
   document.body.prepend(bar, stripe, dayBox);
   document.body.appendChild(layer);
   pinTop(bar);
+}
+
+/* ---------- חיפוש ----------
+ * חלונית החיפוש (js/search.js) נטענת רק בפעם הראשונה שפותחים אותה */
+let searchLoading = null;
+function openSearch(){
+  if (window.SiteSearch) return SiteSearch.open();
+  if (!searchLoading) searchLoading = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = new URL('js/search.js', ROOT).href;
+    s.onload = resolve;
+    s.onerror = () => { searchLoading = null; reject(); };
+    document.head.appendChild(s);
+  });
+  searchLoading.then(() => window.SiteSearch && SiteSearch.open(), () => {});
 }
 
 /* גובה אזור המצלמה/שורת הסטטוס; 0 בדפדפן רגיל, ואז הכותרת נגללת כרגיל */
