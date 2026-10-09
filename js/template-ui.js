@@ -1153,7 +1153,7 @@ $('tplSlots').addEventListener('input', e => {
   ed.querySelector('.rule-name').textContent = slotLabel(s);
   ed.querySelector('.rule-sum').textContent = slotSum(s);
   // הטקסט השתנה – המילים בתיבות השורות מתעדכנות עם התצוגה. בקידוש רואים מיד את הנוסח החדש
-  if (s.wrap || s.kind === 'kiddush') schedulePreviewRefresh();
+  if (s.wrap || s.kind === 'kiddush' || (s.kind === 'text' && k === 'text')) schedulePreviewRefresh();
 });
 // בחירת השבוע בעורך הנוסח: התצוגה והשורות מתעדכנות לפי מה שיודפס באותו שבוע
 $('tplSlots').addEventListener('change', e => {
