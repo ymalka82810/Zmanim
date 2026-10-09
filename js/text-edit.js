@@ -22,6 +22,7 @@ const CSS = `
 .te-ok:hover{background:#35588f;border-color:#35588f}
 .te-del{border:1px solid #a33a3a;background:none;color:#a33a3a;margin-inline-start:auto}
 .te-del:hover{background:#a33a3a;color:#fff}
+.te-del+.te-erase{margin-inline-start:0}
 .te-cancel{border:1px solid #e2dcc9;background:none;color:#3c4863}
 .te-cancel:hover{background:#efe8d6}
 .te button:focus-visible{outline:3px solid #ab7f2e;outline-offset:2px}
@@ -69,6 +70,7 @@ export function toggleTag(field, tag) {
  *   hasOverride – יש כבר עריכה קודמת לטקסט הזה, אז מוצג כפתור מחיקה
  *   onSave(text, scope) – scope הוא 'week' או 'always'
  *   onDelete() – מוחקת את העריכה הקיימת (חוזר לערך הרגיל)
+ *   onErase() – כשיש: כפתור "מחיקה מהלוח", שמוחק את הטקסט מהלוח עצמו
  */
 export function openTextEdit(opts) {
   if (!styled) {
@@ -89,6 +91,7 @@ export function openTextEdit(opts) {
   dlg.innerHTML = '<div class="te-body"><h3>עריכת טקסט</h3></div><div class="te-actions">' +
     '<button type="button" class="te-ok">שמירה</button>' +
     (opts.hasOverride ? '<button type="button" class="te-del">מחיקה</button>' : '') +
+    (opts.onErase ? '<button type="button" class="te-del te-erase" title="הטקסט יימחק מהלוח, והשורות סביבו יתרווחו מחדש">מחיקה מהלוח</button>' : '') +
     '<button type="button" class="te-cancel">ביטול</button></div>';
   const body = dlg.querySelector('.te-body');
   if (opts.format) {
@@ -114,8 +117,10 @@ export function openTextEdit(opts) {
   }
   dlg.querySelector('.te-ok').onclick = save;
   dlg.querySelector('.te-cancel').onclick = close;
-  const del = dlg.querySelector('.te-del');
+  const del = dlg.querySelector('.te-del:not(.te-erase)');
   if (del) del.onclick = () => { opts.onDelete(); close(); };
+  const erase = dlg.querySelector('.te-erase');
+  if (erase) erase.onclick = () => { opts.onErase(); close(); };
   dlg.addEventListener('close', () => dlg.remove());
   dlg.showModal();
   field.focus();

@@ -462,8 +462,11 @@ function closeRows(canvas, from, to, d, shift) {
   return total;
 }
 
-/** השורות הריקות בתמונה (runs: { s, e }), והרווח הריק הארוך ביותר שבין from ל-to (best) */
-function blankGap(canvas, from, to) {
+/**
+ * השורות בתמונה: blank[y] – שורה ריקה (רק קווים אנכיים של מסגרת), rule[y] – קו אופקי לרוחב רוב העמוד
+ * (קו מפריד, צד של מסגרת), שתוחם את הקטע שבו השורות מתרווחות
+ */
+function blankRows(canvas) {
   const W = canvas.width, H = canvas.height, c2 = canvas.getContext('2d', { willReadFrequently: true });
   const data = c2.getImageData(0, 0, W, H).data;
   const sample = [];
@@ -473,12 +476,109 @@ function blankGap(canvas, from, to) {
   // עמודה שיש בה דיו ברוב הגובה היא קו אנכי (מסגרת): שורה שיש בה רק קווים כאלה היא ריקה
   const col = new Uint32Array(W);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (ink((y * W + x) * 4)) col[x]++;
-  const blank = new Uint8Array(H);
+  const blank = new Uint8Array(H), rule = new Uint8Array(H);
   for (let y = 0; y < H; y++) {
-    let n = 0;
-    for (let x = 0; x < W && n <= 2; x++) if (col[x] < H * 0.5 && ink((y * W + x) * 4)) n++;
+    let n = 0, all = 0;
+    for (let x = 0; x < W; x++) if (ink((y * W + x) * 4)) { all++; if (col[x] < H * 0.5) n++; }
     blank[y] = n <= 2;
+    rule[y] = all > W * 0.6;
   }
+  return { W, H, c2, blank, rule };
+}
+
+/**
+ * מחיקת טקסט מהתמונה (אזורים מסוג "מחיקה"), וריווח מחדש של השורות סביבו: בקטע שבין הקווים האופקיים
+ * (או בעמוד כולו) הרווח שנשאר במקום הטקסט חוזר לגודל של רווח רגיל בין השורות, והמקום שהתפנה מתחלק
+ * בין כל הרווחים שבין השורות באותו קטע, כל רווח לפי הגודל שלו. השוליים בראש הקטע ובתחתיתו לא משתנים,
+ * וכך גם מה שמחוץ לקטע. shift(cut, end, k) – כמו ב-openRows
+ */
+function respace(src, erased, shift) {
+  const before = blankRows(src);
+  const sctx = src.getContext('2d');
+  for (const s of erased) {
+    const b = s.box, pad = Math.max(2, (b.size || b.h * 0.72) * 0.08);
+    sctx.fillStyle = (s.style || {}).bg || '#ffffff';
+    sctx.fillRect(b.x - pad, b.y - (b.up || 0) - pad, b.w + 2 * pad, b.h + (b.up || 0) + (b.down || 0) + 2 * pad);
+  }
+  const { W, H, c2, blank, rule } = blankRows(src);
+  // שורות הטקסט (פסים של שורות עם דיו), לפני המחיקה ואחריה
+  const bands = (bl, from, to) => {
+    const out = [];
+    for (let y = from, s = -1; y <= to; y++) {
+      if (y < to && !bl[y]) { if (s < 0) s = y; } else if (s >= 0) { out.push({ s, e: y }); s = -1; }
+    }
+    return out;
+  };
+  // הקטעים: מקו אופקי אחד לבא אחריו. כל קטע שנמחק בו טקסט מתרווח בנפרד
+  const sections = new Map();
+  for (const s of erased) {
+    const mid = Math.round(s.box.y + s.box.h / 2);
+    let top = Math.max(0, Math.min(H - 1, mid)), bottom = top;
+    while (top > 0 && !rule[top - 1]) top--;
+    while (bottom < H && !rule[bottom]) bottom++;
+    sections.set(top + ':' + bottom, [top, bottom]);
+  }
+  // בקטעים שמתחתית העמוד ומעלה, כדי שההזזות של קטע אחד לא יזיזו את הגבולות של קטע שעוד לא סודר
+  for (const [top, bottom] of [...sections.values()].sort((a, b) => b[0] - a[0])) {
+    const now = bands(blank, top, bottom);
+    if (!now.length) continue;
+    // ניקוד שנפרד מהשורה בשורה ריקה אחת או שתיים אינו רווח בין שורות
+    const lineH = now.map(r => r.e - r.s).sort((a, b) => a - b)[now.length >> 1];
+    const minGap = Math.max(2, lineH * 0.3);
+    const merge = list => {
+      const out = [];
+      for (const r of list) {
+        const last = out[out.length - 1];
+        if (last && r.s - last.e < minGap) last.e = r.e; else out.push({ ...r });
+      }
+      return out;
+    };
+    const lines = merge(now), old = merge(bands(before.blank, top, bottom)), n = lines.length;
+    if (n < 2 || !old.length) continue;
+    // הרווחים לפני המחיקה, כדי לדעת מה הגודל הרגיל של רווח שהטקסט שבו נמחק
+    const oldGaps = old.slice(1).map((r, i) => ({ s: old[i].e, e: r.s }));
+    const gaps = lines.slice(1).map((r, i) => {
+      const s = lines[i].e, e = r.s, len = e - s;
+      // רווח שהיו בתוכו שורות לפני המחיקה: חוזר לגודל של הרווח הגדול מבין אלה שהיו בו (רווח פסקה נשמר)
+      const inside = oldGaps.filter(g => g.s >= s && g.e <= e);
+      return inside.length > 1 ? Math.min(len, Math.max(...inside.map(g => g.e - g.s))) : len;
+    });
+    // השוליים בראש הקטע ובתחתיתו נשארים כמו לפני המחיקה, גם כשנמחקה השורה הראשונה או האחרונה בו
+    const head = Math.min(lines[0].s, old[0].s) - top, tail = bottom - Math.max(lines[n - 1].e, old[old.length - 1].e);
+    const inked = lines.reduce((t, r) => t + r.e - r.s, 0), total = gaps.reduce((t, g) => t + g, 0);
+    const room = bottom - top - head - tail - inked;
+    if (total < 1 || room - total < 1) continue;
+    // כל רווח גדל לפי הגודל שלו
+    const k = room / total, to = [];
+    let acc = top + head;
+    lines.forEach((r, i) => {
+      to.push(i === n - 1 ? bottom - tail - (r.e - r.s) : Math.round(acc));
+      acc += r.e - r.s + (i < n - 1 ? gaps[i] * k : 0);
+    });
+    // התמונה החדשה של הקטע: כל שורה מועתקת למקומה החדש, והרווחים ממולאים בשורה ריקה מתוכם (כדי שקווי מסגרת אנכיים יימשכו)
+    const tmp = document.createElement('canvas');
+    tmp.width = W; tmp.height = bottom - top;
+    const t2 = tmp.getContext('2d');
+    t2.imageSmoothingEnabled = false;
+    // שורה ריקה מהרווח שלפני השורה i בתמונה הנוכחית (i = n – השוליים שבתחתית)
+    const blankAt = i => ((i ? lines[i - 1].e : top) + (i < n ? lines[i].s : bottom)) >> 1;
+    let y = top;
+    for (let i = 0; i <= n; i++) {
+      const at = i < n ? to[i] : bottom;
+      if (at > y) t2.drawImage(src, 0, blankAt(i), W, 1, 0, y - top, W, at - y);
+      if (i < n) { const r = lines[i]; t2.drawImage(src, 0, r.s, W, r.e - r.s, 0, at - top, W, r.e - r.s); y = at + r.e - r.s; }
+    }
+    c2.drawImage(tmp, 0, top);
+    // התיבות זזות עם השורות: קודם השורות שיורדות, מהתחתונה, ואחר כך שעולות, מהעליונה – כדי שאף שורה לא תוזז פעמיים
+    const shifts = lines.map((r, i) => ({ s: r.s, e: r.e, k: to[i] - r.s })).filter(m => m.k);
+    for (const m of shifts.filter(m => m.k > 0).reverse()) shift(m.s, m.e, m.k);
+    for (const m of shifts.filter(m => m.k < 0)) shift(m.s, m.e, m.k);
+  }
+}
+
+/** השורות הריקות בתמונה (runs: { s, e }), והרווח הריק הארוך ביותר שבין from ל-to (best) */
+function blankGap(canvas, from, to) {
+  const { W, H, c2, blank } = blankRows(canvas);
   const runs = [];
   for (let y = 0, s = -1; y <= H; y++) {
     if (y < H && blank[y]) { if (s < 0) s = y; } else if (s >= 0) { runs.push({ s, e: y }); s = -1; }
@@ -582,6 +682,9 @@ export async function templateCanvas(tpl, values) {
       if (mid >= cut && mid < end) { b.y += k; if (b.baseline != null) b.baseline += k; }
     }
   };
+  // טקסט שנמחק מהקובץ: נמחק מהתמונה, והמקום שהתפנה מתחלק בין הרווחים שבין השורות סביבו
+  const erased = tpl.slots.filter(s => s.kind === 'erase' && s.box).sort((a, b) => a.box.y - b.box.y);
+  if (erased.length) respace(src, erased, shiftBoxes);
 
   // שלב 1: השורות והגודל של כל אזור, לפי הרוחב
   const host = specialHost(tpl.slots);
@@ -652,7 +755,7 @@ export async function templateCanvas(tpl, values) {
     const b = p.s.box;
     return verticalRoom(src, b, Math.min(b.x, p.cx - p.w / 2), Math.max(b.x + b.w, p.cx + p.w / 2), sideBoxes(tpl, p.s), p.st.bg, sz * (p.n + 1), sz);
   };
-  const edges = paraEdges(tpl.slots);
+  const edges = paraEdges(tpl.slots.filter(s => s.kind !== 'erase'));
   // המרווח הרצוי: { px, exact }. exact – בדיוק כך (הגבאי קבע), אחרת – לפחות כך. null – נשאר כמו בקובץ
   const want = (spec, p, L) => {
     if (spec.pct != null) return { px: spec.pct / 100 * p.size, exact: true };
@@ -905,7 +1008,8 @@ function verticalRoom(src, b, x0, x1, side, bg, reach, size) {
 /** תיבות של טקסט באותה שורה של האזור, מימינו או משמאלו (לא מעליו או מתחתיו, ולא הטקסט המקורי שלו) */
 function sideBoxes(tpl, s) {
   const b = s.box, out = [];
-  const boxes = [...tpl.slots.flatMap(o => o === s ? [s.labelBox] : [o.box, o.labelBox]), ...(tpl.candidates || []).map(c => c.box)];
+  // טקסט שנמחק כבר אינו בתמונה
+  const boxes = [...tpl.slots.flatMap(o => o === s ? [s.labelBox] : o.kind === 'erase' ? [] : [o.box, o.labelBox]), ...(tpl.candidates || []).map(c => c.box)];
   for (const k of boxes) {
     if (!k || k === b) continue;
     const mid = k.y + k.h / 2, over = Math.min(k.x + k.w, b.x + b.w) - Math.max(k.x, b.x);

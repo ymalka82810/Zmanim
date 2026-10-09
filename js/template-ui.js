@@ -15,7 +15,8 @@ import { placer } from './template-place.js';
 
 const $ = id => document.getElementById(id);
 const KINDS = [['text', 'טקסט שכותבים כאן'], ['rule', 'תפילה או שיעור'], ['kiddush', 'קידוש (מלוח הקידושים)'], ['zman', 'זמן היום'], ['title', 'כותרת (שבת פרשת…)'], ['parasha', 'פרשת…'],
-  ['parashaName', 'שם הפרשה בלבד'], ['special', 'שבת מיוחדת (נחמו, זכור…) – רק כשיש'], ['hebDate', 'תאריך עברי'], ['gregDate', 'תאריך לועזי'], ['address', 'כתובת בית הכנסת']];
+  ['parashaName', 'שם הפרשה בלבד'], ['special', 'שבת מיוחדת (נחמו, זכור…) – רק כשיש'], ['hebDate', 'תאריך עברי'], ['gregDate', 'תאריך לועזי'], ['address', 'כתובת בית הכנסת'],
+  ['erase', 'מחיקת הטקסט מהלוח']];
 const KIND_LABEL = Object.fromEntries(KINDS);
 const BASE_LABELS = Object.keys(BASES);
 const ZMANIM = BASE_LABELS.filter(l => BASES[l] !== 'fixed' && !TEXT_BASES.includes(BASES[l]));
@@ -605,7 +606,7 @@ $('tplBoxes').addEventListener('click', e => {
   renderBoxes(); focusSlot(st.slots.length - 1);
 });
 
-/** יצירת אזור טקסט קבוע, בלחיצה על טקסט אפור שזוהה במצב "עריכת טקסט" */
+/** יצירת אזור טקסט קבוע, בלחיצה על טקסט אפור שזוהה במצב "עריכת טקסט", או מחיקה שלו מהלוח */
 function editCandidateText(i) {
   const c = st.candidates[i];
   openTextEdit({
@@ -615,8 +616,27 @@ function editCandidateText(i) {
       if (!text) return;
       st.slots.push({ box: c.box, kind: 'text', text, old: c.old });
       renderBoxes(); renderSlots(); schedulePreviewRefresh();
+    },
+    onErase: () => {
+      st.slots.push({ box: c.box, kind: 'erase', old: c.old });
+      renderBoxes(); renderSlots(); schedulePreviewRefresh();
     }
   });
+}
+
+/**
+ * אזור שהופך ל"מחיקה": המסגרת מצטמצמת לטקסט שזוהה בתוכה (עם הפיסוק), כדי שהמחיקה לא תגיע לשורות השכנות.
+ * בלי טקסט שזוהה (מסמך סרוק) – נמחק כל מה שבמסגרת
+ */
+function fitErase(s) {
+  const taken = c => st.slots.some(o => o !== s && (covers(o.box, c.box) || (o.labelBox && covers(o.labelBox, c.box))));
+  const words = st.candidates.filter(c => covers(s.box, c.box) && !taken(c));
+  if (!words.length) return;
+  const parts = [...words, ...(st.marks || []).filter(c => covers(s.box, c.box) && !taken(c))];
+  const size = Math.max(...words.map(c => c.box.size || c.box.h * 0.72));
+  s.box = { ...parts.reduce((b, c) => unionBox(b, c.box), parts[0].box), size };
+  s.old = words.sort((a, b) => lineBase(a.box) - lineBase(b.box) || b.box.x - a.box.x).map(c => c.old).join(' ');
+  delete s.style;
 }
 
 /** עריכת אזור טקסט קיים במצב "עריכת טקסט": לתמיד (בתבנית עצמה), או רק לשבוע שבתצוגה המקדימה */
@@ -645,7 +665,13 @@ function editSlotText(s) {
       if (weekOverridden) resetWeek(s);
       else { st.slots.splice(idx, 1); st.sel = null; }
       renderSlots(); renderBoxes(); schedulePreviewRefresh();
-    }
+    },
+    // אזור על טקסט מהקובץ: אפשר למחוק את הטקסט מהלוח
+    onErase: s.old ? () => {
+      if (weekOverridden) resetWeek(s);
+      s.kind = 'erase';
+      renderSlots(); renderBoxes(); schedulePreviewRefresh();
+    } : null
   });
 }
 
@@ -881,6 +907,10 @@ function fontField(s) {
 }
 
 function slotFields(s) {
+  if (s.kind === 'erase') {
+    return '<p class="hint">הטקסט שבאזור יימחק מהלוח, והשורות שסביבו יתרווחו מחדש: המקום שהתפנה מתחלק בין הרווחים ' +
+      'שבין השורות (עד הקו המפריד הקרוב, או בכל העמוד), כל רווח לפי הגודל שלו.</p>';
+  }
   if (s.kind === 'text') {
     return '<div class="rgrid"><div class="wide"><label>הטקסט באזור (שורה חדשה – ירידת שורה)</label>' +
       '<div class="fmt-bar">' + FORMAT_BTNS + '<span class="muted small">סמנו מילים בטקסט ולחצו – הדגשה, נטייה או קו תחתון</span></div><textarea data-k="text" dir="auto" rows="' +
@@ -1218,7 +1248,8 @@ function renderSlots() {
     '<summary><span class="num">' + ranks[i] + '</span><b class="rule-name">' + esc(slotLabel(s)) + '</b>' +
     '<span class="rule-sum">' + esc(slotSum(s)) + '</span></summary>' +
     '<div class="slot-top"><select data-k="kind" aria-label="מה יופיע באזור ' + ranks[i] + '">' + opts(KINDS, s.kind) + '</select>' +
-    '<button type="button" class="del" data-del="' + i + '">הסרה</button></div>' + slotFields(s) + sizeFields(s) + paraFields(s, i, order, ranks) + '</details>'
+    '<button type="button" class="del" data-del="' + i + '">הסרה</button></div>' + slotFields(s) +
+    (s.kind === 'erase' ? '' : sizeFields(s) + paraFields(s, i, order, ranks)) + '</details>'
   ).join('') + specialHint();
 }
 
@@ -1249,11 +1280,15 @@ $('tplSlots').addEventListener('input', e => {
   if (!ed || !k) return;
   const s = st.slots[+ed.dataset.i], v = e.target.value;
   if (k === 'kind') {
+    const was = s.kind;
     s.kind = v;
     const when0 = isDays() ? 'd0' : 'כל יום';
     if (v === 'rule' && !s.base) { Object.assign(s, { when: s.when || when0, name: s.label || '', base: 'שקיעה', offset: '0', round: 'ללא' }); reinfer(s); }
     if (v === 'kiddush' && !s.name) Object.assign(s, { when: s.when || when0, name: s.label || 'קידוש' });
     if (v === 'kiddush') { fitKiddush(s, true); schedulePreviewRefresh(); }
+    if (v === 'erase') fitErase(s);
+    // אזור שנמחק או שחזר: השורות בעמוד מתרווחות מחדש
+    if (v === 'erase' || was === 'erase') schedulePreviewRefresh();
     if (v === 'zman' && !s.zman) Object.assign(s, { zman: 'sunset', when: s.when || when0 });
     if (v === 'gregDate' && !s.fmt) s.fmt = { sep: '/', year: 4, pad: false };
     if (v === 'text' && s.text == null) {
@@ -1371,9 +1406,11 @@ $('tplSlots').addEventListener('click', async e => {
   const i = e.target.dataset.del;
   if (i == null) return;
   if (!await SiteDialog.confirm('להסיר את האזור מהתבנית?', { ok: 'הסרה', danger: true })) return;
-  st.slots.splice(+i, 1);
+  const [gone] = st.slots.splice(+i, 1);
   st.sel = null;
   renderBoxes(); renderSlots();
+  // טקסט שנמחק חוזר ללוח, והשורות חוזרות למקומן
+  if (gone.kind === 'erase') schedulePreviewRefresh();
 });
 
 /* ---------- שמירה ---------- */
