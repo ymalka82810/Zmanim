@@ -107,6 +107,18 @@ export default defineSchema({
     decidedAt: v.optional(v.number()),
     // שנה עברית של dateKey, להכנה לטעינה עתידית של רישומים לפי תקופה
     hebrewYear: v.optional(v.number()),
+    // שותפים לקידוש (מעבר לנרשם עצמו). בלי userId: שותף שהגבאי רשם ידנית, נחשב מאושר
+    cosponsors: v.optional(
+      v.array(
+        v.object({
+          userId: v.optional(v.id("users")),
+          sponsorName: v.string(),
+          sponsorSuffix: v.optional(v.string()),
+          status: v.union(v.literal("pending"), v.literal("confirmed")),
+          respondedAt: v.optional(v.number()),
+        }),
+      ),
+    ),
   })
     .index("by_synagogue_date", ["synagogueId", "dateKey"])
     .index("by_synagogue_hebrewYear", ["synagogueId", "hebrewYear"]),

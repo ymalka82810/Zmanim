@@ -43,7 +43,7 @@ export const counts = query({
           .query("kiddushBookings")
           .withIndex("by_synagogue_date", (q) => q.eq("synagogueId", args.synagogueId).gte("dateKey", todayKey()))
           .collect()
-      ).filter((b) => b.status === "pending");
+      ).filter((b) => b.status === "pending" && !(b.cosponsors ?? []).some((c) => c.status === "pending"));
       const pendingDates = new Set(pending.map((b) => b.dateKey));
       kiddush = pending.length + unread(kiddushNotes.filter((n) => !(n.dateKey && pendingDates.has(n.dateKey))));
 

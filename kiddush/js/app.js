@@ -40,7 +40,7 @@ function monthTitles(){
 
 /* ---------- State ---------- */
 const S = {
-  ready:false, fatal:null, signedIn:false, synagogues:[], sid:null, board:null, boardError:null,
+  ready:false, fatal:null, signedIn:false, synagogues:[], sid:null, board:null, boardError:null, memberChoices:[],
   view:'cal', mode:'heb', anchor:today0()
 };
 const syn = () => S.board.synagogue;
@@ -84,9 +84,17 @@ function useSynagogues(synagogues){
   renderAll();
 }
 
-let unsubscribe = null, termsInitRequested = false;
+let unsubscribe = null, termsInitRequested = false, choicesP = null;
+/** חברי הקהילה לבחירת שותפים: נטענים רק כשפותחים טופס רישום */
+function ensureChoices(){
+  if (!choicesP) choicesP = Auth.query('kiddush:memberChoices', { synagogueId: S.sid })
+    .then(r => { S.memberChoices = r; })
+    .catch(e => { console.warn(e); choicesP = null; S.memberChoices = []; });
+  return choicesP;
+}
 function attach(sid){
   if (sid === S.sid && unsubscribe) return;
+  choicesP = null; S.memberChoices = [];
   if (unsubscribe){ unsubscribe(); unsubscribe = null; }
   S.sid = sid; S.board = null; S.boardError = null; termsInitRequested = false;
   if (!sid) return;
@@ -118,7 +126,7 @@ function renderTabs(){
   if (!S.board){ t.hidden = true; return; }
   t.hidden = false;
   const pend = isManager() ? S.board.bookings.filter(b => b.status === 'pending').length : 0;
-  const rej = (S.board.rejections || []).length;
+  const rej = (S.board.rejections || []).length + S.board.bookings.filter(b => b.partner === 'pending').length;
   const tabs = [['cal','לוח',ICON.cal],['mine','הקידושים שלי',ICON.cup],['terms','הנחיות',ICON.doc]];
   if (isManager()) tabs.push(['manage','ניהול',ICON.gear]);
   t.innerHTML = '<div class="in">'+tabs.map(([k,l,i]) =>
@@ -209,12 +217,26 @@ function mineHTML(){
       <div class="row" style="justify-content:space-between"><div><div class="meta">${esc(heFull(sl.hd))} | ${esc(gFull(sl.date))}</div><h3>${esc(slotTitle(sl))}</h3></div>
       ${b.status==='approved'?'<span class="chip appr">מאושר</span>':'<span class="chip pend">ממתין לאישור</span>'}</div>
       <div class="small">${esc(syn().kiddushBy)} ${esc(b.sponsorLine)}${b.occasionLine?' | '+esc(b.occasionLine):''}</div>
+      ${partnersHTML(b)}
       <div class="meta">אושרו הנחיות גרסה ${b.termsVersion||'—'}</div>
       ${outdated?`<div class="warn">ההנחיות עודכנו לגרסה ${ct.version}. יש לעיין ולאשר מחדש.</div>`:''}
       ${pkey(k) >= t0 ? `<div class="row" style="margin-top:10px">
         ${outdated?`<button class="btn" data-act="ackTerms" data-k="${k}">עיון ואישור</button>`:`<button class="btn sec" data-act="termsVer" data-v="${b.termsVersion}">ההנחיות שאישרתי</button>`}
         <button class="btn sec" data-act="ics" data-k="${k}">הוספה ליומן</button>
         <button class="btn danger" data-act="cancelMine" data-k="${k}">ביטול הרישום</button></div>`:''}
+    </div>`;
+  };
+  const partnerOf = S.board.bookings.filter(b => b.partner && pkey(b.dateKey) >= t0).sort((a,b) => a.dateKey < b.dateKey ? -1 : 1);
+  const partnerItem = b => {
+    const k = b.dateKey, sl = slotFor(k, !!s.il), pend = b.partner === 'pending';
+    return `<div class="card">
+      <div class="row" style="justify-content:space-between"><div><div class="meta">${esc(heFull(sl.hd))} | ${esc(gFull(sl.date))}</div><h3>${esc(slotTitle(sl))}</h3></div>
+      ${pend?'<span class="chip pend">ממתין לאישורך</span>':'<span class="chip appr">אישרת</span>'}</div>
+      <div class="small">${esc(b.invitedBy)} הוסיף אותך כשותף לקידוש: ${esc(syn().kiddushBy)} ${esc(b.sponsorLine)}${b.occasionLine?' | '+esc(b.occasionLine):''}</div>
+      ${partnersHTML(b)}
+      <div class="row" style="margin-top:10px">${pend
+        ? `<button class="btn ok" data-act="respond" data-a="1" data-k="${k}">אישור ההשתתפות</button><button class="btn danger" data-act="respond" data-a="0" data-k="${k}">דחייה</button>`
+        : `<button class="btn sec" data-act="ics" data-k="${k}">הוספה ליומן</button>`}</div>
     </div>`;
   };
   const rejections = S.board.rejections || [];
@@ -229,7 +251,8 @@ function mineHTML(){
       <div class="row" style="margin-top:10px"><button class="btn sec" data-act="dismissRejection" data-id="${r._id}">הבנתי, הסתרה</button></div>
     </div>`;
   };
-  return `<div class="sechead"><h2>הקידושים שלי</h2></div>
+  return `${partnerOf.length ? `<div class="sechead"><h2>הזמנות לשותפות בקידוש</h2></div>`+partnerOf.map(partnerItem).join('') : ''}
+    <div class="sechead"><h2>הקידושים שלי</h2></div>
     ${up.length ? up.map(item).join('') : '<div class="card empty">אין לך קידושים קרובים. בחרו שבת פנויה בלוח כדי להירשם.<div style="margin-top:12px"><button class="btn" data-act="view" data-v="cal">ללוח השבתות</button></div></div>'}
     ${rejections.length ? `<div class="sechead"><h2>בקשות שנדחו</h2></div>`+rejections.map(rejItem).join('') : ''}
     ${past.length ? `<div class="sechead"><h2>קידושים קודמים</h2></div>`+past.map(item).join('') : ''}`;
@@ -259,8 +282,9 @@ function manageHTML(){
     const k = b.dateKey, sl = slotFor(k, !!s.il);
     return `<div class="li"><div class="grow"><div class="t">${esc(slotTitle(sl))} <span class="meta">${esc(gShort(sl.date))}</span></div>
       <div class="small">${esc(b.sponsorLine)}${b.occasionLine?' | '+esc(b.occasionLine):''}</div>
+      ${partnersHTML(b)}
       <div class="meta">נרשם: ${esc(b.registrant)}${b.phone?' | '+esc(b.phone):''}${pkey(k)<t0?' | התאריך עבר':''}</div></div>
-      <div class="row"><button class="btn ok" data-act="approve" data-k="${k}">אישור</button><button class="btn danger" data-act="reject" data-k="${k}">דחייה</button></div></div>`;
+      <div class="row"><button class="btn ok" data-act="approve" data-k="${k}" ${b.awaitingPartners?'disabled title="ממתין לאישור השותפים"':''}>אישור</button><button class="btn danger" data-act="reject" data-k="${k}">דחייה</button></div></div>`;
   }).join('') : '<p class="muted">אין בקשות ממתינות.</p>';
   return `<div class="sechead"><h2>בקשות לאישור</h2></div><div class="card"><div class="list">${pendHTML}</div></div>
     <div class="card"><h3>רישום ידני או חסימת תאריך</h3><p class="small muted">לחיצה על שבת בלוח פותחת גם פעולות ניהול: רישום בשם משפחה, סימון "קידוש קהילתי" או חסימה.</p>
@@ -281,16 +305,20 @@ function slotSheet(k){
   let html = sheetHead(slotTitle(sl), heFull(sl.hd)+' | '+gFull(sl.date));
   if (sl.subs.length) html += `<p class="small muted">${esc(sl.subs.join(', '))}</p>`;
   if (b && b.status !== 'blocked'){
-    html += announceView(b) + `<dl class="kv"><dt>סטטוס</dt><dd>${b.status==='approved'?'מאושר':'ממתין לאישור'}</dd>
+    html += announceView(b) + partnersHTML(b)
+      + (b.partner === 'pending' ? `<div class="warn">${esc(b.invitedBy)} הוסיף אותך כשותף לקידוש. האם להשתתף?</div>` : '')
+      + (isManager() && b.status === 'pending' && b.awaitingPartners ? '<div class="warn">הבקשה ממתינה לאישור של כל השותפים, ואז אפשר לאשר אותה.</div>' : '')
+      + `<dl class="kv"><dt>סטטוס</dt><dd>${b.status==='approved'?'מאושר':'ממתין לאישור'}</dd>
       ${isManager()?`<dt>נרשם</dt><dd>${b.manual?'רישום ידני ע״י '+esc(b.registrant):esc(b.registrant)}</dd>`:''}
       ${b.phone?`<dt>טלפון</dt><dd dir="ltr" style="text-align:right">${esc(b.phone)}</dd>`:''}${b.note?`<dt>הערה</dt><dd>${esc(b.note)}</dd>`:''}</dl>`;
   } else if (b) html += `<p><span class="chip block">${esc(b.blockLabel||'לא זמין')}</span></p>`;
   else html += `<p><span class="chip ${past?'block':'free'}">${past?'עבר ללא קידוש':'פנוי לקידוש'}</span></p>`;
   const acts = [];
   if (!b && !past) acts.push(`<button class="btn" data-act="register" data-k="${k}">הרשמה לקידוש</button>`);
+  if (b?.partner === 'pending' && !past) acts.push(`<button class="btn ok" data-act="respond" data-a="1" data-k="${k}">אישור ההשתתפות</button><button class="btn danger" data-act="respond" data-a="0" data-k="${k}">דחייה</button>`);
   if (b?.mine && !past) acts.push(`<button class="btn danger" data-act="cancelMine" data-k="${k}">ביטול הרישום שלי</button>`);
   if (isManager() && !past){
-    if (b?.status === 'pending') acts.push(`<button class="btn ok" data-act="approve" data-k="${k}">אישור</button><button class="btn danger" data-act="reject" data-k="${k}">דחייה</button>`);
+    if (b?.status === 'pending') acts.push(`<button class="btn ok" data-act="approve" data-k="${k}" ${b.awaitingPartners?'disabled':''}>אישור</button><button class="btn danger" data-act="reject" data-k="${k}">דחייה</button>`);
     if (b?.status === 'approved' && !b.mine) acts.push(`<button class="btn danger" data-act="reject" data-k="${k}">ביטול הקידוש</button>`);
     if (b?.status === 'blocked') acts.push(`<button class="btn sec" data-act="unblock" data-k="${k}">שחרור התאריך</button>`);
     if (!b) acts.push(`<button class="btn sec" data-act="manual" data-k="${k}">רישום ידני</button><button class="btn sec" data-act="block" data-k="${k}">חסימה / קידוש קהילתי</button>`);
@@ -331,12 +359,49 @@ function announceView(b){
     <div>${s.kiddushBy?esc(s.kiddushBy)+' ':''}<b>${esc(b.sponsorLine)}</b></div>${b.occasionLine?`<div>${esc(b.occasionLine)}</div>`:''}</div>`;
 }
 
+/** שותפים שעוד לא אישרו, או כל השותפים למי שרשאי לראות אותם */
+function partnersHTML(b){
+  const list = b.cosponsors || [];
+  if (!list.length) return '';
+  return `<div class="small" style="margin-top:8px">שותפים: ${list.map(c => esc(c.line)+(c.status==='pending'?' <span class="chip pend">ממתין לאישורו</span>':'')).join(', ')}</div>`;
+}
+const MAX_CO = 5;
+function coRow(noAccount){
+  const opts = (noAccount ? '<option value="">ללא חשבון (רישום ידני)</option>' : '<option value="" disabled selected>בחירת שותף מהקהילה</option>')
+    + S.memberChoices.map(m => `<option value="${esc(m.userId)}" data-name="${esc(m.name)}">${esc(m.name)}</option>`).join('');
+  const by = syn().kiddushBy;
+  return `<div class="co-row"><select data-co-member aria-label="חבר קהילה">${opts}</select>
+    <div class="an-line">${by?`<span class="an-fixed">${esc(by)}</span>`:''}<input type="text" class="co-name" maxlength="60" placeholder="משפחת כהן" aria-label="שם השותף">
+      <select class="co-sfx" aria-label="תוספת אחרי השם">${options(LIVING_SFX, '', 'ללא')}</select>
+      <button type="button" class="btn ghost" data-act="rmCo" aria-label="הסרת שותף">×</button></div></div>`;
+}
+/** שותפים לקידוש. noAccount: רישום ידני של גבאי, שם אפשר גם שותף בלי חשבון (נחשב מאושר) */
+function coHTML(p, noAccount){
+  return `<div class="co-box" id="${p}Co" data-noacc="${noAccount?1:0}"><div class="co-list"></div>
+    <button type="button" class="btn ghost" data-act="addCo" data-p="${p}">+ הוספת שותף לקידוש</button>
+    <p class="small muted">${noAccount ? 'שותף עם חשבון יקבל בקשה לאשר. שותף בלי חשבון יירשם כמאושר.' : 'כל שותף יקבל הודעה וצריך לאשר. עד שיאשר, שמו לא יופיע בהכרזה.'}</p></div>`;
+}
+const coPayload = p => [...document.querySelectorAll('#'+p+'Co .co-row')].map(r => {
+  const userId = r.querySelector('[data-co-member]').value;
+  return { ...(userId ? { userId } : {}), sponsorName: r.querySelector('.co-name').value.trim(), sponsorSuffix: r.querySelector('.co-sfx').value };
+});
+function coError(p){
+  const noAcc = $('#'+p+'Co').dataset.noacc === '1';
+  for (const c of coPayload(p)){
+    if (!noAcc && !c.userId) return 'נא לבחור את השותף מרשימת הקהילה';
+    if (!c.sponsorName) return 'נא למלא את שם השותף';
+  }
+  return null;
+}
+
 function registerSheet(k){
+  ensureChoices();
   const sl = slotFor(k, !!syn().il);
   openSheet(sheetHead('הרשמה לקידוש', slotTitle(sl)+' | '+heFull(sl.hd)) + `
     <div class="steps"><span class="on" id="st1"></span><span id="st2"></span></div>
     <div id="step1">
       ${announceHTML('f')}
+      ${coHTML('f', false)}
       <label class="f" for="fPhone">טלפון ליצירת קשר</label><input type="tel" id="fPhone" maxlength="20" dir="ltr" style="text-align:right" value="${esc(S.board.myPhone)}">
       <label class="f" for="fNote">הערה לגבאי (לא חובה)</label><input type="text" id="fNote" maxlength="200">
       <div class="row" style="margin-top:16px"><button class="btn" data-act="regNext">המשך להנחיות</button></div>
@@ -371,11 +436,12 @@ function wordingSheet(){
     <div class="row"><button class="btn" data-act="saveWording">שמירה</button><button class="btn ghost" data-act="close">ביטול</button></div>`);
 }
 function reasonSheet(k, kind){
+  if (kind === 'manual') ensureChoices();
   const sl = slotFor(k, !!syn().il);
   const title = kind === 'block' ? 'חסימת תאריך' : kind === 'manual' ? 'רישום ידני' : 'דחייה או ביטול';
   let f = '';
   if (kind === 'block') f = `<label class="f" for="rText">מה יוצג בלוח</label><input type="text" id="rText" maxlength="40" value="קידוש קהילתי">`;
-  else if (kind === 'manual') f = `${announceHTML('r')}<label class="f" for="rPhone">טלפון</label><input type="tel" id="rPhone" dir="ltr" style="text-align:right" maxlength="20">`;
+  else if (kind === 'manual') f = `${announceHTML('r')}${coHTML('r', true)}<label class="f" for="rPhone">טלפון</label><input type="tel" id="rPhone" dir="ltr" style="text-align:right" maxlength="20">`;
   else f = `<label class="f" for="rText">סיבה (תישלח לנרשם)</label><input type="text" id="rText" maxlength="160">`;
   openSheet(sheetHead(title, slotTitle(sl)+' | '+gFull(sl.date)) + f +
     `<div class="row" style="margin-top:16px"><button class="btn${kind==='reject'?' danger':''}" data-act="doReason" data-k="${k}" data-kind="${kind}">אישור</button><button class="btn ghost" data-act="close">ביטול</button></div>`);
@@ -477,13 +543,14 @@ const A = {
   register: d => registerSheet(d.k),
   regNext: () => {
     if (!$('#fSponsor').value.trim()){ $('#fSponsor').focus(); return toast('נא למלא את שם בעל הקידוש'); }
+    const ce = coError('f'); if (ce) return toast(ce);
     $('#step1').hidden = true; $('#step2').hidden = false; $('#st2').classList.add('on'); $('#sheet').scrollTop = 0;
   },
   regBack: () => { $('#step1').hidden = false; $('#step2').hidden = true; $('#st2').classList.remove('on'); },
   regSubmit: guard(async d => {
     if (!$('#fAgree').checked) return toast('יש לאשר את ההנחיות כדי להירשם');
     const res = await call('kiddush:register', { dateKey:d.k, label:slotLabel(d.k),
-      ...announceValues('f'), phone:$('#fPhone').value, note:$('#fNote').value });
+      ...announceValues('f'), cosponsors:coPayload('f'), phone:$('#fPhone').value, note:$('#fNote').value });
     closeSheet(); toast(res?.status === 'approved' ? 'הקידוש נרשם ואושר' : 'הבקשה נשלחה לאישור');
   }),
   cancelMine: d => {
@@ -499,6 +566,18 @@ const A = {
     await call('kiddush:approve', { dateKey:d.k, label:slotLabel(d.k) });
     closeSheet(); toast('הבקשה אושרה');
   }),
+  addCo: guard(async d => {
+    await ensureChoices();
+    const box = $('#'+d.p+'Co'), list = box.querySelector('.co-list');
+    if (list.children.length >= MAX_CO) return toast('אפשר להוסיף עד '+MAX_CO+' שותפים');
+    list.insertAdjacentHTML('beforeend', coRow(box.dataset.noacc === '1'));
+  }),
+  rmCo: (d, t) => t.closest('.co-row').remove(),
+  respond: guard(async d => {
+    const accept = d.a === '1';
+    await call('kiddush:respondCosponsor', { dateKey:d.k, label:slotLabel(d.k), accept });
+    closeSheet(); toast(accept ? 'תודה, ההשתתפות אושרה' : 'ההצעה נדחתה');
+  }),
   reject: d => reasonSheet(d.k, 'reject'),
   block: d => reasonSheet(d.k, 'block'),
   manual: d => reasonSheet(d.k, 'manual'),
@@ -508,7 +587,8 @@ const A = {
     const k = d.k, kind = d.kind;
     if (kind === 'manual'){
       if (!$('#rSponsor').value.trim()) return toast('נא למלא את שם בעל הקידוש');
-      await call('kiddush:registerManual', { dateKey:k, ...announceValues('r'), phone:$('#rPhone').value });
+      const ce = coError('r'); if (ce) return toast(ce);
+      await call('kiddush:registerManual', { dateKey:k, ...announceValues('r'), cosponsors:coPayload('r'), phone:$('#rPhone').value });
       toast('נשמר');
     } else if (kind === 'reject'){
       await call('kiddush:reject', { dateKey:k, label:slotLabel(k), reason:$('#rText').value.trim() });
@@ -553,7 +633,15 @@ document.addEventListener('click', e => {
   if (t){ const f = A[t.dataset.act]; if (f){ e.preventDefault(); f(t.dataset, t); } return; }
   if (e.target === $('#sheetWrap')) closeSheet();
 });
-document.addEventListener('change', e => { if (e.target.dataset.announce) announceTypeChanged(e.target.dataset.announce); });
+document.addEventListener('change', e => {
+  if (e.target.dataset.announce) announceTypeChanged(e.target.dataset.announce);
+  if (e.target.hasAttribute('data-co-member')){
+    // בחירת חבר קהילה ממלאת את השם שלו כברירת מחדל, אלא אם הקלידו שם אחר
+    const name = e.target.closest('.co-row').querySelector('.co-name');
+    if (!name.value.trim() || name.dataset.auto === '1'){ name.value = e.target.selectedOptions[0]?.dataset.name || ''; name.dataset.auto = '1'; }
+  }
+});
+document.addEventListener('input', e => { if (e.target.classList?.contains('co-name')) e.target.dataset.auto = '0'; });
 document.addEventListener('keydown',e => { if (e.key === 'Escape' && !$('#sheetWrap').hidden) closeSheet(); });
 
 boot();

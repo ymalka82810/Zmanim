@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { displayName, isManager, requireManager, requireMember } from "./roles";
+import { displayName, getMembership, isManager, requireManager, requireMember } from "./roles";
 import { hebrewYearOf } from "./hebrewDate";
 import * as Notifications from "./notifications";
 
@@ -72,6 +72,68 @@ function occasionLine(b: Doc<"kiddushBookings">) {
   return b.occasion ? (b.occasionType || "לרגל") + " " + withSuffix(b.occasion, b.occasionSuffix) : "";
 }
 
+type Cosponsor = NonNullable<Doc<"kiddushBookings">["cosponsors"]>[number];
+const MAX_COSPONSORS = 5;
+const cosponsorLine = (c: Cosponsor) => withSuffix(c.sponsorName, c.sponsorSuffix);
+const hasPendingCosponsor = (b: Doc<"kiddushBookings">) => (b.cosponsors ?? []).some((c) => c.status === "pending");
+
+/** הנרשם והשותפים שאישרו: "משפחת לוי וע״י משפחת כהן". ה"ע״י" הראשון מתווסף בלקוח, כמו תמיד */
+function fullSponsorLine(b: Doc<"kiddushBookings">, by: string) {
+  const lines = [sponsorLine(b), ...(b.cosponsors ?? []).filter((c) => c.status === "confirmed").map(cosponsorLine)];
+  return lines.join(by ? ` ו${by} ` : " ו");
+}
+
+const cosponsorArgs = v.optional(
+  v.array(v.object({ userId: v.optional(v.id("users")), sponsorName: v.string(), sponsorSuffix: v.optional(v.string()) })),
+);
+
+/** בדיקת השותפים מהטופס. ברישום של חבר קהילה כל שותף חייב להיות חבר קהילה (כדי שיוכל לאשר) */
+async function buildCosponsors(
+  ctx: QueryCtx,
+  synagogueId: Id<"synagogues">,
+  ownerId: Id<"users">,
+  input: { userId?: Id<"users">; sponsorName: string; sponsorSuffix?: string }[] | undefined,
+  requireAccount: boolean,
+): Promise<Cosponsor[]> {
+  const list = input ?? [];
+  if (list.length > MAX_COSPONSORS) {
+    throw new ConvexError(`אפשר להוסיף עד ${MAX_COSPONSORS} שותפים`);
+  }
+  const seen = new Set<string>();
+  const out: Cosponsor[] = [];
+  for (const c of list) {
+    const sponsorName = clip(c.sponsorName, 60);
+    if (!sponsorName) {
+      throw new ConvexError("נא למלא את שם השותף");
+    }
+    const sponsorSuffix = c.sponsorSuffix ?? "";
+    if (sponsorSuffix && !LIVING_SUFFIXES.includes(sponsorSuffix)) {
+      throw new ConvexError("בחירה לא תקינה אחרי שם השותף");
+    }
+    if (c.userId) {
+      if (c.userId === ownerId) {
+        throw new ConvexError("אי אפשר להוסיף את עצמך כשותף");
+      }
+      if (seen.has(c.userId)) {
+        throw new ConvexError("אותו שותף נוסף פעמיים");
+      }
+      seen.add(c.userId);
+      if ((await getMembership(ctx, synagogueId, c.userId)) === null) {
+        throw new ConvexError("השותף אינו חבר בקהילה");
+      }
+    } else if (requireAccount) {
+      throw new ConvexError("יש לבחור את השותף מחברי הקהילה");
+    }
+    out.push({
+      ...(c.userId ? { userId: c.userId } : {}),
+      sponsorName,
+      sponsorSuffix,
+      status: c.userId ? "pending" : "confirmed",
+    });
+  }
+  return out;
+}
+
 function checkDateKey(dateKey: string) {
   if (!DATE_KEY_RE.test(dateKey)) {
     throw new ConvexError("תאריך לא תקין");
@@ -124,6 +186,41 @@ async function userName(ctx: QueryCtx, userId: Id<"users">) {
   return displayName(user);
 }
 
+/** שם להצגה לחברי קהילה אחרים: בלי כתובת מייל */
+async function publicName(ctx: QueryCtx, userId: Id<"users">) {
+  const user = await ctx.db.get(userId);
+  return user?.hebrewName?.trim() || user?.name?.trim() || "חבר קהילה";
+}
+
+async function kiddushBy(ctx: QueryCtx, synagogueId: Id<"synagogues">) {
+  return (await ctx.db.get(synagogueId))?.kiddushBy ?? DEFAULT_KIDDUSH_BY;
+}
+
+/** הודעה לכל השותפים בעלי חשבון ברישום */
+async function notifyCosponsors(ctx: MutationCtx, b: Doc<"kiddushBookings">, by: Id<"users">, text: string) {
+  for (const c of b.cosponsors ?? []) {
+    if (c.userId && c.userId !== by) {
+      await notify(ctx, b.synagogueId, by, c.userId, b.dateKey, text);
+    }
+  }
+}
+
+/** חברי הקהילה שאפשר לבחור כשותפים. נטען רק כשפותחים את טופס ההרשמה, ולא חושף כתובות מייל */
+export const memberChoices = query({
+  args: { synagogueId: v.id("synagogues") },
+  handler: async (ctx, args) => {
+    const { userId } = await requireMember(ctx, args.synagogueId);
+    const memberships = await ctx.db
+      .query("memberships")
+      .withIndex("by_synagogue", (q) => q.eq("synagogueId", args.synagogueId))
+      .collect();
+    const choices = await Promise.all(
+      memberships.filter((m) => m.userId !== userId).map(async (m) => ({ userId: m.userId, name: await publicName(ctx, m.userId) })),
+    );
+    return choices.sort((a, b) => a.name.localeCompare(b.name, "he"));
+  },
+});
+
 /** כל מה שהלוח צריך, בשאילתה אחת שמתעדכנת בזמן אמת. פרטי קשר של אחרים חשופים לגבאי ולרב בלבד. */
 export const board = query({
   args: { synagogueId: v.id("synagogues") },
@@ -139,10 +236,13 @@ export const board = query({
       .query("kiddushBookings")
       .withIndex("by_synagogue_date", (q) => q.eq("synagogueId", args.synagogueId))
       .collect();
+    const by = synagogue.kiddushBy ?? DEFAULT_KIDDUSH_BY;
     const bookings = await Promise.all(
       bookingDocs.map(async (b) => {
         const mine = b.userId === userId && !b.manual;
         const showPrivate = manager || mine;
+        const partnerEntry = (b.cosponsors ?? []).find((c) => c.userId === userId);
+        const seeAllPartners = showPrivate || partnerEntry !== undefined;
         return {
           dateKey: b.dateKey,
           status: b.status,
@@ -153,8 +253,15 @@ export const board = query({
           occasion: b.occasion,
           occasionType: b.occasionType || (b.occasion ? "לרגל" : ""),
           occasionSuffix: b.occasionSuffix ?? "",
-          sponsorLine: sponsorLine(b),
+          // כולל שותפים שאישרו, כך שכל מי שמציג את הלוח (שבוע, יומן, הדפסה) מציג אותם בלי שינוי
+          sponsorLine: fullSponsorLine(b, by),
           occasionLine: occasionLine(b),
+          cosponsors: seeAllPartners
+            ? (b.cosponsors ?? []).map((c) => ({ line: cosponsorLine(c), status: c.status, isMe: c.userId === userId }))
+            : [],
+          awaitingPartners: hasPendingCosponsor(b),
+          partner: partnerEntry?.status ?? null,
+          invitedBy: partnerEntry ? await publicName(ctx, b.userId) : null,
           blockLabel: b.blockLabel,
           termsVersion: b.termsVersion,
           phone: showPrivate ? b.phone : "",
@@ -220,6 +327,7 @@ export const register = mutation({
     dateKey: v.string(),
     label: v.string(),
     ...announceArgs,
+    cosponsors: cosponsorArgs,
     phone: v.string(),
     note: v.string(),
   },
@@ -227,6 +335,7 @@ export const register = mutation({
     const { userId, membership } = await requireMember(ctx, args.synagogueId);
     await requireFreeDate(ctx, args.synagogueId, args.dateKey);
     const fields = announceFields(args);
+    const cosponsors = await buildCosponsors(ctx, args.synagogueId, userId, args.cosponsors, true);
     const phone = clip(args.phone, 20);
     // גבאי או רב לא צריכים לאשר רישום של עצמם
     const selfApproved = isManager(membership.role);
@@ -245,15 +354,22 @@ export const register = mutation({
       termsAckAt: Date.now(),
       createdAt: Date.now(),
       hebrewYear: hebrewYearOf(args.dateKey),
+      ...(cosponsors.length ? { cosponsors } : {}),
     });
     if (phone && membership.phone !== phone) {
       await ctx.db.patch(membership._id, { phone });
     }
     const sponsor = withSuffix(fields.sponsorName, fields.sponsorSuffix);
+    const partnersNote = cosponsors.length ? " (ממתין לאישור השותפים)" : "";
     await notify(ctx, args.synagogueId, userId, "managers", args.dateKey,
       selfApproved
-        ? `${await userName(ctx, userId)} רשם קידוש ב${clip(args.label, 80)}: ${sponsor}`
-        : `בקשה חדשה לקידוש ב${clip(args.label, 80)}: ${sponsor}`);
+        ? `${await userName(ctx, userId)} רשם קידוש ב${clip(args.label, 80)}: ${sponsor}${partnersNote}`
+        : `בקשה חדשה לקידוש ב${clip(args.label, 80)}: ${sponsor}${partnersNote}`);
+    const registrant = await publicName(ctx, userId);
+    for (const c of cosponsors) {
+      await notify(ctx, args.synagogueId, userId, c.userId!, args.dateKey,
+        `${registrant} הוסיף אותך כשותף לקידוש ב${clip(args.label, 80)}. יש לאשר או לדחות בלוח הקידושים.`);
+    }
     return { status: selfApproved ? "approved" : "pending" };
   },
 });
@@ -271,6 +387,7 @@ export const cancelMine = mutation({
       throw new ConvexError("אפשר לבטל רק רישום שלך");
     }
     await ctx.db.delete(booking._id);
+    await notifyCosponsors(ctx, booking, userId, `הקידוש ב${clip(args.label, 80)} בוטל על ידי הנרשם.`);
     await notify(ctx, args.synagogueId, userId, "managers", args.dateKey,
       `${await userName(ctx, userId)} ביטל את הקידוש ב${clip(args.label, 80)}. התאריך פנוי כעת.`);
   },
@@ -307,6 +424,9 @@ export const approve = mutation({
     if (booking.status !== "pending") {
       return;
     }
+    if (hasPendingCosponsor(booking)) {
+      throw new ConvexError("הבקשה ממתינה לאישור של כל השותפים");
+    }
     await ctx.db.patch(booking._id, { status: "approved", decidedBy: userId, decidedAt: Date.now() });
     if (!booking.manual) {
       await notify(ctx, args.synagogueId, userId, booking.userId, args.dateKey,
@@ -324,6 +444,7 @@ export const reject = mutation({
       throw new ConvexError("התאריך חסום. יש לשחרר אותו");
     }
     await ctx.db.delete(booking._id);
+    await notifyCosponsors(ctx, booking, userId, `הקידוש ב${clip(args.label, 80)} בוטל על ידי הגבאי.`);
     if (!booking.manual) {
       const reason = clip(args.reason, 160);
       await notify(ctx, args.synagogueId, userId, booking.userId, args.dateKey,
@@ -332,7 +453,7 @@ export const reject = mutation({
         synagogueId: args.synagogueId,
         userId: booking.userId,
         dateKey: args.dateKey,
-        sponsorLine: sponsorLine(booking),
+        sponsorLine: fullSponsorLine(booking, await kiddushBy(ctx, args.synagogueId)),
         occasionLine: occasionLine(booking),
         reason,
         rejectedBy: userId,
@@ -399,11 +520,13 @@ export const registerManual = mutation({
     synagogueId: v.id("synagogues"),
     dateKey: v.string(),
     ...announceArgs,
+    cosponsors: cosponsorArgs,
     phone: v.string(),
   },
   handler: async (ctx, args) => {
     const { userId } = await requireManager(ctx, args.synagogueId);
     await requireFreeDate(ctx, args.synagogueId, args.dateKey);
+    const cosponsors = await buildCosponsors(ctx, args.synagogueId, userId, args.cosponsors, false);
     await ctx.db.insert("kiddushBookings", {
       synagogueId: args.synagogueId,
       dateKey: args.dateKey,
@@ -419,7 +542,50 @@ export const registerManual = mutation({
       decidedBy: userId,
       decidedAt: Date.now(),
       hebrewYear: hebrewYearOf(args.dateKey),
+      ...(cosponsors.length ? { cosponsors } : {}),
     });
+    const registrant = await publicName(ctx, userId);
+    for (const c of cosponsors) {
+      if (c.userId) {
+        await notify(ctx, args.synagogueId, userId, c.userId, args.dateKey,
+          `${registrant} רשם אותך כשותף לקידוש. יש לאשר או לדחות בלוח הקידושים.`);
+      }
+    }
+  },
+});
+
+/** שותף מאשר או דוחה את ההשתתפות בקידוש. דחייה מסירה אותו מהרישום. ביטול אחרי אישור אינו נתמך כרגע */
+export const respondCosponsor = mutation({
+  args: { synagogueId: v.id("synagogues"), dateKey: v.string(), label: v.string(), accept: v.boolean() },
+  handler: async (ctx, args) => {
+    const { userId } = await requireMember(ctx, args.synagogueId);
+    const booking = await requireBooking(ctx, args.synagogueId, args.dateKey);
+    const cosponsors = booking.cosponsors ?? [];
+    const entry = cosponsors.find((c) => c.userId === userId);
+    if (entry === undefined) {
+      throw new ConvexError("לא הוזמנת להיות שותף בקידוש הזה");
+    }
+    if (entry.status !== "pending") {
+      return;
+    }
+    const me = await publicName(ctx, userId);
+    const label = clip(args.label, 80);
+    if (args.accept) {
+      const updated = cosponsors.map((c) => (c.userId === userId ? { ...c, status: "confirmed" as const, respondedAt: Date.now() } : c));
+      await ctx.db.patch(booking._id, { cosponsors: updated });
+      await notify(ctx, args.synagogueId, userId, booking.userId, args.dateKey, `${me} אישר להיות שותף בקידוש ב${label}.`);
+      if (booking.status === "pending" && updated.every((c) => c.status === "confirmed")) {
+        await notify(ctx, args.synagogueId, userId, "managers", args.dateKey,
+          `כל השותפים אישרו את הקידוש ב${label}. הבקשה ממתינה לאישור.`);
+      }
+    } else {
+      await ctx.db.patch(booking._id, { cosponsors: cosponsors.filter((c) => c.userId !== userId) });
+      await notify(ctx, args.synagogueId, userId, booking.userId, args.dateKey, `${me} דחה את ההצעה להיות שותף בקידוש ב${label}.`);
+      if (booking.status === "pending" && cosponsors.filter((c) => c.userId !== userId).every((c) => c.status === "confirmed")) {
+        await notify(ctx, args.synagogueId, userId, "managers", args.dateKey,
+          `שותף דחה את ההשתתפות בקידוש ב${label}. הבקשה ממתינה לאישור.`);
+      }
+    }
   },
 });
 
