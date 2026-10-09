@@ -435,3 +435,19 @@ button[aria-pressed="true"] { background: linear-gradient(135deg, var(--blue), v
 .storage-panel .trash { margin-top: 12px; }
 .storage-panel .trash > summary { cursor: pointer; font-weight: 700; }
 .file-open { color: var(--blue); font-weight: 700; font-size: .85rem; padding: 5px 6px; }
+
+/* אשף התחלה לגבאי חדש */
+.wiz { border: 0; border-radius: 18px; padding: 0; width: min(640px, calc(100vw - 24px)); max-height: calc(100vh - 24px); background: var(--panel); color: inherit; box-shadow: 0 18px 40px rgba(24,32,54,.3); }
+.wiz::backdrop { background: rgba(10,16,32,.5); }
+.wiz-form { padding: 20px; }
+.wiz h2 { margin: 6px 0 14px; }
+.wiz-dots { display: flex; gap: 6px; }
+.wiz-dots i { width: 28px; height: 5px; border-radius: 3px; background: var(--line); }
+.wiz-dots i.on { background: var(--blue); }
+.wiz-modes { display: flex; gap: 8px; margin-bottom: 12px; }
+.wiz-modes button { flex: 1; }
+.wiz-modes button[aria-pressed="true"] { border-color: var(--blue); box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 25%, transparent); }
+.wiz .lay-pick { max-height: 46vh; overflow: auto; padding: 2px; }
+.wiz-sum { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 6px; }
+.wiz-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; }
+.wiz-actions .link { margin-inline-start: auto; }

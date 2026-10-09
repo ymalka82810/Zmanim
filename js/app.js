@@ -15,6 +15,7 @@ import { editFromFile, editFromBoard, editExisting, mergeRules, setKiddush } fro
 import { initCommunity } from './community.js';
 import { startSync } from './settings-sync.js';
 import { openTextEdit } from './text-edit.js';
+import { openWizard, closeWizard, wizardDone } from './wizard.js';
 
 const $ = id => document.getElementById(id);
 const BASE_LABELS = Object.keys(BASES);
@@ -705,11 +706,23 @@ function renderLayouts() {
     uploadedDesigns(t).map(x => card('data-design="' + esc(x.id) + '"', active === x.id, '<img src="' + esc(x.design.image) + '" alt="">',
       x === t ? 'הלוח שהועלה לתבנית הזו' : 'הלוח של "' + x.name + '"', 'לוח שהועלה בקהילה: ' + x.design.name)).join('') +
     card('data-upload="1"', false, '<span class="lay-plus">+</span>', 'העלאת לוח משלכם', 'PDF או תמונה של לוח ישן. הוא יתווסף לעיצובים של הקהילה');
-  $('layouts').querySelectorAll('.lay-card[data-layout]').forEach(c => {
+  paintLayoutThumbs($('layouts'), t, sample);
+}
+
+function paintLayoutThumbs(host, t, sample) {
+  host.querySelectorAll('.lay-card[data-layout]').forEach(c => {
     const el = c.querySelector('.luach');
     applyDesign(el, t, c.dataset.layout);
     el.innerHTML = luachHtml(sample, false, t.cols);
   });
+}
+
+/** כל העיצובים המוכנים של המערכת (בלי לוחות שהועלו) כקלפי בחירה בתוך host, לאשף ההתחלה */
+function drawSystemLayouts(host, selected) {
+  const t = selTpl();
+  host.innerHTML = LAYOUTS.map(([id, name, about]) => '<button type="button" class="lay-card" data-layout="' + id + '" aria-pressed="' + (id === selected) + '">' +
+    '<div class="lay-thumb" aria-hidden="true"><div class="luach"></div></div><b>' + esc(name) + '</b><small>' + esc(about) + '</small></button>').join('');
+  paintLayoutThumbs(host, t, withEdits(LAYOUT_SAMPLES[t.kind], {}));
 }
 
 /** הצגת התבנית t בלוח שהועלה לתבנית src (או לה עצמה). עיצוב שהועלה ל-t נשמר לתבניות שמשתמשות בו */
@@ -1047,6 +1060,7 @@ function applyRemote(next, by) {
   // בעריכת תבנית מקובץ ההגדרות מהקהילה ממתינות
   if (!$('view-template').hidden) { remoteLater = [next, by]; return; }
   remoteLater = null;
+  closeWizard();
   cfg = next; saved = true;
   saveConfig(cfg);
   fill(); renderLuach(); renderProfiles();
@@ -1130,12 +1144,37 @@ $('addRule').onclick = () => {
   $('rules').lastElementChild.querySelector('input').focus();
 };
 
-$('city').onchange = () => {
-  cfg.city = $('city').value;
-  const c = CITIES.find(x => x[0] === cfg.city);
+function setCity(id) {
+  cfg.city = id;
+  const c = CITIES.find(x => x[0] === id);
   if (c) Object.assign(cfg, { lat: c[2], lng: c[3], candle: c[4], tz: 'Asia/Jerusalem', il: true });
-  cursor = null; fill(); changed();
-};
+  cursor = null;
+}
+$('city').onchange = () => { setCity($('city').value); fill(); changed(); };
+
+/* ---------- אשף התחלה ---------- */
+
+function startWizard() {
+  openWizard({
+    cities: CITIES, layouts: LAYOUTS,
+    start: { shul: cfg.shul, city: cfg.city, layout: cfg.templates[0].layout },
+    drawLayouts: drawSystemLayouts,
+    async onFinish({ shul, city, layout, file }) {
+      if (shul) cfg.shul = shul;
+      setCity(city);
+      // עיצוב מוכן חל על כל התבניות. העלאת לוח חלה על תבנית השבת
+      if (!file) for (const t of cfg.templates) t.layout = layout;
+      if (!store()) { toast('לא ניתן לשמור במכשיר הזה', true); return; }
+      saved = true; sel = 'shabbat';
+      fill(); renderProfiles();
+      setBoard('shabbat');
+      showTab('luach');
+      if (file) await uploadBoard(file);
+      else toast('ההגדרות נשמרו');
+    }
+  });
+}
+$('startWizard').onclick = startWizard;
 const bind = (id, fn) => $(id).addEventListener('input', () => { fn($(id).value); changed(); });
 bind('shul', v => { cfg.shul = v; });
 bind('address', v => { cfg.address = v; });
@@ -1221,7 +1260,9 @@ $('tplUpload').onclick = () => $('tplFile').click();
 $('tplFile').onchange = async () => {
   const f = $('tplFile').files[0];
   $('tplFile').value = '';
-  if (!f) return;
+  if (f) uploadBoard(f);
+};
+async function uploadBoard(f) {
   toast('קורא את הקובץ…');
   try {
     await editFromFile(f, cfg, selTpl(), templateDone, toast);
@@ -1230,7 +1271,7 @@ $('tplFile').onchange = async () => {
     console.error(e);
     toast(navigator.onLine ? 'לא ניתן לקרוא את הקובץ' : 'קריאת PDF דורשת חיבור לאינטרנט בפעם הראשונה', true);
   }
-};
+}
 /** פתיחת לוח של המערכת בעורך, בלוח הקרוב של התבנית t. השמירה יוצרת לתבנית לוח משלה */
 async function editSystemBoard(t) {
   const p = periodFor(cfg, t, todayIn(cfg.tz));
@@ -1404,7 +1445,11 @@ initCommunity({
     return { file: png, title: current.title, firstDate: toYmd(period.first),
       mode: { days: 'days', poster: 'events' }[period.mode] || 'holy', kind: current.tpl.id };
   },
-  onManager: manageSync,
+  onManager(sid) {
+    manageSync(sid);
+    // גבאי שעוד לא הגדיר כלום מקבל את האשף פעם אחת. בינתיים ייתכן שהגדרות הגיעו מהקהילה (applyRemote סוגר אותו)
+    if (sid && !saved && !wizardDone()) setTimeout(() => { if (!saved && !wizardDone()) startWizard(); }, 1500);
+  },
   onKiddush(map) {
     kiddush = map;
     comm = communityData();
