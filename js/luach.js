@@ -156,6 +156,20 @@ export function periodFor(cfg, t, from, dir = 1, strict = false) {
 }
 
 /**
+ * הלוח הבא (dir=1) או הקודם (dir=-1) אחרי p, מכל הסוגים יחד – שבת, חג, ימות השבוע וחול המועד –
+ * לפי היום הראשון של כל לוח. כך שבת חול המועד, שחלה באמצע לוח חול המועד, באה אחריו ולא מדלגים עליה.
+ */
+export function adjacentPeriod(cfg, p, dir = 1) {
+  const near = kind => {
+    for (const x of periods(cfg, kind, p.first + dir, dir)) if (dir > 0 ? x.first > p.first : x.first < p.first) return x;
+    return null;
+  };
+  const list = [near('holy'), near('days')].filter(Boolean);
+  if (!list.length) return null;
+  return list.reduce((a, b) => (dir > 0 ? b.first < a.first : b.first > a.first) ? b : a);
+}
+
+/**
  * התבניות שהלוח p שייך לכולן, ומוצגות לכן כלשונית אחת ("שבתות וחגים"): שבת שחלה בחג או בחול המועד
  * (בלי פרשה) היא גם שבת וגם חג, וכך גם חג ושבת עם פרשה שהגבאי שילב ללוח אחד. הלוח נבנה בתבנית הראשונה.
  * בכל לוח אחר – null.
