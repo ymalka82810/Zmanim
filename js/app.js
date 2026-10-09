@@ -544,6 +544,8 @@ function paginate(el, H) {
 function fitPrint() {
   const el = $('luach');
   unfitPrint();
+  // מצב העריכה (קווים מקווקווים סביב כל טקסט) לא נכנס להדפסה
+  el.classList.remove('editing');
   if (!current || !el.offsetParent) return;
   const p = pageOf(current.tpl), area = printArea(p, current.design), H = area.h * MM;
   if (current.design) {
@@ -572,6 +574,7 @@ function fitPrint() {
 function unfitPrint() {
   const el = $('luach');
   el.classList.remove('fit', 'fit-measure');
+  el.classList.toggle('editing', !!current && boardEditing && !current.design);
   el.style.removeProperty('--fit-gap');
   if (current) el.style.setProperty('--zoom', String(pageOf(current.tpl).k));
   el.querySelectorAll('.lp.fit').forEach(lp => { lp.classList.remove('fit'); lp.style.removeProperty('--fit-h'); });

@@ -283,6 +283,9 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
      מוקטן, יחד עם הרווחים, לעמוד אחד פחות (applyPage ו-fitPrint ב-app.js) */
   .luach:not(:has(.lp)) { zoom: var(--zoom, 1); width: calc(var(--page-w, 182mm) / var(--zoom, 1)); }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* טקסט שקוף למחצה (opacity) מודפס כתמונה ולא כטקסט, ולכן יוצא מטושטש על הנייר. בהדפסה הוא בצבע מלא, והגופנים לא מוחלקים */
+  .luach[data-layout="banner"] .l-shul, .luach[data-layout="banner"] .l-dates, .luach[data-layout="dark"] .l-shul, .luach .stripe.s { opacity: 1; }
+  body { -webkit-font-smoothing: auto; text-rendering: geometricPrecision; }
 }
 
 /* תבנית מלוח קיים */
