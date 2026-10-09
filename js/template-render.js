@@ -71,7 +71,9 @@ export function refineBox(canvas, box) {
   if (!box.size) return box;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   const x0 = Math.max(0, Math.floor(box.x)), x1 = Math.min(canvas.width, Math.ceil(box.x + box.w));
-  const y0 = Math.max(0, Math.floor(box.baseline - box.size * 1.05)), y1 = Math.min(canvas.height, Math.ceil(box.baseline + box.size * 0.4));
+  // מעט מעל ומתחת לתחום הרגיל, בשביל ניקוד שנפרד מהשורה
+  const reach = Math.ceil(box.size * 0.4);
+  const y0 = Math.max(0, Math.floor(box.baseline - box.size * 1.05) - reach), y1 = Math.min(canvas.height, Math.ceil(box.baseline + box.size * 0.4) + reach);
   if (x1 - x0 < 2 || y1 - y0 < 2) return box;
   // קוראים גם מעט מסביב לתיבה, כדי להשלים אות שנחתכה בקצה
   const ext = Math.ceil(box.size * 0.6), xa = Math.max(0, x0 - ext), xb = Math.min(canvas.width, x1 + ext);
@@ -86,6 +88,10 @@ export function refineBox(canvas, box) {
   while (bottom < H - 1 && inkRow(bottom + 1)) bottom++;
   // "דיו" גבוה בהרבה מהטקסט: הרקע לא אחיד (צבעים, תמונה), ואי אפשר למצוא לפיו את גבולות הטקסט
   if (bottom - top > box.size * 1.5) return box;
+  // ניקוד (למשל החולם מעל ו') מופרד מהאותיות בשורה ריקה: בלי זה הוא נשאר בתמונה אחרי המחיקה
+  const gapMax = Math.ceil(box.size * 0.25), top0 = top, bottom0 = bottom;
+  for (let y = top0 - 1, gap = 0; y >= Math.max(0, top0 - reach) && gap <= gapMax; y--) { if (inkRow(y)) { top = y; gap = 0; } else gap++; }
+  for (let y = bottom0 + 1, gap = 0; y <= Math.min(H - 1, bottom0 + reach) && gap <= gapMax; y++) { if (inkRow(y)) { bottom = y; gap = 0; } else gap++; }
   // המיקום האופקי מוערך לפי רוחב תווים, ולפעמים חותך אות: מרחיבים עד עמודה ריקה
   const inkCol = x => { for (let y = top; y <= bottom; y++) if (dist(px(x, y), bg) > 70) return true; return false; };
   let left = x0, right = x1 - 1;
@@ -95,6 +101,30 @@ export function refineBox(canvas, box) {
   if (left === xa && xa < x0) left = x0;
   if (right === xb - 1 && xb > x1) right = x1 - 1;
   return { ...box, x: left, w: right - left + 1, y: y0 + top - 2, h: bottom - top + 5 };
+}
+
+/**
+ * ניקוד או סימן שנפרד מהאזור בשורה ריקה, מעליו או מתחתיו: כמה פיקסלים צריך להוסיף למחיקה כדי שלא יישאר בתמונה.
+ * בתבניות שנשמרו לפני ש-refineBox כלל אותם, וגם כשהתיבה לא עברה התאמה
+ */
+export function markMargins(canvas, box) {
+  const none = { up: 0, down: 0 }, size = box.size || box.h * 0.72;
+  if (!(size > 0)) return none;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const reach = Math.ceil(size * 0.4), gapMax = Math.ceil(size * 0.25);
+  const x0 = Math.max(0, Math.floor(box.x)), x1 = Math.min(canvas.width, Math.ceil(box.x + box.w));
+  const y0 = Math.max(0, Math.floor(box.y) - reach), y1 = Math.min(canvas.height, Math.ceil(box.y + box.h) + reach);
+  if (x1 - x0 < 2 || y1 - y0 < 2) return none;
+  const W = x1 - x0, H = y1 - y0, data = ctx.getImageData(x0, y0, W, H).data;
+  const px = (x, y) => { const i = (y * W + x) * 4; return [data[i], data[i + 1], data[i + 2]]; };
+  // הרקע: מהשורות הקיצוניות של התחום שנקרא, כמו ב-refineBox
+  const bg = median([...Array(W).keys()].flatMap(x => [px(x, 0), px(x, H - 1)]));
+  const inkRow = y => { for (let x = 0; x < W; x++) if (dist(px(x, y), bg) > 70) return true; return false; };
+  const top = Math.floor(box.y) - y0, bottom = Math.ceil(box.y + box.h) - 1 - y0;
+  let up = 0, down = 0;
+  for (let y = top - 1, gap = 0; y >= 0 && gap <= gapMax; y--) { if (inkRow(y)) { up = top - y; gap = 0; } else gap++; }
+  for (let y = bottom + 1, gap = 0; y < H && gap <= gapMax; y++) { if (inkRow(y)) { down = y - bottom; gap = 0; } else gap++; }
+  return { up, down };
 }
 
 /**
@@ -539,6 +569,8 @@ export async function templateCanvas(tpl, values) {
   tpl = { ...tpl, slots: tpl.slots.map(s => ({ ...s, box: copy(s.box), labelBox: copy(s.labelBox),
     ...(s.origin ? { origin: { box: s.origin.box, labelBox: copy(s.origin.labelBox) } } : {}) })),
     candidates: (tpl.candidates || []).map(c => ({ ...c, box: copy(c.box) })) };
+  // ניקוד מופרד שמעל האזור או מתחתיו נמחק יחד איתו
+  for (const s of tpl.slots) if (s.box) Object.assign(s.box, markMargins(src, s.box));
   // המקום הישן של השם זז יחד עם הטקסט שבקובץ, כדי שיימצא לפיו הטקסט של השם (redrawLabel)
   const allBoxes = [...tpl.slots.flatMap(s => [s.box, s.labelBox, s.origin && s.origin.labelBox]), ...tpl.candidates.map(c => c.box)].filter(Boolean);
   // כל ההזזות לפי הסדר: מהן יודעים איפה נקודה מהקובץ נמצאת בתמונה החדשה, ולהפך
@@ -723,7 +755,7 @@ export async function templateCanvas(tpl, values) {
     const left = Math.min(b.x, cx - w / 2) - 2, right = Math.max(b.x + b.w, cx + w / 2) + 2;
     // הרקע מכסה את הטקסט המקורי ואת הדיו של החדש, ולא יותר – כדי לא למחוק את השורה השכנה
     const ul = s.underline, ulBottom = ul ? (ul.off + ul.th) * size + 2 : 0;
-    const y0 = Math.min(b.y, baselines[0] - L.ink[0].asc - 2) - 1, y1 = Math.max(b.y + b.h, baselines[n - 1] + L.ink[n - 1].desc + 2, baselines[n - 1] + ulBottom) + 1;
+    const y0 = Math.min(b.y - (b.up || 0), baselines[0] - L.ink[0].asc - 2) - 1, y1 = Math.max(b.y + b.h + (b.down || 0), baselines[n - 1] + L.ink[n - 1].desc + 2, baselines[n - 1] + ulBottom) + 1;
     c.fillStyle = st.bg;
     c.fillRect(left, y0, right - left, y1 - y0);
     c.fillStyle = st.fg;
