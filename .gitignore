@@ -3,3 +3,5 @@ www/
 .DS_Store
 
 .env.local
+
+.VSCodeCounter/
