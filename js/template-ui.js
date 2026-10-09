@@ -94,7 +94,7 @@ function openRead({ canvas, items, fonts, docDayNum }, name, cfgAll, tpl, onDone
   const cfg = { ...cfgAll, rules: tpl.rules };
   const fit = x => ({ ...x, box: refineBox(canvas, x.box), ...(x.labelBox ? { labelBox: refineBox(canvas, x.labelBox) } : {}) });
   st = { canvas, W: canvas.width, H: canvas.height, cfg, cfgAll, tpl, name, onDone, fonts,
-    candidates: textCandidates(tokens).map(fit), marks: punctuationMarks(tokens), scanned: !items.length, detected: detectShulAddress(tokens) };
+    candidates: textCandidates(tokens, items).map(fit), marks: punctuationMarks(tokens, items), scanned: !items.length, detected: detectShulAddress(tokens) };
   setDay(day ?? detectDate(tokens, docDayNum));
   // לוח ימי חול בלי תאריך בקובץ: מזהים את הימים לפי שבוע כללי (ראשון–שישי). הכללים נשענים על זמני היום
   // שמודפסים בלוח, ובלעדיהם השעות נשמרות כשעה קבועה עד שבוחרים תאריך
@@ -555,7 +555,8 @@ function fitKiddush(s, grow) {
   for (let added = grow && parts.length > 0; added;) {
     added = false;
     for (const c of st.candidates) {
-      if (parts.includes(c) || taken(c) || !parts.some(p => sameBlock(p.box, c.box))) continue;
+      // קישוט ("‹‹‹", "***") שליד הרשימה אינו חלק ממנה
+      if (parts.includes(c) || taken(c) || !/[\p{L}\p{N}]/u.test(c.old) || !parts.some(p => sameBlock(p.box, c.box))) continue;
       parts.push(c); added = true;
     }
   }

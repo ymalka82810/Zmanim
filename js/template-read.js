@@ -1045,13 +1045,28 @@ function suggestDaySlots(tokens, texts, cfg, period) {
   return slots;
 }
 
-/** טקסטים שאינם שעות ואינם מזוהים – אפשר ללחוץ עליהם ולהפוך אותם לאזור */
-export function textCandidates(tokens) {
-  // טקסט בלי מילה של שתי אותיות לפחות ("6", "ה") הוא בדרך כלל מספר עמוד, קישוט או שארית של לוגו
-  return tokens.filter(t => t.kind === 'text' && /[א-תA-Za-z]{2}/.test(t.str)).map(t => ({ box: boxOf(t), old: t.str }));
+// סימני פיסוק שנצמדים למילה שלידם ("!!!", "?", "–", "("): לבדם הם לא נלחצים, אבל נקראים (ונמחקים) עם הטקסט שבאזור
+const MARK_RE = /^(?:[!?.,:;…"'״׳]+|[()[\]{}\-–—־|]{1,2})$/;
+
+/**
+ * טקסטים שאינם שעות ואינם מזוהים – אפשר ללחוץ עליהם ולהפוך אותם לאזור, או למחוק אותם מהלוח: מילים, מספרים
+ * (טלפון, שנה), וגם סימנים וקישוטים ("‹‹‹", "★", "***", "•", "―――"). items – הפריטים שבקובץ, כדי למצוא גם
+ * קווים ונקודות שעומדים לבדם (tokenize משמיט אותם)
+ */
+export function textCandidates(tokens, items = []) {
+  // אות או ספרה אחת לבדה ("6", "ה") היא בדרך כלל מספר עמוד או שארית של לוגו
+  const keep = s => s && !MARK_RE.test(s) && !/^[\p{L}\p{N}]$/u.test(s);
+  return [...tokens.filter(t => t.kind === 'text'), ...separators(items)].filter(t => keep(t.str.trim()))
+    .map(t => ({ box: boxOf(t), old: t.str.trim() }));
 }
 
-/** סימני פיסוק שעומדים לבדם ("!", "?", "…"): לא נלחצים, אבל נקראים יחד עם הטקסט שהם צמודים אליו באזור שסומן */
-export function punctuationMarks(tokens) {
-  return tokens.filter(t => t.kind === 'text' && /^[!?.,:;…"'״׳]+$/.test(t.str.trim())).map(t => ({ box: boxOf(t), old: t.str.trim() }));
+/** סימני פיסוק שעומדים לבדם ("!", "?", "…", "–"): לא נלחצים, אבל נקראים יחד עם הטקסט שהם צמודים אליו באזור שסומן */
+export function punctuationMarks(tokens, items = []) {
+  return [...tokens.filter(t => t.kind === 'text'), ...separators(items)].filter(t => MARK_RE.test(t.str.trim()))
+    .map(t => ({ box: boxOf(t), old: t.str.trim() }));
+}
+
+/** פריטים שכולם קווים, נקודות ומקפים ("•", "|", "―――"), ש-tokenize משמיט */
+function separators(items) {
+  return items.filter(it => String(it.str || '').trim() && !trimSeparators(it));
 }
