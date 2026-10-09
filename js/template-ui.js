@@ -10,7 +10,7 @@ import { findOccasion, findPeriod, periodFor, buildLuach, buildDaysLuach, timesF
 import { toDayNum, toYmd, todayIn, dow } from './dates.js';
 import { esc } from './render.js';
 import { fontsToFill, fontLabel, isUnnamed, canReadLocalFonts, isPhone, localFontsPermission, fillFromLocal, fillFromFile } from './font-fill.js';
-import { openTextEdit } from './text-edit.js';
+import { openTextEdit, toggleTag, FORMAT_BTNS } from './text-edit.js';
 import { placer } from './template-place.js';
 
 const $ = id => document.getElementById(id);
@@ -457,17 +457,34 @@ function readTextArea(s) {
 /** קורא לאזור אחד את הטקסט, השורות והמראה של השורות שלו (rows), כשכולן באותו גופן */
 function fillTextArea(s, rows, words, biggest) {
   fitKiddush(s, false);   // מספר השורות, קו הבסיס, הריווח והגודל
-  // עברית: בכל שורה מימין לשמאל; סימן פיסוק נצמד למילה שלפניו
-  const lines = rows.map(r => r.parts.slice().sort((a, b) => b.box.x - a.box.x).map(c => c.old).join(' ').replace(/\s+([!?.,:;…])/g, '$1'));
-  s.old = lines.join(' ');
   const all = rows.flatMap(r => r.parts), u = all.reduce((b, c) => unionBox(b, c.box), all[0].box);
   const first = biggest(all.filter(c => words.includes(c)));
-  s.box = { ...s.box, x: u.x, w: u.w, ...(first.box.font ? { font: first.box.font } : {}), ...(first.box.italic ? { italic: true } : {}) };
   // הדגשה ורקע נמדדים על שורה אחת – באזור של כמה שורות עובי הקו יחסית לגובה כולו נראה דק
-  s.style = analyzeSlot(st.canvas, first.box);
-  const last = rows[rows.length - 1], lu = last.parts.reduce((b, c) => unionBox(b, c.box), last.parts[0].box);
-  const ul = findUnderline({ ...lu, size: last.size, baseline: last.baseline }, s.style.bg);
-  if (ul) s.underline = ul; else delete s.underline;
+  const style = analyzeSlot(st.canvas, first.box);
+  // המראה של כל מילה לחוד: מה שנמצא בכולן הוא מראה האזור כולו, ומה שנמצא רק בחלקן מסומן במילים עצמן
+  const own = new Map(), ulDims = [];
+  for (const c of all.filter(c => words.includes(c))) {
+    const size = c.box.size || c.box.h * 0.72, ul = findUnderline({ ...c.box, size, baseline: lineBase(c.box) }, style.bg);
+    if (ul) ulDims.push(ul);
+    own.set(c, { b: analyzeSlot(st.canvas, c.box).bold, i: !!c.box.italic, u: !!ul });
+  }
+  const flags = ['b', 'i', 'u'], list = [...own.values()];
+  const every = f => list.every(o => o[f]), some = f => list.some(o => o[f]);
+  const tagged = f => some(f) && !every(f);
+  // עברית: בכל שורה מימין לשמאל; סימן פיסוק נצמד למילה שלפניו
+  const lines = rows.map(r => {
+    const ps = r.parts.slice().sort((a, b) => b.box.x - a.box.x);
+    const on = (k, f) => !!(ps[k] && own.has(ps[k]) && tagged(f) && own.get(ps[k])[f]);
+    return ps.map((c, k) => flags.map(f => on(k, f) && !on(k - 1, f) ? '[' + f + ']' : '').join('') + c.old +
+      flags.map(f => on(k, f) && !on(k + 1, f) ? '[/' + f + ']' : '').join('')).join(' ').replace(/\s+([!?.,:;…])/g, '$1');
+  });
+  s.old = lines.join(' ').replace(/\[\/?[biu]\]/g, '');
+  s.box = { ...s.box, x: u.x, w: u.w, ...(first.box.font ? { font: first.box.font } : {}), ...(every('i') ? { italic: true } : {}) };
+  s.style = style;
+  if (tagged('b')) s.bold = false;
+  if (tagged('i')) s.italic = false;
+  delete s.underline; delete s.ulDim;
+  if (ulDims.length) { if (every('u')) s.underline = ulDims[0]; else s.ulDim = ulDims[0]; }
   return lines.join('\n');
 }
 
@@ -567,6 +584,7 @@ $('tplBoxes').addEventListener('click', e => {
 function editCandidateText(i) {
   const c = st.candidates[i];
   openTextEdit({
+    format: true,
     text: c.old,
     onSave: text => {
       if (!text) return;
@@ -586,7 +604,7 @@ function editSlotText(s) {
     weekOverridden = Object.keys(edits).some(key => key.replace(/^p\d+\|/, '') === k);
   }
   openTextEdit({
-    multiline: true,
+    multiline: true, format: true,
     text: s.text || '',
     weekLabel: canWeek && st.weekShown ? weekLabel(st.weekShown) : null,
     hasOverride: !!s.text || weekOverridden,
@@ -820,7 +838,8 @@ function endMove() {
 
 function slotFields(s) {
   if (s.kind === 'text') {
-    return '<div class="rgrid"><div class="wide"><label>הטקסט באזור (שורה חדשה – ירידת שורה)</label><textarea data-k="text" dir="auto" rows="' +
+    return '<div class="rgrid"><div class="wide"><label>הטקסט באזור (שורה חדשה – ירידת שורה)</label>' +
+      '<div class="fmt-bar">' + FORMAT_BTNS + '<span class="muted small">סמנו מילים בטקסט ולחצו – הדגשה, נטייה או קו תחתון</span></div><textarea data-k="text" dir="auto" rows="' +
       Math.min(6, Math.max(1, String(s.text || '').split('\n').length)) + '" placeholder="ריק – האזור יימחק מהלוח">' + esc(s.text) + '</textarea></div></div>';
   }
   if (s.kind === 'rule') {
@@ -1173,6 +1192,13 @@ $('tplSlots').addEventListener('toggle', e => {
   if (s) e.target.open ? openSlots.add(s) : openSlots.delete(s);
 }, true);
 
+$('tplSlots').addEventListener('click', e => {
+  const b = e.target.closest('[data-fmt]');
+  if (!b) return;
+  const field = b.closest('.wide').querySelector('textarea[data-k="text"]');
+  if (field) { toggleTag(field, b.dataset.fmt); field.focus(); }
+});
+
 $('tplSlots').addEventListener('input', e => {
   const ed = e.target.closest('.slot-ed'), k = e.target.dataset.k;
   if (!ed || !k) return;
@@ -1379,6 +1405,7 @@ function builtSlots() {
     if (s.kind === 'text') c.text = String(s.text ?? '').trim();
     c.sizePct = s.sizePct || 100;
     if (s.underline) c.underline = s.underline;
+    if (s.ulDim) c.ulDim = s.ulDim;
     // הדגשה ונטייה נשמרות רק כשהגבאי בחר בהן. בלי בחירה – כמו בקובץ
     if (s.bold != null) c.bold = s.bold;
     if (s.italic != null) c.italic = s.italic;

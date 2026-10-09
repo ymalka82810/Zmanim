@@ -451,3 +451,5 @@ button[aria-pressed="true"] { background: linear-gradient(135deg, var(--blue), v
 .wiz-sum { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 6px; }
 .wiz-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; }
 .wiz-actions .link { margin-inline-start: auto; }
+.fmt-bar { display: flex; gap: 6px; align-items: center; margin: 4px 0; flex-wrap: wrap; }
+.fmt-bar .fmt { min-width: 34px; padding: 3px 8px; }

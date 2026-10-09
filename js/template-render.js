@@ -559,13 +559,14 @@ export async function templateCanvas(tpl, values) {
     if (raw == null) continue;
     // ירידות שורה שנשמרו בעריכה לשבוע מסוים: קובעות את השורות רק כשמותר לגלוש
     const own = s.wrap && /\S\s*\n\s*\S/.test(raw);
-    const text = own ? raw.trim() : raw.replace(/\s*\n\s*/g, ' ').trim();
+    const rich = parseMarkup(own ? raw.trim() : raw.replace(/\s*\n\s*/g, ' ').trim());
+    const text = rich.plain, styled = styledRuns(rich, s.underline || s.ulDim);
     const b = s.box, st = s.style || { bg: '#fff', fg: '#000', bold: false };
     let size = (b.size || b.h * 0.72) * ((s.sizePct || 100) / 100);
     const minSize = size * 0.6;
     const cx = b.x + b.w / 2, baseline = b.baseline ?? (b.y + b.h * 0.78);
     const f = fonts[b.font] || fonts[tpl.mainFont];
-    const writeAt = textWriter(ctx, f, slotLook(s, f, st), cx);
+    const writeAt = textWriter(ctx, f, slotLook(s, f, st), cx, styled);
     // טקסט ארוך מהמקום: מקטינים עד 70%, ואם עדיין לא נכנס ומותר לגלוש – מחלקים לכמה שורות
     let w = writeAt(text, size, baseline, false);
     const room = Math.max(b.w * 1.15, b.w + size);
@@ -610,7 +611,7 @@ export async function templateCanvas(tpl, values) {
       return { ink, need, gap, touch, para, minPara: n > 1 ? sz * 0.15 : 0, height: g => (n - 1) * g + ink[0].asc + ink[n - 1].desc };
     };
     // pen – כותב באותו גופן על קנבס אחר (התמונה שעליה מסדרים את הפסקאות)
-    plans.push({ s, text, st, size, minSize, cx, writeAt, lines, w, n, layout, pen: c => textWriter(c, f, slotLook(s, f, st), cx) });
+    plans.push({ s, text, st, size, minSize, cx, writeAt, lines, w, n, layout, pen: c => textWriter(c, f, slotLook(s, f, st), cx, styled) });
   }
 
   // שלב 2: ריווח הפסקאות, מלמעלה למטה. הרווח מעל פסקה ומתחתיה נקבע בשורות הריקות שבתמונה (מה שמתחת עולה או יורד),
@@ -740,6 +741,54 @@ export async function templateCanvas(tpl, values) {
     return baselines[n - 1] + L.ink[n - 1].desc;
   }
   return canvas;
+}
+
+/**
+ * עיצוב של מילים בתוך טקסט: [b]מודגש[/b], [i]נטוי[/i], [u]קו תחתון[/u]. מחזיר את הטקסט בלי הסימון,
+ * ולכל תו את העיצוב שלו (styles) – null כשאין בטקסט שום עיצוב
+ */
+export function parseMarkup(raw) {
+  if (!/\[\/?[biu]\]/.test(raw)) return { plain: raw, styles: null };
+  const on = { b: false, i: false, u: false };
+  let plain = '', styles = [], any = false;
+  for (const part of raw.split(/(\[\/?[biu]\])/)) {
+    const m = /^\[(\/?)([biu])\]$/.exec(part);
+    if (m) { on[m[2]] = !m[1]; continue; }
+    for (const ch of part) { plain += ch; styles.push({ ...on }); }
+  }
+  // רווחים כפולים מצטמצמים לרווח אחד, כמו שהטקסט מחולק לשורות
+  const keep = [...plain].map((ch, i, a) => !(/[ \t]/.test(ch) && i > 0 && /[ \t]/.test(a[i - 1])));
+  plain = [...plain].filter((_, i) => keep[i]).join('');
+  styles = styles.filter((_, i) => keep[i]);
+  any = styles.some(s => s.b || s.i || s.u);
+  return { plain, styles: any ? styles : null };
+}
+
+/** הקטעים של שורה מתוך הטקסט המלא: [{ s, b, i, u }], או null כשהשורה לא נמצאה בטקסט (אז נכתבת בלי עיצוב) */
+function styledRuns(rich, ul) {
+  if (!rich.styles) return null;
+  const plain = rich.plain;
+  const fn = str => {
+    const at = plain.indexOf(str);
+    if (!str || at < 0) return null;
+    const from = [...plain.slice(0, at)].length, out = [];
+    [...str].forEach((ch, k) => {
+      const st = rich.styles[from + k] || {};
+      const last = out[out.length - 1];
+      if (last && last.b === !!st.b && last.i === !!st.i && last.u === !!st.u) last.s += ch;
+      else out.push({ s: ch, b: !!st.b, i: !!st.i, u: !!st.u });
+    });
+    // רווח בקצה של קטע עם קו תחתון לא מקוו; רווח שבין מילים מקווקו
+    return out.flatMap(r => {
+      if (!r.u) return [r];
+      const lead = r.s.length - r.s.trimStart().length, tail = r.s.length - r.s.trimEnd().length;
+      if (lead + tail >= r.s.length) return [{ ...r, u: false }];
+      return [lead && { ...r, s: r.s.slice(0, lead), u: false }, { ...r, s: r.s.slice(lead, r.s.length - tail) },
+        tail && { ...r, s: r.s.slice(r.s.length - tail), u: false }].filter(Boolean);
+    });
+  };
+  fn.ul = ul;
+  return fn;
 }
 
 /**

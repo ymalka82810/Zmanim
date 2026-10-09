@@ -33,11 +33,35 @@ const CSS = `
 :root[data-theme="dark"] .te-del:hover{background:#f08c80;color:#0c1120}
 :root[data-theme="dark"] .te-cancel{border-color:#2a3252;color:#c3cadf}
 :root[data-theme="dark"] .te button:focus-visible{outline-color:#dfb564}
+.te-fmt{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+.te-fmt .fmt{min-width:34px;padding:4px 8px}
+.te-hint{font-size:.8rem;opacity:.7}
 @media print{.te{display:none!important}}
 `;
 
+/** כפתורי עיצוב לשדה טקסט: הדגשה, נטייה וקו תחתון למילים המסומנות. הסימון בטקסט: [b]…[/b] [i]…[/i] [u]…[/u] */
+export const FORMAT_BTNS = '<button type="button" class="fmt" data-fmt="b" title="הדגשה למילים המסומנות"><b>B</b></button>' +
+  '<button type="button" class="fmt" data-fmt="i" title="נטייה למילים המסומנות"><i>I</i></button>' +
+  '<button type="button" class="fmt" data-fmt="u" title="קו תחתון למילים המסומנות"><u>U</u></button>';
+
+/** מוסיף או מסיר עיצוב מהטקסט המסומן בשדה. false כשלא סומן כלום */
+export function toggleTag(field, tag) {
+  const a = field.selectionStart, b = field.selectionEnd, v = field.value;
+  if (a == null || a === b) return false;
+  const open = '[' + tag + ']', close = '[/' + tag + ']';
+  let sel = v.slice(a, b), from = a, to = b;
+  if (sel.startsWith(open) && sel.endsWith(close)) sel = sel.slice(open.length, sel.length - close.length);
+  else if (v.slice(0, a).endsWith(open) && v.slice(b).startsWith(close)) { from -= open.length; to += close.length; }
+  else sel = open + sel.split(open).join('').split(close).join('') + close;
+  field.value = v.slice(0, from) + sel + v.slice(to);
+  field.setSelectionRange(from, from + sel.length);
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+  return true;
+}
+
 /**
  * פתיחת חלונית עריכת טקסט. opts:
+ *   format – כפתורי הדגשה, נטייה וקו תחתון למילים מסומנות
  *   text – הטקסט הנוכחי להצגה בשדה
  *   multiline – textarea במקום input
  *   weekLabel – תווית השבוע המוצג (למשל "שבת פרשת בראשית"); בלי זה אין בררת שבוע, וחוסכים תמיד "לתמיד"
@@ -67,6 +91,13 @@ export function openTextEdit(opts) {
     (opts.hasOverride ? '<button type="button" class="te-del">מחיקה</button>' : '') +
     '<button type="button" class="te-cancel">ביטול</button></div>';
   const body = dlg.querySelector('.te-body');
+  if (opts.format) {
+    const bar = document.createElement('div');
+    bar.className = 'te-fmt';
+    bar.innerHTML = FORMAT_BTNS + '<span class="te-hint">סמנו מילים ולחצו</span>';
+    bar.addEventListener('click', e => { const t = e.target.closest('[data-fmt]'); if (t) { toggleTag(field, t.dataset.fmt); field.focus(); } });
+    body.appendChild(bar);
+  }
   body.appendChild(field);
   if (opts.weekLabel) {
     body.insertAdjacentHTML('beforeend', '<div class="te-scope">' +
