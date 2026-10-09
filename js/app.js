@@ -490,9 +490,9 @@ $('print').onclick = async () => {
  * בעיצוב מקובץ – אותו כלל לתמונה של כל יום בנפרד.
  */
 const MM = 96 / 25.4;   // פיקסלים במ"מ
-const PRINT_MARGIN = 14;   // השוליים של הדף בהדפסה (@page ב-app.css), במ"מ
+const PRINT_MARGIN = 14;   // השוליים של הדף בהדפסה (@page ב-app.css), במ"מ. לוח מקובץ (תמונה) מודפס בלי שוליים, על כל הדף
 /** השטח להדפסה בדף p (pageOf), במ"מ. מ"מ אחד פחות בגובה, כדי שעיגול של הדפדפן לא ישבור לעמוד נוסף */
-const printArea = p => ({ w: p.w - 2 * PRINT_MARGIN, h: p.h - 2 * PRINT_MARGIN - 1 });
+const printArea = (p, design) => { const m = design ? 0 : PRINT_MARGIN; return { w: p.w - 2 * m, h: p.h - 2 * m - 1 }; };
 
 /**
  * גודל הדף בהדפסה (@page) והרוחב של הלוח בהדפסה, לפי התבנית t.
@@ -503,7 +503,7 @@ function applyPage(t) {
   let st = $('pageStyle');
   if (!st) { st = document.createElement('style'); st.id = 'pageStyle'; document.head.appendChild(st); }
   st.textContent = '@page { size: ' + p.size + '; }';
-  el.style.setProperty('--page-w', printArea(p).w + 'mm');
+  el.style.setProperty('--page-w', printArea(p, current && current.design).w + 'mm');
   el.style.setProperty('--zoom', String(p.k));
 }
 
@@ -545,7 +545,7 @@ function fitPrint() {
   const el = $('luach');
   unfitPrint();
   if (!current || !el.offsetParent) return;
-  const p = pageOf(current.tpl), area = printArea(p), H = area.h * MM;
+  const p = pageOf(current.tpl), area = printArea(p, current.design), H = area.h * MM;
   if (current.design) {
     for (const lp of el.querySelectorAll('.lp')) {
       const img = lp.querySelector('img');

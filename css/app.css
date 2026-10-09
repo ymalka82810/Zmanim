@@ -390,6 +390,8 @@ button[aria-pressed="true"] { background: linear-gradient(135deg, var(--blue), v
 @media print {
   #view-template { display: none !important; }
   .luach:has(.luach-img) { padding: 0; }
+  /* לוח מקובץ (תמונה) מודפס על כל הדף, בלי שוליים (printArea ב-app.js) */
+  main.wrap:has(#luach .luach-img) { padding: 0; }
   .lp + .lp { margin-top: 0; break-before: page; }
   /* תמונה מקובץ שבעמוד האחרון שלה עד חצי עמוד מוקטנת כולה, באותו יחס, לעמוד אחד פחות (fitPrint ב-app.js) */
   .lp.fit { break-inside: avoid; }
