@@ -140,7 +140,9 @@ export async function editExisting(tplObj, cfgAll, onDone) {
   const canvas = document.createElement('canvas');
   canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
   canvas.getContext('2d').drawImage(img, 0, 0);
-  st = { canvas, W: canvas.width, H: canvas.height, cfg, cfgAll, tpl: tplObj, name: tpl.name, onDone, fonts: tpl.fonts || {},
+  st = { canvas, W: canvas.width, H: canvas.height, cfg, cfgAll, tpl: tplObj, name: tpl.name, onDone,
+    // גם הגופנים שבקובץ שלא היו בשימוש בשמירה הקודמת – כדי שאפשר יהיה לבחור בהם שוב
+    fonts: { ...(tpl.spareFonts || {}), ...(tpl.fonts || {}) },
     slots: JSON.parse(JSON.stringify(tpl.slots)), candidates: tpl.candidates || [], scanned: !(tpl.candidates || []).length };
   setDay(tpl.day ?? null);
   st.approx = approxStart(st.slots, cfg, isDays());
@@ -167,12 +169,15 @@ function open() {
 
 /* ---------- השלמת אותיות חסרות בגופן מהקובץ ---------- */
 
-/** הגופנים של האזורים הכחולים: בשאר הגופנים לא נכתב טקסט חדש, וגם הם לא נשמרים בתבנית */
-const slotFonts = () => Object.fromEntries(st.slots.map(s => s.box.font).filter(k => st.fonts[k]).map(k => [k, st.fonts[k]]));
+/**
+ * כל הגופנים שבקובץ, גם אלה שאף אזור לא כתוב בהם כרגע: הגבאי יכול לבחור כל אחד מהם לאזור טקסט,
+ * ולכן מציעים להשלים את האותיות בכולם
+ */
+const fileFonts = () => st.fonts;
 
 /** הודעה כשבגופן המוטמע חסרות אותיות, עם אפשרות להשלים אותן מהמחשב או מקובץ גופן */
 function renderFontFill(done) {
-  const need = fontsToFill(slotFonts()), phone = isPhone();
+  const need = fontsToFill(fileFonts()), phone = isPhone();
   const box = $('tplFontFill');
   box.hidden = !need.length && !done;
   if (box.hidden) return;
@@ -221,7 +226,7 @@ $('tplFontLocal').onclick = async () => {
   // זיהוי גופן בלי שם סורק את כל הגופנים שבמחשב, וזה לוקח כמה שניות
   const label = btn.textContent;
   btn.disabled = true; btn.textContent = 'מחפש את הגופנים במחשב…';
-  try { res = await fillFromLocal(slotFonts()); }
+  try { res = await fillFromLocal(fileFonts()); }
   catch (e) {
     console.warn('אין גישה לגופנים שבמחשב', e);
     SiteDialog.alert('לא התקבלה גישה לגופנים שבמחשב. אפשר לאשר את הגישה בהגדרות האתר בדפדפן, או להעלות קובץ גופן.');
@@ -253,7 +258,7 @@ $('tplFontFile').onchange = async e => {
   e.target.value = '';
   if (!file) return;
   try {
-    renderFontFill('הושלמו האותיות מהגופן ' + (await fillFromFile(slotFonts(), file)).join(', ') + '.');
+    renderFontFill('הושלמו האותיות מהגופן ' + (await fillFromFile(fileFonts(), file)).join(', ') + '.');
     schedulePreviewRefresh();
   }
   catch (err) { SiteDialog.alert(err.message || 'לא ניתן לקרוא את קובץ הגופן.'); }
@@ -1498,8 +1503,10 @@ function buildTemplate(built = builtSlots()) {
   const { count, mainFont } = fontUse(slots);
   const used = new Set([...Object.keys(count), ...slots.map(s => s.labelBox && s.labelBox.font).filter(k => k && st.fonts[k])]);
   const fonts = Object.fromEntries([...used].map(k => [k, st.fonts[k]]));
+  // שאר הגופנים שבקובץ לא נטענים בציור הלוח, אבל נשמרים כדי שבעריכה הבאה אפשר יהיה לבחור בהם
+  const spareFonts = Object.fromEntries(Object.entries(st.fonts).filter(([k]) => !used.has(k)));
   return { enabled: true, name: st.name, day: st.day, image: st.canvas.toDataURL('image/jpeg', 0.88),
-    slots, candidates: st.candidates, fonts, mainFont };
+    slots, candidates: st.candidates, fonts, mainFont, ...(Object.keys(spareFonts).length ? { spareFonts } : {}) };
 }
 
 /** המילים בתיבות השורות לפי הטקסט שבתצוגה, בלי לבנות מחדש את כל הרשימה */
