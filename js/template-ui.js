@@ -4,7 +4,7 @@
  */
 
 import { BASES, TEXT_BASES, WHEN, WHEN_LABELS, ROUND, SIZES, DAY_APPLIES, appliesOnDay, prayerBases, designOf } from './config.js';
-import { readFile, tokenize, detectDate, detectHebDate, detectShulAddress, suggestSlots, textCandidates, ruleOptions, agreeRules, printedTimes, approxStart, guessOldDay } from './template-read.js';
+import { readFile, tokenize, detectDate, detectHebDate, detectShulAddress, suggestSlots, textCandidates, punctuationMarks, ruleOptions, agreeRules, printedTimes, approxStart, guessOldDay } from './template-read.js';
 import { analyzeSlot, refineBox, inkLines, templateCanvas, specialHost, slotText, slotLook, wordLine, slotKey, slotRanks as pageRanks } from './template-render.js';
 import { findOccasion, findPeriod, periodFor, buildLuach, buildDaysLuach, timesFor, dayPages } from './luach.js';
 import { toDayNum, toYmd, todayIn, dow } from './dates.js';
@@ -93,7 +93,7 @@ function openRead({ canvas, items, fonts, docDayNum }, name, cfgAll, tpl, onDone
   const cfg = { ...cfgAll, rules: tpl.rules };
   const fit = x => ({ ...x, box: refineBox(canvas, x.box), ...(x.labelBox ? { labelBox: refineBox(canvas, x.labelBox) } : {}) });
   st = { canvas, W: canvas.width, H: canvas.height, cfg, cfgAll, tpl, name, onDone, fonts,
-    candidates: textCandidates(tokens).map(fit), scanned: !items.length, detected: detectShulAddress(tokens) };
+    candidates: textCandidates(tokens).map(fit), marks: punctuationMarks(tokens), scanned: !items.length, detected: detectShulAddress(tokens) };
   setDay(day ?? detectDate(tokens, docDayNum));
   // לוח ימי חול בלי תאריך בקובץ: מזהים את הימים לפי שבוע כללי (ראשון–שישי). הכללים נשענים על זמני היום
   // שמודפסים בלוח, ובלעדיהם השעות נשמרות כשעה קבועה עד שבוחרים תאריך
@@ -418,6 +418,75 @@ function stretchPrefix(s) {
   s.prefix = all.length ? all.join(' ') + ' ' : '';
 }
 
+/**
+ * אזור שסומן בגרירה והפך ל"טקסט שכותבים כאן": הטקסט שמתחת למסגרת (כולל "!" ו"?"), כשכל שורה בפני עצמה,
+ * והמראה של הטקסט – גופן, נטייה, הדגשה וקו תחתון. מחזיר את הטקסט, בשורות מופרדות ב-\n.
+ * כשבאזור כמה גופנים (או נטייה שמשתנה) הוא מתחלק: שורות רצופות באותו גופן נשארות באזור הזה,
+ * וכל קבוצה אחרת הופכת לאזור טקסט נוסף מתחתיו, כי לכל אזור גופן אחד
+ */
+function readTextArea(s) {
+  const drawn = s.box;
+  const taken = c => st.slots.some(o => (o !== s && covers(o.box, c.box)) || (o.labelBox && covers(o.labelBox, c.box)));
+  const words = st.candidates.filter(c => covers(drawn, c.box) && !taken(c));
+  if (!words.length) { fitKiddush(s, false); return s.old || ''; }
+  const marks = (st.marks || []).filter(c => covers(drawn, c.box) && !taken(c));
+  const rows = [];
+  for (const c of [...words, ...marks].sort((a, b) => lineBase(a.box) - lineBase(b.box))) {
+    const size = c.box.size || c.box.h * 0.72;
+    const row = rows.find(r => Math.abs(r.baseline - lineBase(c.box)) < Math.max(r.size, size) * 0.45);
+    if (row) row.parts.push(c); else rows.push({ baseline: lineBase(c.box), size, parts: [c] });
+  }
+  // גופן השורה הוא של המילה הגדולה בה; שורות רצופות באותו גופן ובאותה נטייה הן קבוצה אחת
+  const biggest = parts => parts.reduce((a, c) => (c.box.size || 0) > (a.box.size || 0) ? c : a, parts[0]);
+  const lookOf = r => { const w = biggest(r.parts.filter(c => words.includes(c))); return w ? (w.box.font || '') + '|' + (w.box.italic ? 'i' : '') : null; };
+  const groups = [];
+  for (const r of rows) {
+    const look = lookOf(r), g = groups[groups.length - 1];
+    if (g && (look === null || g.look === look)) g.rows.push(r); else groups.push({ look, rows: [r] });
+  }
+  // קודם המסגרות מצטמצמות לקבוצות שלהן, כדי שכל קבוצה תקרא רק את המילים שלה
+  const boxes = groups.map(g => g.rows.flatMap(r => r.parts).reduce((b, c) => unionBox(b, c.box), g.rows[0].parts[0].box));
+  const areas = groups.map((g, i) => i === 0 ? s : { box: { ...boxes[i] }, kind: 'text', when: s.when, old: '' });
+  s.box = { ...s.box, ...boxes[0] };
+  st.slots.splice(st.slots.indexOf(s) + 1, 0, ...areas.slice(1));
+  const texts = groups.map((g, i) => fillTextArea(areas[i], g.rows, words, biggest));
+  areas.slice(1).forEach((o, i) => { o.text = texts[i + 1]; });
+  return texts[0];
+}
+
+/** קורא לאזור אחד את הטקסט, השורות והמראה של השורות שלו (rows), כשכולן באותו גופן */
+function fillTextArea(s, rows, words, biggest) {
+  fitKiddush(s, false);   // מספר השורות, קו הבסיס, הריווח והגודל
+  // עברית: בכל שורה מימין לשמאל; סימן פיסוק נצמד למילה שלפניו
+  const lines = rows.map(r => r.parts.slice().sort((a, b) => b.box.x - a.box.x).map(c => c.old).join(' ').replace(/\s+([!?.,:;…])/g, '$1'));
+  s.old = lines.join(' ');
+  const all = rows.flatMap(r => r.parts), u = all.reduce((b, c) => unionBox(b, c.box), all[0].box);
+  const first = biggest(all.filter(c => words.includes(c)));
+  s.box = { ...s.box, x: u.x, w: u.w, ...(first.box.font ? { font: first.box.font } : {}), ...(first.box.italic ? { italic: true } : {}) };
+  // הדגשה ורקע נמדדים על שורה אחת – באזור של כמה שורות עובי הקו יחסית לגובה כולו נראה דק
+  s.style = analyzeSlot(st.canvas, first.box);
+  const last = rows[rows.length - 1], lu = last.parts.reduce((b, c) => unionBox(b, c.box), last.parts[0].box);
+  const ul = findUnderline({ ...lu, size: last.size, baseline: last.baseline }, s.style.bg);
+  if (ul) s.underline = ul; else delete s.underline;
+  return lines.join('\n');
+}
+
+/** קו תחתון מתחת לשורה האחרונה: שורת פיקסלים רחבה ודקה מתחת לקו הבסיס. { off, th } ביחס לגודל הגופן */
+function findUnderline(line, bg) {
+  const size = line.size, base = line.baseline;
+  const x0 = Math.max(0, Math.floor(line.x)), x1 = Math.min(st.W, Math.ceil(line.x + line.w));
+  const y0 = Math.max(0, Math.floor(base + size * 0.03)), y1 = Math.min(st.H, Math.ceil(base + size * 0.6));
+  if (x1 - x0 < 4 || y1 - y0 < 1) return null;
+  const W = x1 - x0, data = st.canvas.getContext('2d', { willReadFrequently: true }).getImageData(x0, y0, W, y1 - y0).data;
+  const c = [1, 3, 5].map(i => parseInt(bg.slice(i, i + 2), 16));
+  const inked = y => { let n = 0; for (let x = 0; x < W; x++) { const i = (y * W + x) * 4; if (Math.abs(data[i] - c[0]) + Math.abs(data[i + 1] - c[1]) + Math.abs(data[i + 2] - c[2]) > 150) n++; } return n >= W * 0.6; };
+  let top = -1, bottom = -1;
+  for (let y = 0; y < y1 - y0; y++) {
+    if (inked(y)) { if (top < 0) top = y; bottom = y; } else if (top >= 0) break;
+  }
+  return top < 0 ? null : { off: +((y0 + top - base) / size).toFixed(3), th: +(Math.max(1, bottom - top + 1) / size).toFixed(3) };
+}
+
 /** שתי תיבות טקסט של אותו קטע: באותה שורה זו ליד זו, או בשורות סמוכות זו מתחת לזו */
 function sameBlock(a, b) {
   const size = Math.max(a.size || a.h * 0.72, b.size || b.h * 0.72);
@@ -517,6 +586,7 @@ function editSlotText(s) {
     weekOverridden = Object.keys(edits).some(key => key.replace(/^p\d+\|/, '') === k);
   }
   openTextEdit({
+    multiline: true,
     text: s.text || '',
     weekLabel: canWeek && st.weekShown ? weekLabel(st.weekShown) : null,
     hasOverride: !!s.text || weekOverridden,
@@ -750,8 +820,8 @@ function endMove() {
 
 function slotFields(s) {
   if (s.kind === 'text') {
-    return '<div class="rgrid"><div class="wide"><label>הטקסט באזור</label><input data-k="text" dir="auto" value="' + esc(s.text) +
-      '" placeholder="ריק – האזור יימחק מהלוח"></div></div>';
+    return '<div class="rgrid"><div class="wide"><label>הטקסט באזור (שורה חדשה – ירידת שורה)</label><textarea data-k="text" dir="auto" rows="' +
+      Math.min(6, Math.max(1, String(s.text || '').split('\n').length)) + '" placeholder="ריק – האזור יימחק מהלוח">' + esc(s.text) + '</textarea></div></div>';
   }
   if (s.kind === 'rule') {
     const fixed = s.base === 'שעה קבועה';
@@ -1116,9 +1186,8 @@ $('tplSlots').addEventListener('input', e => {
     if (v === 'zman' && !s.zman) Object.assign(s, { zman: 'sunset', when: s.when || when0 });
     if (v === 'gregDate' && !s.fmt) s.fmt = { sep: '/', year: 4, pad: false };
     if (v === 'text' && s.text == null) {
-      // אזור שסומן בגרירה על טקסט: הטקסט שבו וחלוקת השורות נקראים מהקובץ, כמו בקידוש
-      if (!s.old) fitKiddush(s, false);
-      s.text = s.old || '';
+      // אזור שסומן בגרירה על טקסט: הטקסט שבו, חלוקת השורות והמראה נקראים מהקובץ
+      s.text = s.old ? s.old : readTextArea(s);
     }
     focusSlot(+ed.dataset.i); return;
   }
@@ -1309,6 +1378,7 @@ function builtSlots() {
     if (s.kind === 'gregDate') c.fmt = s.fmt;
     if (s.kind === 'text') c.text = String(s.text ?? '').trim();
     c.sizePct = s.sizePct || 100;
+    if (s.underline) c.underline = s.underline;
     // הדגשה ונטייה נשמרות רק כשהגבאי בחר בהן. בלי בחירה – כמו בקובץ
     if (s.bold != null) c.bold = s.bold;
     if (s.italic != null) c.italic = s.italic;

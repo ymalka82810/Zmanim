@@ -1039,3 +1039,8 @@ export function textCandidates(tokens) {
   // טקסט בלי מילה של שתי אותיות לפחות ("6", "ה") הוא בדרך כלל מספר עמוד, קישוט או שארית של לוגו
   return tokens.filter(t => t.kind === 'text' && /[א-תA-Za-z]{2}/.test(t.str)).map(t => ({ box: boxOf(t), old: t.str }));
 }
+
+/** סימני פיסוק שעומדים לבדם ("!", "?", "…"): לא נלחצים, אבל נקראים יחד עם הטקסט שהם צמודים אליו באזור שסומן */
+export function punctuationMarks(tokens) {
+  return tokens.filter(t => t.kind === 'text' && /^[!?.,:;…"'״׳]+$/.test(t.str.trim())).map(t => ({ box: boxOf(t), old: t.str.trim() }));
+}

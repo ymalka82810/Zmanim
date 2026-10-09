@@ -72,7 +72,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .rgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 @media (min-width: 600px) { .rgrid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
 .rgrid label { font-size: .76rem; color: var(--muted); font-weight: 600; }
-.rgrid select, .rgrid input { padding: 6px; font-size: .92rem; background: var(--panel); }
+.rgrid select, .rgrid input, .rgrid textarea { font-family: inherit; padding: 6px; font-size: .92rem; background: var(--panel); }
 .offset-pair { display: flex; gap: 6px; }
 .offset-pair input { width: 0; flex: 1 1 0; }
 .offset-pair select { flex: 1.3 1 0; }

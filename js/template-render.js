@@ -721,11 +721,16 @@ export async function templateCanvas(tpl, values) {
     const baselines = lines.map((ln, i) => first + shift + i * lineGap);
     const left = Math.min(b.x, cx - w / 2) - 2, right = Math.max(b.x + b.w, cx + w / 2) + 2;
     // הרקע מכסה את הטקסט המקורי ואת הדיו של החדש, ולא יותר – כדי לא למחוק את השורה השכנה
-    const y0 = Math.min(b.y, baselines[0] - L.ink[0].asc - 2) - 1, y1 = Math.max(b.y + b.h, baselines[n - 1] + L.ink[n - 1].desc + 2) + 1;
+    const ul = s.underline, ulBottom = ul ? (ul.off + ul.th) * size + 2 : 0;
+    const y0 = Math.min(b.y, baselines[0] - L.ink[0].asc - 2) - 1, y1 = Math.max(b.y + b.h, baselines[n - 1] + L.ink[n - 1].desc + 2, baselines[n - 1] + ulBottom) + 1;
     c.fillStyle = st.bg;
     c.fillRect(left, y0, right - left, y1 - y0);
     c.fillStyle = st.fg;
-    lines.forEach((ln, i) => write(ln, size, baselines[i], true));
+    lines.forEach((ln, i) => {
+      const lw = write(ln, size, baselines[i], true);
+      // קו תחתון, כמו בקובץ: מתחת לכל שורה, ברוחב הטקסט שלה
+      if (ul && lw > 0) c.fillRect(cx - lw / 2, baselines[i] + ul.off * size, lw, Math.max(1, ul.th * size));
+    });
     // המקום של הטקסט החדש; נוסף לתיבות, כדי שיזוז יחד עם מה שנפתח או נסגר מעליו אחר כך
     if (w > 0) {
       const iy = baselines[0] - L.ink[0].asc;
@@ -741,19 +746,44 @@ export async function templateCanvas(tpl, values) {
  * כותב טקסט ממורכז ב-cx בגופן f מהקובץ, או לפי שם הגופן אם הוא לא מוטמע. draw=false – רק מודד.
  * look – { bold, italic }. בגופן מודגש או נטוי אי אפשר לבטל את ההדגשה או הנטייה, ולכן אז כותבים בגופן לפי השם
  */
-function textWriter(ctx, f, look, cx) {
-  const removed = f && ((f.bold && !look.bold) || (f.italic && !look.italic));
-  let run;
-  if (f && f.family && !removed) run = (str, sz, y, draw) => embeddedText(ctx, str, f, look, sz, cx, y, draw);
-  else {
+function textWriter(ctx, f, look, cx, styled) {
+  const make = lk => {
+    const removed = f && ((f.bold && !lk.bold) || (f.italic && !lk.italic));
+    if (f && f.family && !removed) return (str, sz, y, draw, x = cx) => embeddedText(ctx, str, f, lk, sz, x, y, draw);
     const css = !f ? FALLBACK : removed ? f.plainCss : f.css;
-    run = (str, sz, y, draw) => {
-      ctx.font = cssFont(look, sz, css);
-      if (draw) ctx.fillText(str, cx, y);
+    return (str, sz, y, draw, x = cx) => {
+      ctx.font = cssFont(lk, sz, css);
+      if (draw) ctx.fillText(str, x, y);
       const m = ctx.measureText(str);
       return { w: m.width, asc: m.actualBoundingBoxAscent ?? sz * 0.75, desc: m.actualBoundingBoxDescent ?? sz * 0.25 };
     };
-  }
+  };
+  const plainRun = make(look), looks = new Map();
+  const runFor = r => {
+    const lk = { bold: look.bold || r.b, italic: look.italic || r.i }, key = (lk.bold ? 'b' : '') + (lk.italic ? 'i' : '');
+    if (!looks.has(key)) looks.set(key, make(lk));
+    return looks.get(key);
+  };
+  // מילים בהדגשה, בנטייה או בקו תחתון: כל קטע נכתב בנפרד, והקטעים מסודרים זה ליד זה (עברית – מימין לשמאל)
+  const run = (str, sz, y, draw) => {
+    const parts = styled && styled(str);
+    if (!parts) return plainRun(str, sz, y, draw);
+    const rtl = HEB.test(str), ms = parts.map(r => runFor(r)(r.s, sz, y, false));
+    const total = ms.reduce((t, m) => t + m.w, 0);
+    if (draw) {
+      let x = rtl ? cx + total / 2 : cx - total / 2;
+      parts.forEach((r, i) => {
+        const w = ms[i].w, mid = rtl ? x - w / 2 : x + w / 2;
+        runFor(r)(r.s, sz, y, true, mid);
+        if (r.u && r.s.trim()) {
+          const u = styled.ul || { off: 0.14, th: 0.06 };
+          ctx.fillRect(mid - w / 2, y + u.off * sz, w, Math.max(1, u.th * sz));
+        }
+        x += rtl ? -w : w;
+      });
+    }
+    return { w: total, asc: Math.max(...ms.map(m => m.asc)), desc: Math.max(...ms.map(m => m.desc)) };
+  };
   const write = (str, sz, y, draw) => run(str, sz, y, draw).w;
   // גובה הדיו של הטקסט מעל קו הבסיס ומתחתיו: { w, asc, desc }
   write.ink = (str, sz) => run(str, sz, 0, false);
