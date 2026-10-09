@@ -384,6 +384,15 @@ function subBox(it, index, s) {
   return { x: it.rtl ? it.x + it.w * (1 - before) - w : it.x + it.w * before, w };
 }
 
+/**
+ * המילים של טקסט שנקרא מהקובץ ({ box, old }), כל אחת עם התיבה המשוערת שלה בדף. בקובץ שורה שלמה נשמרת
+ * לפעמים כפריט אחד, ומילה בודדת בה מודגשת או עם קו תחתון – העיצוב נבדק לכל מילה בתיבה שלה
+ */
+export function wordBoxes(c) {
+  const it = { str: c.old, x: c.box.x, w: c.box.w, size: c.box.size || c.box.h * 0.72, rtl: /[א-ת]/.test(c.old) };
+  return [...c.old.matchAll(/\S+/g)].map(m => ({ box: { ...c.box, ...subBox(it, m.index, m[0]) }, old: m[0] }));
+}
+
 /** שם פרשה בכתיב חסר או מלא: "נצבים" מתאים גם ל"ניצבים", "חוקת" ל"חקת" */
 const spellings = name => [...name].map((c, i) => c === ' ' ? '\\s+' : i > 0 && /[יו]/.test(c) ? '' : c + '[יו]*').join('');
 const NAMES = '(?:' + [...PARSHIYOT].sort((a, b) => b.length - a.length).map(spellings).join('|') + ')(?![א-ת])';

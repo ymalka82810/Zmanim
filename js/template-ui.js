@@ -4,7 +4,7 @@
  */
 
 import { BASES, TEXT_BASES, WHEN, WHEN_LABELS, ROUND, SIZES, DAY_APPLIES, appliesOnDay, prayerBases, designOf } from './config.js';
-import { readFile, tokenize, detectDate, detectHebDate, detectShulAddress, suggestSlots, textCandidates, punctuationMarks, ruleOptions, agreeRules, printedTimes, approxStart, guessOldDay } from './template-read.js';
+import { readFile, tokenize, wordBoxes,detectDate, detectHebDate, detectShulAddress, suggestSlots, textCandidates, punctuationMarks, ruleOptions, agreeRules, printedTimes, approxStart, guessOldDay } from './template-read.js';
 import { analyzeSlot, refineBox, inkLines, templateCanvas, specialHost, slotText, slotLook, wordLine, slotKey, slotRanks as pageRanks } from './template-render.js';
 import { findOccasion, findPeriod, periodFor, buildLuach, buildDaysLuach, timesFor, dayPages } from './luach.js';
 import { toDayNum, toYmd, todayIn, dow } from './dates.js';
@@ -467,13 +467,18 @@ function fillTextArea(s, rows, words, biggest) {
   // הדגשה ורקע נמדדים על שורה אחת – באזור של כמה שורות עובי הקו יחסית לגובה כולו נראה דק
   const style = analyzeSlot(st.canvas, first.box);
   // המראה של כל מילה לחוד: מה שנמצא בכולן הוא מראה האזור כולו, ומה שנמצא רק בחלקן מסומן במילים עצמן
-  const own = new Map(), ulDims = [], mine = all.filter(c => words.includes(c));
+  // כל מילה בתיבה משלה: בקובץ שורה שלמה היא לפעמים פריט אחד, ורק מילה אחת בה מודגשת או עם קו תחתון
+  const pieces = new Map(all.filter(c => words.includes(c)).map(c => [c, wordBoxes(c)]));
+  rows = rows.map(r => ({ ...r, parts: r.parts.flatMap(c => pieces.get(c) || [c]) }));
+  const own = new Map(), ulDims = [], mine = [...pieces.values()].flat();
   // עובי הקו של כל מילה, ביחס לגובה שלה. Word מדגיש גופן עברי שאין לו גרסה מודגשת בקו מתאר עבה, באותו גופן –
   // אז ההדגשה נראית רק בתמונה: מילה שהקו שלה עבה בבירור מהרגיל באזור
   const looks = new Map(mine.map(c => [c, analyzeSlot(st.canvas, c.box)]));
   const strokes = [...looks.values()].map(l => l.stroke || 0).sort((a, b) => a - b), usual = strokes[(strokes.length - 1) >> 1];
   for (const c of mine) {
-    const size = c.box.size || c.box.h * 0.72, ul = findUnderline({ ...c.box, size, baseline: lineBase(c.box) }, style.bg);
+    // הקו נבדק במרכז המילה: הרוחב שלה בתוך השורה משוער, והקו של מילה סמוכה לא ייחשב שלה
+    const size = c.box.size || c.box.h * 0.72, inner = { ...c.box, x: c.box.x + c.box.w * 0.15, w: c.box.w * 0.7 };
+    const ul = findUnderline({ ...inner, size, baseline: lineBase(c.box) }, style.bg);
     if (ul) ulDims.push(ul);
     const lk = looks.get(c), thick = lk.bold || (usual > 0 && lk.stroke > usual * 1.3);
     // מילה מודגשת או נטויה בקובץ היא לרוב בגופן נפרד (David-Bold), או מוטה במטריצה (box.italic)
