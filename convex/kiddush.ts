@@ -277,6 +277,8 @@ export const board = query({
           occasionSuffix: b.occasionSuffix ?? "",
           // כולל שותפים שאישרו, כך שכל מי שמציג את הלוח (שבוע, יומן, הדפסה) מציג אותם בלי שינוי
           sponsorLine: fullSponsorLine(b, by),
+          // אותם שמות, כל אחד בנפרד – ללוח הזמנים, שמציג כל בעל קידוש בשורה משלו
+          sponsorLines: [sponsorLine(b), ...(b.cosponsors ?? []).filter((c) => c.status === "confirmed").map(cosponsorLine)],
           occasionLine: occasionLine(b),
           cosponsors: seeAllPartners
             ? (b.cosponsors ?? []).map((c) => ({ line: cosponsorLine(c), status: c.status, isMe: c.userId === userId }))

@@ -240,7 +240,7 @@ function subscribe(id){
     const wording = { heading: data.synagogue.kiddushHeading || '', by: data.synagogue.kiddushBy || '' };
     const map = new Map();
     map.wording = wording;
-    for (const b of data.bookings) if (b.status === 'approved') map.set(b.dateKey, { sponsorName: b.sponsorLine, occasion: b.occasionLine, ...wording });
+    for (const b of data.bookings) if (b.status === 'approved') map.set(b.dateKey, { sponsorName: b.sponsorLine, sponsorLines: b.sponsorLines, occasion: b.occasionLine, ...wording });
     onKiddush(map);
   }, () => {});
   // אירועים מיומן הקהילה – לשורת "אירועים" בלוח ולמודעות האירועים

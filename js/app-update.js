@@ -1,6 +1,6 @@
 /* עדכון עצמי של אפליקציית האנדרואיד (האפליקציה לא בחנות, ולכן לא מתעדכנת לבד).
  * ה-workflow ב-GitHub מעלה כל APK ל-Convex (convex/appUpdate.ts), והקישור ניתן רק למשתמש מחובר.
- * בפתיחת האפליקציה (לא יותר מפעם ב-CHECK_EVERY) שואלים את appUpdate:latest אם יש versionCode גבוה מהמותקן,
+ * בכל פתיחה של האפליקציה שואלים את appUpdate:latest אם יש versionCode גבוה מהמותקן,
  * ואם כן שואלים את המשתמש אם לעדכן. משתמש לא מחובר לא מקבל עדכונים.
  * בהסכמה ה-APK יורד בתוך האפליקציה עם אחוזי התקדמות, ונפתח חלון ההתקנה של אנדרואיד – המשתמש רק לוחץ "עדכון".
  * בפעם הראשונה אנדרואיד מבקש לאשר "התקנה ממקור זה" לאפליקציה. "אחר כך" דוחה את השאלה על אותה גרסה ביום.
@@ -11,7 +11,7 @@
 const cap = window.Capacitor;
 if (!(cap && cap.isNativePlatform && cap.isNativePlatform())) return;
 
-const CHECK_EVERY = 6 * 3600e3, SNOOZE = 24 * 3600e3;
+const SNOOZE = 24 * 3600e3;
 const KEY = 'app.update';
 const call = (method, opts) => cap.nativePromise('AppUpdater', method, opts);
 
@@ -78,10 +78,8 @@ async function install(update){
 async function check(){
   if (!(window.SiteAuth && SiteAuth.isAuthenticated())) return;
   const state = read(), now = Date.now();
-  if (state.checked && now - state.checked < CHECK_EVERY) return;
   let update;
   try { update = await findUpdate(); } catch (e) { return; } // בלי אינטרנט – ננסה בפתיחה הבאה
-  write(Object.assign(state, { checked: now }));
   if (!update || (state.snoozed === update.versionCode && now - state.snoozedAt < SNOOZE) || !window.SiteDialog) return;
   const ok = await SiteDialog.confirm(`גרסה חדשה של האפליקציה זמינה (${update.version}).\nלעדכן עכשיו?`, { ok: 'עדכון', cancel: 'אחר כך' });
   if (ok) return install(update);

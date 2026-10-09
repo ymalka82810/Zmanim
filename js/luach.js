@@ -251,7 +251,10 @@ function kiddushRow(rule, ctx) {
   // שורת הסיבה כבר כוללת את הסוג: "לרגל בר המצווה", "לעילוי נשמת … ז״ל"
   // כמה סיבות מגיעות מופרדות בירידת שורה, וכל אחת נשארת בשורה משלה
   const occasions = String(info.occasion || '').split('\n').map(o => line(o));
-  const text = [line(info.heading), line(info.by, info.sponsorName), ...occasions].filter(Boolean).join('\n');
+  // כל בעל קידוש בשורה משלו, כל אחד עם "ע״י"
+  const names = info.sponsorLines && info.sponsorLines.length ? info.sponsorLines : [info.sponsorName];
+  const sponsors = names.map(n => line(info.by, n));
+  const text = [line(info.heading), ...sponsors, ...occasions].filter(Boolean).join('\n');
   return { text, key: 9998 };
 }
 
