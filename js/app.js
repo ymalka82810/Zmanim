@@ -1048,8 +1048,9 @@ let sync = null, syncSid = null;
 let remoteLater = null;   // [הגדרות, מי שמר] מגבאי אחר, שממתינות לסיום עריכת תבנית מקובץ
 
 /** שמירה במכשיר ובקהילה. false – לא נשמר בשום מקום */
+let localSaved = true;   // האם השמירה האחרונה במכשיר הצליחה (בקהילה היא יכולה להצליח גם כשהמכשיר מלא)
 function store() {
-  const ok = saveConfig(cfg);
+  const ok = localSaved = saveConfig(cfg);
   if (sync) { remoteLater = null; sync.push(cfg); }
   return ok || !!sync;
 }
@@ -1229,6 +1230,7 @@ async function templateDone(result, fromBoard) {
     saved = true;
     sel = t.id;
     fill();
+    if (!localSaved) toast('העיצוב נשמר בקהילה אבל לא במכשיר הזה, כי הוא גדול מדי לאחסון בדפדפן. בפתיחה הבאה ייטענו ההגדרות מהקהילה', true);
     // מציגים את הלוח הקרוב שמשתמש בתבנית
     const p = periodFor(cfg, t, todayIn(cfg.tz));
     setBoard(t.id, p ? p.first : null);
