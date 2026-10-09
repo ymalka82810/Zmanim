@@ -6,7 +6,10 @@
       "Bash(npm test *)",
       "Bash(git add *)",
       "Bash(git commit -m 'שיפורים ב-UX של עריכת לוחות, שיפור ניווט בעמוד, והוספת js/template-place.js *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "mcp__claude-in-chrome__tabs_context_mcp",
+      "ClaudeInChromeDomain(localhost:8080)",
+      "ClaudeInChromeDomain(localhost:8093)"
     ]
   }
 }
