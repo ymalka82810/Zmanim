@@ -8,18 +8,19 @@ import { enabledFeatures, type Feature } from "./features";
 import { daysBetween, hebrewDateText, nextYahrzeit, todayKey } from "./hebrewDate";
 import { DEFAULT_KIDDUSH_BY, fullSponsorLine, occasionLine } from "./kiddush";
 import { REASONS } from "./aliyot";
+import { parseQuery, score } from "../js/search-words.js";
 
 /**
- * אינדקס החיפוש של האתר והאפליקציה (חלונית החיפוש ב-js/search.js).
+ * אינדקס החיפוש של האתר והאפליקציה (שדה החיפוש בראש תפריט ההמבורגר, js/search.js).
  *
  * כל מקור (SOURCES) בונה את הרשומות שהמשתמש רשאי לראות, לפי אותם כללים של השאילתה שמציגה אותן בדף:
  * חבר קהילה מוצא רק מה שהוא כבר רואה (הקידושים המאושרים, התרומות שלו, האזכרות שלו ואלה שגלויות לקהילה...),
  * וגבאי ורב מוצאים גם את מה שפתוח רק להם (כל הקופה, רשימת החברים, לוחות שממתינים לאישור, טלפונים והערות).
  * מקור של פיצ'ר כבוי (convex/features.ts) לא נכנס לאינדקס. מקור חדש – מוסיפים ל-SOURCES עם אותה בדיקת הרשאה של הדף שלו.
  *
- * האינדקס נבנה בכל חיפוש מהנתונים של הקהילה (קהילה אחת היא עשרות עד אלפי רשומות), והחיפוש הוא לפי
- * חלקי מילים: כל מילה בחיפוש צריכה להופיע איפשהו בטקסט של הרשומה, בלי ניקוד, גרשיים ואותיות סופיות.
- * כך "כהן" מוצא גם "לכהנים" ו"משפ׳ כהן", מה שחיפוש לפי מילים שלמות לא היה מוצא.
+ * האינדקס נבנה בכל חיפוש מהנתונים של הקהילה (קהילה אחת היא עשרות עד אלפי רשומות). ההשוואה עצמה (ניקוד,
+ * כתיב מלא, מילים נרדפות, אותיות שימוש) ב-js/search-words.js, המשותף לחיפוש בדפדפן.
+ * כל מילה בחיפוש צריכה להופיע (באחת מצורותיה) בטקסט של הרשומה, גם כחלק ממילה.
  */
 
 export type SearchKind = "event" | "kiddush" | "fund" | "yahrzeit" | "member" | "schedule" | "aliyah" | "minyan";
@@ -273,36 +274,14 @@ const SOURCES: Record<SearchKind, Source> = {
   },
 };
 
-/** טקסט להשוואה: בלי ניקוד וטעמים, בלי גרש וגרשיים, אותיות סופיות כרגילות, ואותיות לועזיות קטנות */
-export function normalize(text: string) {
-  return text
-    .toLowerCase()
-    .replace(/[֑-ׇ]/g, "")
-    .replace(/[׳״'"`]/g, "")
-    .replace(/[ךםןףץ]/g, (c) => ({ ך: "כ", ם: "מ", ן: "נ", ף: "פ", ץ: "צ" })[c] ?? c)
-    .replace(/[\s\-–—_.,:;!?()/\\·]+/g, " ")
-    .trim();
-}
-
-/** ציון התאמה: 0 – לא מתאים. כל מילה בחיפוש חייבת להופיע; התאמה בכותרת ובתחילת מילה מקבלת יותר */
-function score(entry: Entry, terms: string[], phrase: string) {
-  const title = " " + normalize(entry.title);
-  const all = title + " " + normalize(entry.sub) + " " + normalize(entry.extra ?? "") + " " + (entry.dateKey ?? "");
-  let s = 0;
-  for (const t of terms) {
-    if (!all.includes(t)) {
-      return 0;
-    }
-    s += title.includes(" " + t) ? 3 : title.includes(t) ? 2 : 1;
-  }
-  return s + (title.includes(phrase) ? 3 : 0);
-}
+const entryScore = (e: Entry, query: string[][]) =>
+  score(e.title, [e.sub, e.extra ?? "", e.dateKey ?? ""].join(" "), query);
 
 const MAX_PER_KIND = 8;
 const MAX_TOTAL = 40;
 
 /**
- * חיפוש בקהילה הפעילה. null – המשתמש לא מחובר או לא חבר בקהילה (חלונית החיפוש מציגה אז רק את דפי האתר).
+ * חיפוש בקהילה הפעילה. null – המשתמש לא מחובר או לא חבר בקהילה (החיפוש מציג אז רק את דפי האתר).
  * בכל סוג – עד MAX_PER_KIND תוצאות, ו-more מסמן שיש עוד ושכדאי לדייק את החיפוש.
  */
 export const run = query({
@@ -317,9 +296,8 @@ export const run = query({
     if (membership === null || synagogue === null) {
       return null;
     }
-    const phrase = normalize(args.q.slice(0, 80));
-    const terms = phrase.split(" ").filter((t) => t.length > 0);
-    if (phrase.length < 2) {
+    const queryTerms = parseQuery(args.q);
+    if (queryTerms.length === 0) {
       return { items: [], more: false };
     }
 
@@ -356,7 +334,7 @@ export const run = query({
     const picked: (Entry & { score: number })[] = [];
     for (const entries of built) {
       const matches = entries
-        .map((e) => ({ ...e, score: score(e, terms, phrase) }))
+        .map((e) => ({ ...e, score: entryScore(e, queryTerms) }))
         .filter((e) => e.score > 0)
         .sort((a, b) => b.score - a.score || distance(a) - distance(b));
       if (matches.length > MAX_PER_KIND) {

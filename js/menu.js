@@ -36,12 +36,19 @@ const css = `
 .sm-btn .sm-count{position:absolute;top:1px;left:0;min-width:18px;height:18px;padding:0 4px;font-size:.7rem;line-height:18px;box-shadow:0 0 0 2px #2c4a7c}
 :root[data-theme="dark"] .sm-count{background:#e5534b}
 :root[data-theme="dark"] .sm-btn .sm-count{box-shadow:0 0 0 2px #1b2d56}
-.sm-search{margin-inline-start:auto}
 .sm-title{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-weight:700;font-size:1.05rem}
 .sm-shade{position:fixed;inset:0;background:rgba(10,14,20,.45);z-index:900;opacity:0;transition:opacity .2s}
-.sm-drawer{position:fixed;top:0;bottom:0;right:0;width:min(280px,82vw);background:#fff;color:#1d2b45;z-index:901;transform:translateX(100%);transition:transform .2s;padding:calc(12px + env(safe-area-inset-top,0px)) 10px 12px;box-shadow:-6px 0 24px rgba(10,20,40,.2);font-family:"Assistant",Arial,sans-serif;direction:rtl}
+.sm-drawer{position:fixed;top:0;bottom:0;right:0;width:min(280px,82vw);box-sizing:border-box;overflow-y:auto;overscroll-behavior:contain;background:#fff;color:#1d2b45;z-index:901;transform:translateX(100%);transition:transform .2s,width .2s;padding:calc(12px + env(safe-area-inset-top,0px)) 10px 12px;box-shadow:-6px 0 24px rgba(10,20,40,.2);font-family:"Assistant",Arial,sans-serif;direction:rtl}
 .sm-open .sm-shade{opacity:1}
 .sm-open .sm-drawer{transform:none}
+.sm-drawer.sm-searching{width:min(460px,94vw)}
+.sm-find{display:flex;align-items:center;gap:6px;margin:0 4px 14px;padding:0 12px;border:1px solid #d6dce8;border-radius:999px;background:#f5f7fb}
+.sm-find:focus-within{border-color:#2c4a7c}
+.sm-find svg{flex:none;width:18px;height:18px;color:#5d6b82}
+.sm-find input{flex:1;min-width:0;padding:9px 0;border:0;outline:0;background:none;color:inherit;font:inherit;font-size:1rem}
+:root[data-theme="dark"] .sm-find{border-color:#2d3440;background:#232a36}
+:root[data-theme="dark"] .sm-find:focus-within{border-color:#8fb0ec}
+:root[data-theme="dark"] .sm-find svg{color:#9ba4b3}
 .sm-drawer h2{margin:4px 10px 12px;font-size:.85rem;font-weight:600;color:#5d6b82}
 .sm-drawer a{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 14px;border-radius:10px;color:inherit;text-decoration:none;font-size:1.05rem;font-weight:600}
 .sm-drawer a[hidden]{display:none}
@@ -195,7 +202,6 @@ window.SiteMenu = {
     return PAGES.filter(p => !hiddenPage(p, d)).map(p => ({ path: p.path, title: p.title, href: new URL(p.path, ROOT).href }));
   },
   href(path){ return new URL(path, ROOT).href; },
-  openSearch,
   /* s: { _id, name, il } של הקהילה הפעילה, או null כשאין */
   setCommunity(s){
     write(COMMUNITY_KEY, s && s.name ? { _id: s._id, name: s.name, il: !!s.il } : null);
@@ -237,17 +243,17 @@ function build(){
   bar.className = 'sm-bar';
   bar.innerHTML = `<button type="button" class="sm-btn" aria-label="תפריט" aria-expanded="false" aria-controls="sm-drawer">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
-    </button><span class="sm-title"></span>
-    <button type="button" class="sm-btn sm-search" aria-label="חיפוש" title="חיפוש (Ctrl+K)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
-    </button>`;
+    </button><span class="sm-title"></span>`;
   bar.querySelector('.sm-title').textContent = current.title;
 
   const layer = document.createElement('div');
   layer.className = 'sm-layer';
   layer.hidden = true;
-  layer.innerHTML = `<div class="sm-shade"></div><nav class="sm-drawer" id="sm-drawer" aria-label="דפי האתר"><h2>בית הכנסת</h2></nav>`;
-  const nav = layer.querySelector('nav');
+  layer.innerHTML = `<div class="sm-shade"></div><nav class="sm-drawer" id="sm-drawer" aria-label="דפי האתר">
+    <div class="sm-find" role="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg><input type="search" enterkeyhint="search" autocomplete="off" placeholder="חיפוש באתר ובקהילה" aria-label="חיפוש באתר ובקהילה" title="חיפוש (Ctrl+K)"></div>
+    <div class="sm-results" aria-live="polite" hidden></div>
+    <div class="sm-main"><h2>בית הכנסת</h2></div></nav>`;
+  const nav = layer.querySelector('nav'), main = nav.querySelector('.sm-main');
   const known = cachedCounts(); /* מה שידוע כבר עכשיו, לפני שה-watch האסינכרוני מתחיל; null = לא ידוע */
   for (const p of PAGES){
     const a = document.createElement('a');
@@ -260,7 +266,7 @@ function build(){
     a.append(label, count);
     if (p === current) a.setAttribute('aria-current', 'page');
     a.hidden = hiddenPage(p, known);
-    nav.appendChild(a);
+    main.appendChild(a);
     badges.links.push({ page: p, path: p.path, title: p.title, a, count });
   }
 
@@ -284,7 +290,7 @@ function build(){
     }
     mark();
     document.addEventListener('sitethemechange', mark);
-    nav.append(h, seg);
+    main.append(h, seg);
   }
 
   const btn = bar.querySelector('.sm-btn');
@@ -295,21 +301,26 @@ function build(){
   badges.total.setAttribute('aria-hidden', 'true');
   btn.appendChild(badges.total);
   renderCounts();
-  function open(){
+  const find = searchBox(nav, main);
+  /* toSearch: פתיחה עם הסמן בשדה החיפוש (Ctrl+K). בפתיחה רגילה לא, כדי שבטלפון לא תקפוץ המקלדת */
+  function open(toSearch){
     layer.hidden = false;
     btn.setAttribute('aria-expanded', 'true');
-    requestAnimationFrame(() => { layer.classList.add('sm-open'); nav.querySelector('a').focus(); });
+    requestAnimationFrame(() => {
+      layer.classList.add('sm-open');
+      (toSearch === true ? find.input : main.querySelector('a:not([hidden])')).focus();
+    });
   }
   function close(){
+    find.clear();
     layer.classList.remove('sm-open');
     btn.setAttribute('aria-expanded', 'false');
     setTimeout(() => { layer.hidden = true; }, 200);
     btn.focus();
   }
   btn.addEventListener('click', open);
-  bar.querySelector('.sm-search').addEventListener('click', openSearch);
   document.addEventListener('keydown', e => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k'){ e.preventDefault(); openSearch(); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k'){ e.preventDefault(); open(true); }
   });
   closeMenu = () => { if (layer.hidden) return false; close(); return true; };
   layer.querySelector('.sm-shade').addEventListener('click', close);
@@ -331,19 +342,34 @@ function build(){
   pinTop(bar);
 }
 
-/* ---------- חיפוש ----------
- * חלונית החיפוש (js/search.js) נטענת רק בפעם הראשונה שפותחים אותה */
-let searchLoading = null;
-function openSearch(){
-  if (window.SiteSearch) return SiteSearch.open();
-  if (!searchLoading) searchLoading = new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = new URL('js/search.js', ROOT).href;
-    s.onload = resolve;
-    s.onerror = () => { searchLoading = null; reject(); };
-    document.head.appendChild(s);
+/* ---------- חיפוש בראש המגירה ----------
+ * כשיש טקסט בשדה, התוצאות (js/search.js) מוצגות במקום רשימת הדפים והמגירה מתרחבת.
+ * המודול נטען רק כשמתחילים להקליד בפעם הראשונה */
+function searchBox(nav, main){
+  const input = nav.querySelector('.sm-find input'), results = nav.querySelector('.sm-results');
+  let search = null, loading = null;
+  function show(){
+    const on = input.value.trim() !== '';
+    results.hidden = !on;
+    main.hidden = on;
+    nav.classList.toggle('sm-searching', on);
+  }
+  function clear(){
+    input.value = '';
+    if (search) search.reset();
+    show();
+  }
+  input.addEventListener('input', () => {
+    show();
+    if (!loading) loading = import(new URL('js/search.js', ROOT).href)
+      .then(m => { search = m.attach({ input, results }); search.run(); })
+      .catch(() => { loading = null; });
   });
-  searchLoading.then(() => window.SiteSearch && SiteSearch.open(), () => {});
+  // Escape עם טקסט בשדה מנקה את החיפוש, ולא סוגר את המגירה
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && input.value){ e.preventDefault(); e.stopPropagation(); clear(); }
+  });
+  return { input, clear };
 }
 
 /* גובה אזור המצלמה/שורת הסטטוס; 0 בדפדפן רגיל, ואז הכותרת נגללת כרגיל */
