@@ -268,10 +268,12 @@ fieldset.moadim .check { margin: 4px 0; font-weight: 400; }
 
 @media print {
   /* גודל הדף וכיוונו לפי התבנית (applyPage ב-app.js) */
-  @page { margin: 14mm; }
-  body { background: #fff; }
+  /* שוליים 0 – כך הדפדפן לא מוסיף כותרת עליונה ותחתונה (תאריך, כותרת, כתובת, מספר עמוד). את השוליים (14mm, כמו PRINT_MARGIN ב-app.js)
+     יוצר main.wrap, ו-clone חוזר עליהם בכל עמוד */
+  @page { margin: 0; }
+  body { background: #fff; margin: 0; }
   header,.tpl-list, .mix-offer, .tpl-new, .nav-occ, .actions, #welcome, footer, .toast, #view-settings, .community-panel { display: none !important; }
-  main.wrap { max-width: none; padding: 0; }
+  main.wrap { max-width: none; width: auto; margin: 0; padding: 14mm; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
   .luach { border: none; box-shadow: none; padding: 0; font-size: 18px; border-radius: 0; }
   .l-title { font-size: calc(2.4rem * var(--s-title, 1)); }
   /* לוח בשני עמודים נשבר בין השורות, ולא משאירים כותרת של קטע לבד בתחתית העמוד */
