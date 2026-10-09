@@ -464,6 +464,13 @@ async function shareFile(kind) {
 }
 $('shareImg').onclick = () => shareFile('png');
 $('sharePdf').onclick = () => shareFile('pdf');
+$('downloadPdf').onclick = async () => {
+  if (!current) return;
+  let file;
+  try { file = (await getFiles()).pdf; }
+  catch (e) { toast('יצירת הקובץ נכשלה', true); return; }
+  download(file, file.name);
+};
 
 $('print').onclick = async () => {
   const title = current ? (current.poster ? 'מודעה - ' : 'לוח זמנים - ') + current.title : document.title;
