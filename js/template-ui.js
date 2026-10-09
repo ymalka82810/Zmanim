@@ -470,7 +470,8 @@ function fillTextArea(s, rows, words, biggest) {
   }
   const flags = ['b', 'i', 'u'], list = [...own.values()];
   const every = f => list.every(o => o[f]), some = f => list.some(o => o[f]);
-  const tagged = f => some(f) && !every(f);
+  // כל עיצוב שנמצא בטקסט מסומן בו במפורש, גם כשהוא בכל המילים – כדי שיופיע בשדה הטקסט וניתן יהיה לבטל אותו
+  const tagged = f => some(f);
   // עברית: בכל שורה מימין לשמאל; סימן פיסוק נצמד למילה שלפניו
   const lines = rows.map(r => {
     const ps = r.parts.slice().sort((a, b) => b.box.x - a.box.x);
@@ -479,12 +480,13 @@ function fillTextArea(s, rows, words, biggest) {
       flags.map(f => on(k, f) && !on(k + 1, f) ? '[/' + f + ']' : '').join('')).join(' ').replace(/\s+([!?.,:;…])/g, '$1');
   });
   s.old = lines.join(' ').replace(/\[\/?[biu]\]/g, '');
-  s.box = { ...s.box, x: u.x, w: u.w, ...(first.box.font ? { font: first.box.font } : {}), ...(every('i') ? { italic: true } : {}) };
+  s.box = { ...s.box, x: u.x, w: u.w, ...(first.box.font ? { font: first.box.font } : {}) };
+  delete s.box.italic;
   s.style = style;
   if (tagged('b')) s.bold = false;
   if (tagged('i')) s.italic = false;
   delete s.underline; delete s.ulDim;
-  if (ulDims.length) { if (every('u')) s.underline = ulDims[0]; else s.ulDim = ulDims[0]; }
+  if (ulDims.length) s.ulDim = ulDims[0];
   return lines.join('\n');
 }
 
