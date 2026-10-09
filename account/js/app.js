@@ -312,6 +312,30 @@ async function setGuestPage(id, on, rotate){
     toast(!on ? 'עמוד האורחים כובה' : rotate ? 'הקישור לעמוד האורחים הוחלף' : 'עמוד האורחים הופעל'); render();
   } catch(e){ toast(errMsg(e)); }
 }
+function tvUrl(code){
+  const url = new URL('../tv/', location.href);
+  url.searchParams.set('c', code);
+  return A.publicUrl(url.toString());
+}
+async function copyTv(code){
+  try { await navigator.clipboard.writeText(tvUrl(code)); toast('קישור המסך הועתק'); }
+  catch(e){ toast('העתקה נכשלה'); }
+}
+/* דף להדפסה עם QR לעמוד האורחים, לתלייה בכניסה לבית הכנסת */
+async function printGuestQr(code, name){
+  if (!window.qrcode) return toast('לא ניתן ליצור QR כרגע');
+  const q = window.qrcode(0, 'M');
+  q.addData(guestUrl(code));
+  q.make();
+  const sheet = document.createElement('div');
+  sheet.id = 'qrPrint';
+  sheet.innerHTML = '<h1>' + esc(name) + '</h1><div class="qr">' + q.createSvgTag({ cellSize: 4, margin: 2, scalable: true }) + '</div><p>סרקו כדי לראות את זמני התפילות, הכתובת והניווט</p>';
+  document.body.appendChild(sheet);
+  document.body.classList.add('printing-qr');
+  try { await NativeFiles.print({ title: 'QR – ' + name }); }
+  catch(e){ toast('ההדפסה נכשלה'); }
+  finally { document.body.classList.remove('printing-qr'); sheet.remove(); }
+}
 async function copyGuest(code){
   try { await navigator.clipboard.writeText(guestUrl(code)); toast('הקישור הועתק'); }
   catch(e){ toast('העתקה נכשלה'); }
@@ -559,6 +583,8 @@ function renderDetailSheet(){
     <div class="row" style="margin-top:8px">
       <button class="btn sec" type="button" id="btnCopyGuest">העתקה</button>
       <button class="btn sec" type="button" id="btnShareGuest">שיתוף</button>
+      <button class="btn sec" type="button" id="btnPrintQr">הדפסת QR לכניסה</button>
+      <button class="btn sec" type="button" id="btnCopyTv" title="פתחו את הקישור בדפדפן של הטלוויזיה בבית הכנסת">קישור למסך טלוויזיה</button>
       <button class="btn ghost" type="button" id="btnRotateGuest">החלפת קישור</button>
       <button class="btn ghost" type="button" id="btnGuestOff">כיבוי</button>
     </div>
@@ -602,6 +628,8 @@ function renderDetailSheet(){
     if (s.publicCode){
       $('#btnCopyGuest').addEventListener('click', () => copyGuest(s.publicCode));
       $('#btnShareGuest').addEventListener('click', () => shareGuest(s.publicCode, s.name));
+      $('#btnPrintQr').addEventListener('click', () => printGuestQr(s.publicCode, s.name));
+      $('#btnCopyTv').addEventListener('click', () => copyTv(s.publicCode));
       $('#btnRotateGuest').addEventListener('click', () => setGuestPage(s._id, true, true));
       $('#btnGuestOff').addEventListener('click', () => setGuestPage(s._id, false));
     } else $('#btnGuestOn').addEventListener('click', () => setGuestPage(s._id, true));

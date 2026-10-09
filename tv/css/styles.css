@@ -1,0 +1,28 @@
+/* מסך טלוויזיה לבית הכנסת: תמיד כהה, גדול, בלי אינטראקציה */
+:root{--bg:#0c1120;--panel:#161d30;--line:#2a3252;--ink:#e9ecf5;--muted:#9aa5c4;--gold:#dfb564}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:"Assistant",Arial,sans-serif;overflow:hidden;cursor:none}
+.tv{height:100vh;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);grid-template-rows:auto 1fr;gap:2vh 2vw;padding:2.5vh 2vw}
+.tv-msg{grid-column:1/-1;align-self:center;text-align:center;font-size:3vh;color:var(--muted)}
+.tv-head{grid-column:1/-1;display:flex;align-items:flex-end;justify-content:space-between;gap:2vw;border-bottom:2px solid var(--line);padding-bottom:1.5vh}
+.tv-name{font-family:"Frank Ruhl Libre",serif;font-weight:900;font-size:6vh;line-height:1.1;margin:0}
+.tv-dates{color:var(--muted);font-size:2.6vh;margin-top:.6vh}
+.tv-dates b{color:var(--gold);font-weight:700}
+.tv-clock{font-family:"Frank Ruhl Libre",serif;font-weight:700;font-size:9vh;line-height:1;direction:ltr;font-variant-numeric:tabular-nums}
+.tv-board{background:#fff;border-radius:1.2vh;display:flex;align-items:center;justify-content:center;overflow:hidden;min-height:0;position:relative}
+.tv-board img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+.tv-board .tv-title{position:absolute;bottom:1vh;right:1vw;background:rgba(12,17,32,.78);color:#fff;padding:.5vh 1vw;border-radius:1vh;font-size:2.2vh}
+.tv-empty{color:#667;font-size:3vh}
+.tv-zm{background:var(--panel);border:1px solid var(--line);border-radius:1.2vh;padding:1.5vh 1.5vw;display:flex;flex-direction:column;min-height:0}
+.tv-zm h2{font-family:"Frank Ruhl Libre",serif;font-size:3.2vh;margin:0 0 1vh;color:var(--gold)}
+.tv-row{display:flex;justify-content:space-between;align-items:baseline;padding:.6vh .6vw;border-radius:.8vh;font-size:3vh}
+.tv-row span:last-child{font-weight:700;direction:ltr;font-variant-numeric:tabular-nums}
+.tv-row.past{color:#5d6788}
+.tv-row.next{background:#25314f;color:#fff;outline:2px solid var(--gold)}
+.tv-row.key{color:var(--gold)}
+.tv-note{margin-top:auto;padding-top:1vh;color:var(--muted);font-size:2.2vh;text-align:center}
+@media (max-aspect-ratio:1/1){.tv{grid-template-columns:1fr;grid-template-rows:auto 1fr auto}.tv-clock{font-size:6vh}.tv-name{font-size:4vh}}
+.tv-qr{margin-top:1vh;display:flex;align-items:center;gap:1vw;background:#fff;color:#0c1120;border-radius:1vh;padding:1vh 1vw;font-size:2.4vh;font-weight:700}
+.tv-qr svg{width:15vh;height:15vh;flex:none}
+.tv-note+.tv-qr{margin-top:1vh}
+.tv-zm>.tv-qr:first-child{margin-top:0}

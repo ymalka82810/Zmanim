@@ -52,6 +52,7 @@ export const board = query({
     return {
       name: synagogue.name,
       city: synagogue.city,
+      il: synagogue.il,
       address: synagogue.address ?? "",
       files: await Promise.all(
         files.map(async (f) => ({

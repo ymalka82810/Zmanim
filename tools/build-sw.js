@@ -16,7 +16,7 @@ async function listFiles(dir) {
     .map(name => dir + '/' + name);
 }
 
-const PAGES = ['kiddush', 'gabbai', 'aliyot', 'account', 'community-calendar', 'guest', 'week'];
+const PAGES = ['kiddush', 'gabbai', 'aliyot', 'account', 'community-calendar', 'guest', 'week', 'tv'];
 
 async function buildShell() {
   const shell = ['./', 'index.html', 'css/app.css', 'manifest.webmanifest'];
@@ -24,6 +24,7 @@ async function buildShell() {
   shell.push(...await listFiles('icons'));
   shell.push(...await listFiles('vendor/hebcal'));
   shell.push(...await listFiles('vendor/convex'));
+  shell.push(...await listFiles('vendor/qrcode'));
   for (const page of PAGES) {
     shell.push(page + '/', page + '/index.html');
     for (const dir of ['css', 'js']) {
@@ -51,6 +52,7 @@ function formatShell(shell) {
     shell.filter(f => f.startsWith('icons/')),
     shell.filter(f => f.startsWith('vendor/hebcal/')),
     shell.filter(f => f.startsWith('vendor/convex/')),
+    shell.filter(f => f.startsWith('vendor/qrcode/')),
     ...PAGES.map(page => shell.filter(f => f.startsWith(page + '/'))),
   ];
   return lines.map(group => '  ' + group.map(f => `'${f}'`).join(', ')).join(',\n');

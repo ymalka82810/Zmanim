@@ -121,3 +121,13 @@ input[type=text],input[type=email],input[type=search],select{width:100%;border:1
 .feature-chip.on{background:var(--free-soft);color:var(--free)}
 .feature-chip.off{background:var(--surface2);color:var(--muted)}
 .feature-req{margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--pend-soft);color:var(--pend);font-size:.85rem}
+
+/* דף QR להדפסה: מוסתר במסך, ובהדפסה הוא הדבר היחיד שנראה */
+#qrPrint{display:none}
+@media print{
+  body.printing-qr > *:not(#qrPrint){display:none!important}
+  body.printing-qr #qrPrint{display:block;text-align:center;padding:40px;color:#000;background:#fff}
+  #qrPrint h1{font-size:44px;margin:0 0 24px}
+  #qrPrint .qr svg{width:420px;height:420px}
+  #qrPrint p{font-size:26px;margin-top:24px}
+}
