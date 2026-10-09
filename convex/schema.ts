@@ -97,6 +97,10 @@ export default defineSchema({
     occasion: v.string(),
     occasionType: v.optional(v.string()),
     occasionSuffix: v.optional(v.string()),
+    // סיבות נוספות לקידוש (לרגל / לזכות / לעילוי נשמת...), בנוסף לראשונה למעלה
+    moreOccasions: v.optional(
+      v.array(v.object({ occasionType: v.optional(v.string()), occasion: v.string(), occasionSuffix: v.optional(v.string()) })),
+    ),
     phone: v.string(),
     note: v.string(),
     blockLabel: v.string(),

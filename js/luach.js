@@ -249,7 +249,9 @@ function kiddushRow(rule, ctx) {
   if (!info) return null;
   const line = (...parts) => parts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
   // שורת הסיבה כבר כוללת את הסוג: "לרגל בר המצווה", "לעילוי נשמת … ז״ל"
-  const text = [line(info.heading), line(info.by, info.sponsorName), line(info.occasion)].filter(Boolean).join('\n');
+  // כמה סיבות מגיעות מופרדות בירידת שורה, וכל אחת נשארת בשורה משלה
+  const occasions = String(info.occasion || '').split('\n').map(o => line(o));
+  const text = [line(info.heading), line(info.by, info.sponsorName), ...occasions].filter(Boolean).join('\n');
   return { text, key: 9998 };
 }
 

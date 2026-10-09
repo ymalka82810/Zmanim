@@ -31,24 +31,20 @@ const OCCASION_TYPES = ["לרגל", "לזכות", "לרפואת", "להצלחת"
 
 const clip = (s: string, max: number) => s.trim().slice(0, max);
 
+const MAX_OCCASIONS = 5;
+const occasionArg = v.object({ occasionType: v.optional(v.string()), occasion: v.string(), occasionSuffix: v.optional(v.string()) });
 const announceArgs = {
   sponsorName: v.string(),
   sponsorSuffix: v.optional(v.string()),
   occasion: v.string(),
   occasionType: v.optional(v.string()),
   occasionSuffix: v.optional(v.string()),
+  moreOccasions: v.optional(v.array(occasionArg)),
 };
 
-/** שדות ההכרזה מהטופס, אחרי בדיקה שהבחירות מהרשימות המותרות */
-function announceFields(args: { sponsorName: string; sponsorSuffix?: string; occasion: string; occasionType?: string; occasionSuffix?: string }) {
-  const sponsorName = clip(args.sponsorName, 60);
-  if (!sponsorName) {
-    throw new ConvexError("נא למלא את שם בעל הקידוש");
-  }
-  const sponsorSuffix = args.sponsorSuffix ?? "";
-  if (sponsorSuffix && !LIVING_SUFFIXES.includes(sponsorSuffix)) {
-    throw new ConvexError("בחירה לא תקינה אחרי השם");
-  }
+type OccasionInput = { occasion: string; occasionType?: string; occasionSuffix?: string };
+/** סיבה אחת מהטופס, אחרי בדיקה שהבחירות מהרשימות המותרות. סיבה ריקה: הכול ריק */
+function checkOccasion(args: OccasionInput) {
   const occasion = clip(args.occasion, 80);
   const occasionType = occasion ? args.occasionType || "לרגל" : "";
   if (occasionType && !OCCASION_TYPES.includes(occasionType)) {
@@ -59,7 +55,27 @@ function announceFields(args: { sponsorName: string; sponsorSuffix?: string; occ
   if (occasionSuffix && !suffixes.includes(occasionSuffix)) {
     throw new ConvexError("בחירה לא תקינה אחרי השם בשורת הסיבה");
   }
-  return { sponsorName, sponsorSuffix, occasion, occasionType, occasionSuffix };
+  return { occasion, occasionType, occasionSuffix };
+}
+
+/** שדות ההכרזה מהטופס, אחרי בדיקה שהבחירות מהרשימות המותרות */
+function announceFields(args: { sponsorName: string; sponsorSuffix?: string; occasion: string; occasionType?: string; occasionSuffix?: string; moreOccasions?: OccasionInput[] }) {
+  const sponsorName = clip(args.sponsorName, 60);
+  if (!sponsorName) {
+    throw new ConvexError("נא למלא את שם בעל הקידוש");
+  }
+  const sponsorSuffix = args.sponsorSuffix ?? "";
+  if (sponsorSuffix && !LIVING_SUFFIXES.includes(sponsorSuffix)) {
+    throw new ConvexError("בחירה לא תקינה אחרי השם");
+  }
+  if ((args.moreOccasions?.length ?? 0) + 1 > MAX_OCCASIONS) {
+    throw new ConvexError(`אפשר להוסיף עד ${MAX_OCCASIONS} סיבות`);
+  }
+  // הסיבה הראשונה הלא-ריקה נשמרת בשדות הרגילים, והשאר ב-moreOccasions
+  const all = [args, ...(args.moreOccasions ?? [])].map(checkOccasion).filter((o) => o.occasion);
+  const [first, ...rest] = all;
+  const { occasion, occasionType, occasionSuffix } = first ?? { occasion: "", occasionType: "", occasionSuffix: "" };
+  return { sponsorName, sponsorSuffix, occasion, occasionType, occasionSuffix, ...(rest.length ? { moreOccasions: rest } : {}) };
 }
 
 const withSuffix = (name: string, suffix?: string) => (suffix ? name + " " + suffix : name);
@@ -67,9 +83,16 @@ const withSuffix = (name: string, suffix?: string) => (suffix ? name + " " + suf
 function sponsorLine(b: Doc<"kiddushBookings">) {
   return withSuffix(b.sponsorName, b.sponsorSuffix);
 }
-/** "לזכות בנם משה שיחי׳". רישום ישן בלי סוג: "לרגל …" */
+/** "לזכות בנם משה שיחי׳". רישום ישן בלי סוג: "לרגל …". כמה סיבות: כל אחת בשורה משלה (ירידת שורה) */
 function occasionLine(b: Doc<"kiddushBookings">) {
-  return b.occasion ? (b.occasionType || "לרגל") + " " + withSuffix(b.occasion, b.occasionSuffix) : "";
+  const one = (type: string | undefined, occasion: string, suffix: string | undefined) =>
+    occasion ? (type || "לרגל") + " " + withSuffix(occasion, suffix) : "";
+  return [
+    one(b.occasionType, b.occasion, b.occasionSuffix),
+    ...(b.moreOccasions ?? []).map((m) => one(m.occasionType, m.occasion, m.occasionSuffix)),
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 type Cosponsor = NonNullable<Doc<"kiddushBookings">["cosponsors"]>[number];
@@ -83,9 +106,8 @@ function fullSponsorLine(b: Doc<"kiddushBookings">, by: string) {
   return lines.join(by ? ` ו${by} ` : " ו");
 }
 
-const cosponsorArgs = v.optional(
-  v.array(v.object({ userId: v.optional(v.id("users")), sponsorName: v.string(), sponsorSuffix: v.optional(v.string()) })),
-);
+const cosponsorInput = v.object({ userId: v.optional(v.id("users")), sponsorName: v.string(), sponsorSuffix: v.optional(v.string()) });
+const cosponsorArgs = v.optional(v.array(cosponsorInput));
 
 /** בדיקת השותפים מהטופס. ברישום של חבר קהילה כל שותף חייב להיות חבר קהילה (כדי שיוכל לאשר) */
 async function buildCosponsors(
@@ -550,6 +572,62 @@ export const registerManual = mutation({
         await notify(ctx, args.synagogueId, userId, c.userId, args.dateKey,
           `${registrant} רשם אותך כשותף לקידוש. יש לאשר או לדחות בלוח הקידושים.`);
       }
+    }
+  },
+});
+
+/** גבאי או רב מוסיפים בעלי קידוש לרישום קיים. שותף בלי חשבון נחשב מאושר, ושותף עם חשבון מקבל בקשה לאשר */
+export const addSponsors = mutation({
+  args: { synagogueId: v.id("synagogues"), dateKey: v.string(), label: v.string(), cosponsors: v.array(cosponsorInput) },
+  handler: async (ctx, args) => {
+    const { userId } = await requireManager(ctx, args.synagogueId);
+    const booking = await requireBooking(ctx, args.synagogueId, args.dateKey);
+    if (booking.status === "blocked") {
+      throw new ConvexError("התאריך חסום");
+    }
+    const existing = booking.cosponsors ?? [];
+    if (!args.cosponsors.length) {
+      throw new ConvexError("נא להוסיף בעל קידוש");
+    }
+    if (existing.length + args.cosponsors.length > MAX_COSPONSORS) {
+      throw new ConvexError(`אפשר להוסיף עד ${MAX_COSPONSORS} שותפים`);
+    }
+    const added = await buildCosponsors(ctx, args.synagogueId, booking.userId, args.cosponsors, false);
+    const taken = new Set(existing.map((c) => c.userId).filter(Boolean));
+    if (added.some((c) => c.userId && taken.has(c.userId))) {
+      throw new ConvexError("אחד השותפים כבר ברישום");
+    }
+    await ctx.db.patch(booking._id, { cosponsors: [...existing, ...added] });
+    const manager = await publicName(ctx, userId);
+    const label = clip(args.label, 80);
+    for (const c of added) {
+      if (c.userId) {
+        await notify(ctx, args.synagogueId, userId, c.userId, args.dateKey,
+          `${manager} הוסיף אותך כשותף לקידוש ב${label}. יש לאשר או לדחות בלוח הקידושים.`);
+      }
+    }
+    if (!booking.manual && booking.userId !== userId) {
+      await notify(ctx, args.synagogueId, userId, booking.userId, args.dateKey,
+        `${manager} הוסיף שותף לקידוש שלך ב${label}: ${added.map(cosponsorLine).join(", ")}.`);
+    }
+  },
+});
+
+/** גבאי או רב מסירים בעל קידוש נוסף. line: השורה כפי שמוצגת, לוודא שמסירים את מי שהתכוונו */
+export const removeCosponsor = mutation({
+  args: { synagogueId: v.id("synagogues"), dateKey: v.string(), label: v.string(), index: v.number(), line: v.string() },
+  handler: async (ctx, args) => {
+    const { userId } = await requireManager(ctx, args.synagogueId);
+    const booking = await requireBooking(ctx, args.synagogueId, args.dateKey);
+    const list = booking.cosponsors ?? [];
+    const target = list[args.index];
+    if (target === undefined || cosponsorLine(target) !== args.line) {
+      throw new ConvexError("הרשימה השתנתה. נסו שוב");
+    }
+    await ctx.db.patch(booking._id, { cosponsors: list.filter((_, i) => i !== args.index) });
+    if (target.userId) {
+      await notify(ctx, args.synagogueId, userId, target.userId, args.dateKey,
+        `הוסרת מהשותפות בקידוש ב${clip(args.label, 80)} על ידי הגבאי.`);
     }
   },
 });

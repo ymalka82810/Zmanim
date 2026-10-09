@@ -4,6 +4,8 @@
 const { H, esc, pad, pkey, today0, gShort, gFull, heMonth, heDay, heYear, heFull, fmtTime,
   getSlots, slotFor, slotTitle, monthRange } = window.KiddushCalendar || {};
 const $ = s => document.querySelector(s);
+/** כמה סיבות לקידוש מגיעות בשורות נפרדות. בטקסט רציף מפרידים ביניהן בנקודה */
+const occInline = t => esc(String(t).replace(/\n/g, ' · '));
 const Auth = window.SiteAuth;
 const ROLE_LABEL = {gabbai:'גבאי', rabbi:'רב', member:'חבר קהילה'};
 const ACCOUNT_URL = '../account/';
@@ -216,7 +218,7 @@ function mineHTML(){
     return `<div class="card">
       <div class="row" style="justify-content:space-between"><div><div class="meta">${esc(heFull(sl.hd))} | ${esc(gFull(sl.date))}</div><h3>${esc(slotTitle(sl))}</h3></div>
       ${b.status==='approved'?'<span class="chip appr">מאושר</span>':'<span class="chip pend">ממתין לאישור</span>'}</div>
-      <div class="small">${esc(syn().kiddushBy)} ${esc(b.sponsorLine)}${b.occasionLine?' | '+esc(b.occasionLine):''}</div>
+      <div class="small">${esc(syn().kiddushBy)} ${esc(b.sponsorLine)}${b.occasionLine?' | '+occInline(b.occasionLine):''}</div>
       ${partnersHTML(b)}
       <div class="meta">אושרו הנחיות גרסה ${b.termsVersion||'—'}</div>
       ${outdated?`<div class="warn">ההנחיות עודכנו לגרסה ${ct.version}. יש לעיין ולאשר מחדש.</div>`:''}
@@ -232,7 +234,7 @@ function mineHTML(){
     return `<div class="card">
       <div class="row" style="justify-content:space-between"><div><div class="meta">${esc(heFull(sl.hd))} | ${esc(gFull(sl.date))}</div><h3>${esc(slotTitle(sl))}</h3></div>
       ${pend?'<span class="chip pend">ממתין לאישורך</span>':'<span class="chip appr">אישרת</span>'}</div>
-      <div class="small">${esc(b.invitedBy)} הוסיף אותך כשותף לקידוש: ${esc(syn().kiddushBy)} ${esc(b.sponsorLine)}${b.occasionLine?' | '+esc(b.occasionLine):''}</div>
+      <div class="small">${esc(b.invitedBy)} הוסיף אותך כשותף לקידוש: ${esc(syn().kiddushBy)} ${esc(b.sponsorLine)}${b.occasionLine?' | '+occInline(b.occasionLine):''}</div>
       ${partnersHTML(b)}
       <div class="row" style="margin-top:10px">${pend
         ? `<button class="btn ok" data-act="respond" data-a="1" data-k="${k}">אישור ההשתתפות</button><button class="btn danger" data-act="respond" data-a="0" data-k="${k}">דחייה</button>`
@@ -245,7 +247,7 @@ function mineHTML(){
     return `<div class="card">
       <div class="row" style="justify-content:space-between"><div><div class="meta">${esc(heFull(sl.hd))} | ${esc(gFull(sl.date))}</div><h3>${esc(slotTitle(sl))}</h3></div>
       <span class="chip block">נדחה</span></div>
-      <div class="small">${esc(s.kiddushBy)} ${esc(r.sponsorLine)}${r.occasionLine?' | '+esc(r.occasionLine):''}</div>
+      <div class="small">${esc(s.kiddushBy)} ${esc(r.sponsorLine)}${r.occasionLine?' | '+occInline(r.occasionLine):''}</div>
       ${r.reason ? `<div class="warn">סיבת הדחייה: ${esc(r.reason)}</div>` : ''}
       <div class="meta">נדחה ב${esc(fmtTime(r.rejectedAt))}</div>
       <div class="row" style="margin-top:10px"><button class="btn sec" data-act="dismissRejection" data-id="${r._id}">הבנתי, הסתרה</button></div>
@@ -281,7 +283,7 @@ function manageHTML(){
   const pendHTML = pend.length ? pend.map(b => {
     const k = b.dateKey, sl = slotFor(k, !!s.il);
     return `<div class="li"><div class="grow"><div class="t">${esc(slotTitle(sl))} <span class="meta">${esc(gShort(sl.date))}</span></div>
-      <div class="small">${esc(b.sponsorLine)}${b.occasionLine?' | '+esc(b.occasionLine):''}</div>
+      <div class="small">${esc(b.sponsorLine)}${b.occasionLine?' | '+occInline(b.occasionLine):''}</div>
       ${partnersHTML(b)}
       <div class="meta">נרשם: ${esc(b.registrant)}${b.phone?' | '+esc(b.phone):''}${pkey(k)<t0?' | התאריך עבר':''}</div></div>
       <div class="row"><button class="btn ok" data-act="approve" data-k="${k}" ${b.awaitingPartners?'disabled title="ממתין לאישור השותפים"':''}>אישור</button><button class="btn danger" data-act="reject" data-k="${k}">דחייה</button></div></div>`;
@@ -300,12 +302,26 @@ const sheetHead = (t, sub) => `<div class="sh"><div style="flex:1"><h2>${esc(t)}
 let toastT;
 function toast(msg){ let t = $('.toast'); if (!t){ t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role','status'); document.body.appendChild(t); } t.textContent = msg; clearTimeout(toastT); toastT = setTimeout(() => t.remove(), 3200); }
 
+/** לגבאי ולרב: השותפים עם כפתור הסרה */
+function managerPartnersHTML(b, k){
+  const list = b.cosponsors || [];
+  if (!list.length) return '';
+  return `<div class="list" style="margin-top:8px">${list.map((c, i) => `<div class="li"><div class="grow"><div class="t">${esc(c.line)}</div>${c.status==='pending'?'<div class="meta">ממתין לאישור השותף</div>':''}</div>
+    <button class="btn danger" data-act="rmSponsor" data-k="${k}" data-i="${i}" data-line="${esc(c.line)}">הסרה</button></div>`).join('')}</div>`;
+}
+function sponsorsSheet(k){
+  const sl = slotFor(k, !!syn().il);
+  openSheet(sheetHead('הוספת בעל קידוש', slotTitle(sl)+' | '+heFull(sl.hd)) + coHTML('s', true) +
+    `<div class="row" style="margin-top:16px"><button class="btn" data-act="doAddSponsors" data-k="${k}">הוספה</button><button class="btn ghost" data-act="close">ביטול</button></div>`);
+  A.addCo({ p: 's' });
+}
+
 function slotSheet(k){
   const s = syn(), sl = slotFor(k, !!s.il), b = bookingOf(k), past = sl.date < today0();
   let html = sheetHead(slotTitle(sl), heFull(sl.hd)+' | '+gFull(sl.date));
   if (sl.subs.length) html += `<p class="small muted">${esc(sl.subs.join(', '))}</p>`;
   if (b && b.status !== 'blocked'){
-    html += announceView(b) + partnersHTML(b)
+    html += announceView(b) + (isManager() && !past ? managerPartnersHTML(b, k) : partnersHTML(b))
       + (b.partner === 'pending' ? `<div class="warn">${esc(b.invitedBy)} הוסיף אותך כשותף לקידוש. האם להשתתף?</div>` : '')
       + (isManager() && b.status === 'pending' && b.awaitingPartners ? '<div class="warn">הבקשה ממתינה לאישור של כל השותפים, ואז אפשר לאשר אותה.</div>' : '')
       + `<dl class="kv"><dt>סטטוס</dt><dd>${b.status==='approved'?'מאושר':'ממתין לאישור'}</dd>
@@ -320,6 +336,7 @@ function slotSheet(k){
   if (isManager() && !past){
     if (b?.status === 'pending') acts.push(`<button class="btn ok" data-act="approve" data-k="${k}" ${b.awaitingPartners?'disabled':''}>אישור</button><button class="btn danger" data-act="reject" data-k="${k}">דחייה</button>`);
     if (b?.status === 'approved' && !b.mine) acts.push(`<button class="btn danger" data-act="reject" data-k="${k}">ביטול הקידוש</button>`);
+    if (b && b.status !== 'blocked') acts.push(`<button class="btn sec" data-act="addSponsor" data-k="${k}">הוספת בעל קידוש</button>`);
     if (b?.status === 'blocked') acts.push(`<button class="btn sec" data-act="unblock" data-k="${k}">שחרור התאריך</button>`);
     if (!b) acts.push(`<button class="btn sec" data-act="manual" data-k="${k}">רישום ידני</button><button class="btn sec" data-act="block" data-k="${k}">חסימה / קידוש קהילתי</button>`);
   }
@@ -341,7 +358,17 @@ function announceHTML(p){
     <label class="f" for="${p}Occ">סיבת הקידוש (לא חובה)</label>
     <div class="an-line"><select id="${p}OccType" data-announce="${p}" aria-label="סוג">${options(Object.keys(OCC_HINT), 'לרגל')}</select><input type="text" id="${p}Occ" maxlength="80" placeholder="${OCC_HINT['לרגל']}">
       <select id="${p}OccSfx" aria-label="תוספת אחרי השם">${options(LIVING_SFX, '', 'ללא')}</select></div>
+    <div id="${p}OccMore"></div>
+    <button type="button" class="btn ghost" data-act="addOcc" data-p="${p}">+ סיבה נוספת (לרגל / לזכות...)</button>
   </div>`;
+}
+const MAX_OCC = 5;
+/** שורת סיבה נוספת: סוג, שם ותוספת, כמו הראשונה */
+function occRow(){
+  return `<div class="an-line occ-row"><select class="occ-type" aria-label="סוג">${options(Object.keys(OCC_HINT), 'לרגל')}</select>
+    <input type="text" class="occ-text" maxlength="80" placeholder="${OCC_HINT['לרגל']}" aria-label="סיבת הקידוש">
+    <select class="occ-sfx" aria-label="תוספת אחרי השם">${options(LIVING_SFX, '', 'ללא')}</select>
+    <button type="button" class="btn ghost" data-act="rmOcc" aria-label="הסרת הסיבה">×</button></div>`;
 }
 /** סוג הסיבה השתנה: לעילוי נשמת מקבל ז״ל / ע״ה, והשאר שיחי׳ / שתחי׳ / שיחיו */
 function announceTypeChanged(p){
@@ -351,12 +378,14 @@ function announceTypeChanged(p){
 }
 const announceValues = p => ({
   sponsorName: $('#'+p+'Sponsor').value, sponsorSuffix: $('#'+p+'SponsorSfx').value,
-  occasionType: $('#'+p+'OccType').value, occasion: $('#'+p+'Occ').value, occasionSuffix: $('#'+p+'OccSfx').value
+  occasionType: $('#'+p+'OccType').value, occasion: $('#'+p+'Occ').value, occasionSuffix: $('#'+p+'OccSfx').value,
+  moreOccasions: [...document.querySelectorAll('#'+p+'OccMore .occ-row')].map(r => ({
+    occasionType: r.querySelector('.occ-type').value, occasion: r.querySelector('.occ-text').value, occasionSuffix: r.querySelector('.occ-sfx').value }))
 });
 function announceView(b){
   const s = syn();
   return `<div class="announce view"><div class="an-head">${esc(s.kiddushHeading)}</div>
-    <div>${s.kiddushBy?esc(s.kiddushBy)+' ':''}<b>${esc(b.sponsorLine)}</b></div>${b.occasionLine?`<div>${esc(b.occasionLine)}</div>`:''}</div>`;
+    <div>${s.kiddushBy?esc(s.kiddushBy)+' ':''}<b>${esc(b.sponsorLine)}</b></div>${b.occasionLine?`<div>${esc(b.occasionLine).replace(/\n/g,'<br>')}</div>`:''}</div>`;
 }
 
 /** שותפים שעוד לא אישרו, או כל השותפים למי שרשאי לראות אותם */
@@ -573,6 +602,24 @@ const A = {
     list.insertAdjacentHTML('beforeend', coRow(box.dataset.noacc === '1'));
   }),
   rmCo: (d, t) => t.closest('.co-row').remove(),
+  addOcc: d => {
+    const box = $('#'+d.p+'OccMore');
+    if (box.children.length + 1 >= MAX_OCC) return toast('אפשר להוסיף עד '+MAX_OCC+' סיבות');
+    box.insertAdjacentHTML('beforeend', occRow());
+  },
+  rmOcc: (d, t) => t.closest('.occ-row').remove(),
+  addSponsor: d => sponsorsSheet(d.k),
+  doAddSponsors: guard(async d => {
+    const ce = coError('s'); if (ce) return toast(ce);
+    const list = coPayload('s');
+    if (!list.length) return toast('נא להוסיף בעל קידוש');
+    await call('kiddush:addSponsors', { dateKey:d.k, label:slotLabel(d.k), cosponsors:list });
+    closeSheet(); toast('נוסף');
+  }),
+  rmSponsor: guard(async d => {
+    await call('kiddush:removeCosponsor', { dateKey:d.k, label:slotLabel(d.k), index:Number(d.i), line:d.line });
+    closeSheet(); toast('הוסר');
+  }),
   respond: guard(async d => {
     const accept = d.a === '1';
     await call('kiddush:respondCosponsor', { dateKey:d.k, label:slotLabel(d.k), accept });
@@ -635,6 +682,12 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   if (e.target.dataset.announce) announceTypeChanged(e.target.dataset.announce);
+  if (e.target.classList?.contains('occ-type')){
+    // סוג הסיבה בשורה נוספת השתנה: לעילוי נשמת מקבל ז״ל / ע״ה, והשאר שיחי׳ / שתחי׳ / שיחיו
+    const row = e.target.closest('.occ-row'), type = e.target.value;
+    row.querySelector('.occ-sfx').innerHTML = options(type === MEMORIAL ? MEMORIAL_SFX : LIVING_SFX, '', 'ללא');
+    row.querySelector('.occ-text').placeholder = OCC_HINT[type] || '';
+  }
   if (e.target.hasAttribute('data-co-member')){
     // בחירת חבר קהילה ממלאת את השם שלו כברירת מחדל, אלא אם הקלידו שם אחר
     const name = e.target.closest('.co-row').querySelector('.co-name');

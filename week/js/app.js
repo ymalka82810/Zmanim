@@ -159,7 +159,7 @@ function kiddushHTML(){
   const mine = S.board.bookings.filter(b => b.mine && b.dateKey >= today && b.status !== 'blocked').sort((a, b) => a.dateKey < b.dateKey ? -1 : 1);
   const body = mine.length
     ? `<div class="list">${mine.map(b => `<div class="li"><div class="grow"><div class="t">${esc(dayLabelLong(b.dateKey))}</div>
-        <div class="meta">${esc(b.sponsorLine)}${b.occasionLine ? ' · ' + esc(b.occasionLine) : ''}</div></div>
+        <div class="meta">${esc(b.sponsorLine)}${b.occasionLine ? ' · ' + esc(b.occasionLine.replace(/\n/g, ' · ')) : ''}</div></div>
         ${b.status === 'approved' ? '<span class="chip appr">מאושר</span>' : '<span class="chip pend">ממתין לאישור</span>'}</div>`).join('')}</div>`
     : '<p class="small muted">אין לך קידוש קרוב.</p>';
   return section('הקידוש שלי', `<div class="card">${body}<div class="row" style="margin-top:8px"><a class="btn sec" href="../kiddush/">ללוח הקידושים</a></div></div>`);
