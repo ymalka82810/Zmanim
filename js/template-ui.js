@@ -481,8 +481,9 @@ function fillTextArea(s, rows, words, biggest) {
   }
   const flags = ['b', 'i', 'u'], list = [...own.values()];
   const every = f => list.every(o => o[f]), some = f => list.some(o => o[f]);
-  // כל עיצוב שנמצא בטקסט מסומן בו במפורש, גם כשהוא בכל המילים – כדי שיופיע בשדה הטקסט וניתן יהיה לבטל אותו
-  const tagged = f => some(f);
+  // רק עיצוב שבחלק מהמילים מסומן בטקסט. עיצוב שבכל המילים הוא של האזור כולו (כפתורי "עיצוב הטקסט"),
+  // כדי שגם טקסט שנוסף לאזור ייכתב כמו שאר הטקסט בו
+  const tagged = f => some(f) && !every(f);
   // עברית: בכל שורה מימין לשמאל; סימן פיסוק נצמד למילה שלפניו
   const lines = rows.map(r => {
     const ps = r.parts.slice().sort((a, b) => b.box.x - a.box.x);
@@ -494,10 +495,11 @@ function fillTextArea(s, rows, words, biggest) {
   s.box = { ...s.box, x: u.x, w: u.w, ...(plain.box.font ? { font: plain.box.font } : {}) };
   delete s.box.italic;
   s.style = style;
-  if (tagged('b')) s.bold = false;
-  if (tagged('i')) s.italic = false;
+  // מודגש בכל המילים: גם כשהגופן עצמו רגיל וההדגשה נראית רק בעובי הקו
+  if (tagged('b')) s.bold = false; else if (every('b')) s.bold = true; else delete s.bold;
+  if (tagged('i')) s.italic = false; else if (every('i')) s.italic = true; else delete s.italic;
   delete s.underline; delete s.ulDim;
-  if (ulDims.length) s.ulDim = ulDims[0];
+  if (ulDims.length) { if (every('u')) s.underline = ulDims[0]; else s.ulDim = ulDims[0]; }
   return lines.join('\n');
 }
 
@@ -849,11 +851,31 @@ function endMove() {
 
 /* ---------- רשימת האזורים ---------- */
 
+/**
+ * בחירת הגופן של האזור מבין הגופנים שבקובץ, כשיש בו יותר מגופן אחד.
+ * ברירת המחדל – הגופן של הטקסט שהיה באזור (או הגופן הנפוץ, באזור שסומן על מקום ריק)
+ */
+function fontField(s) {
+  const seen = new Set(), opts = [];
+  for (const [k, f] of Object.entries(st.fonts || {})) {
+    const label = fontLabel(f) + (f.bold ? ' (מודגש)' : '') + (f.italic ? ' (נטוי)' : '');
+    if (seen.has(label) && k !== s.box.font) continue;
+    seen.add(label);
+    opts.push([k, label]);
+  }
+  if (opts.length < 2) return '';
+  const cur = s.box.font && st.fonts[s.box.font] ? s.box.font : fontUse(st.slots).mainFont;
+  return '<div class="wide"><label>הגופן</label><select data-k="font">' +
+    opts.map(([k, label]) => '<option value="' + esc(k) + '"' + (k === cur ? ' selected' : '') + '>' + esc(label) + '</option>').join('') +
+    '</select></div>';
+}
+
 function slotFields(s) {
   if (s.kind === 'text') {
     return '<div class="rgrid"><div class="wide"><label>הטקסט באזור (שורה חדשה – ירידת שורה)</label>' +
       '<div class="fmt-bar">' + FORMAT_BTNS + '<span class="muted small">סמנו מילים בטקסט ולחצו – הדגשה, נטייה או קו תחתון</span></div><textarea data-k="text" dir="auto" rows="' +
-      Math.min(6, Math.max(1, String(s.text || '').split('\n').length)) + '" placeholder="ריק – האזור יימחק מהלוח">' + esc(s.text) + '</textarea></div></div>';
+      Math.min(6, Math.max(1, String(s.text || '').split('\n').length)) + '" placeholder="ריק – האזור יימחק מהלוח">' + esc(s.text) + '</textarea></div>' +
+      fontField(s) + '</div>';
   }
   if (s.kind === 'rule') {
     const fixed = s.base === 'שעה קבועה';
@@ -1230,6 +1252,8 @@ $('tplSlots').addEventListener('input', e => {
     }
     focusSlot(+ed.dataset.i); return;
   }
+  // גופן אחר מהקובץ: גם הודעת האותיות החסרות מתעדכנת לפיו
+  if (k === 'font') { s.box = { ...s.box, font: v }; renderFontFill(); schedulePreviewRefresh(); return; }
   if (k === 'sizePct' || k === 'lineHeightPct') { s[k] = Number(v); schedulePreviewRefresh(); return; }
   if (k === 'spaceBefore' || k === 'spaceAfter') { if (v === '') delete s[k]; else s[k] = Number(v); schedulePreviewRefresh(); return; }
   if (k === 'joinPrev') { if (e.target.checked) s.joinPrev = true; else delete s.joinPrev; renderSlots(); schedulePreviewRefresh(); return; }
