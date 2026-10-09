@@ -81,7 +81,7 @@ async function readPdf(file) {
 
 /**
  * ב-Word ובעוד תוכנות טקסט נשמר לפעמים בכמה פריטים צמודים: שעה ("1", "8", ":", "24")
- * או כותרת ("מנחה ערב", "שבת"). מחברים פריטים סמוכים באותה שורה – ספרות עם ספרות ועברית עם עברית –
+ * או כותרת ("מנחה ערב", "שבת"). מחברים פריטים סמוכים באותה שורה – ספרות עם ספרות ועברית עם עברית באותו גופן –
  * כדי שהשעה והתווית שלה יזוהו בשלמותן.
  */
 export function joinFragments(items) {
@@ -93,7 +93,9 @@ export function joinFragments(items) {
   for (const it of joinable) {
     const gap = run ? it.x - (run.x + run.w) : 0;
     const touches = run && run.k === it.k && Math.abs(it.baseline - run.baseline) < run.size * 0.3 &&
-      Math.abs(it.size - run.size) < run.size * 0.1 && gap > -run.size * 0.3 && gap < run.size * (it.k === 'num' ? 0.15 : 0.5);
+      Math.abs(it.size - run.size) < run.size * 0.1 && gap > -run.size * 0.3 && gap < run.size * (it.k === 'num' ? 0.15 : 0.5) &&
+      // מילה בגופן אחר (מודגש, נטוי) נשארת לבדה, כדי שהעיצוב שלה ייקרא באזור טקסט
+      (it.k === 'num' || (it.font === run.font && !!it.italic === !!run.italic));
     if (touches) {
       // עברית: הפריט השמאלי בא אחרי הקודם בטקסט. רווח רק כשיש רווח גם בדף
       const sp = it.k === 'heb' && gap > run.size * 0.15 && !/[-–־]$/.test(it.str) && !/^[-–־]/.test(run.str) ? ' ' : '';

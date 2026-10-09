@@ -405,6 +405,9 @@ const covers = (a, b) => {
 };
 /** טקסט מהקובץ במקום שממנו האזור s הוזז – נמחק בציור */
 const movedFrom = (s, b) => !!s.origin && (covers(s.origin.box, b) || (!!s.origin.labelBox && covers(s.origin.labelBox, b)));
+/** משפחת הגופן של מילה: הגרסה המודגשת או הנטויה של גופן היא אותו גופן, לא גופן אחר */
+const fontFamily = c => { const f = st.fonts[c.box.font]; return (f && f.family) || c.box.font || ''; };
+const fontOf = c => st.fonts[c.box.font] || {};
 
 /**
  * אזור של פרשה שנמתח על טקסט שלפניו ("לשבת", "זמני התפילות לשבת"): הטקסט המכוסה נשמר
@@ -438,7 +441,7 @@ function readTextArea(s) {
   }
   // גופן השורה הוא של המילה הגדולה בה; שורות רצופות באותו גופן ובאותה נטייה הן קבוצה אחת
   const biggest = parts => parts.reduce((a, c) => (c.box.size || 0) > (a.box.size || 0) ? c : a, parts[0]);
-  const lookOf = r => { const w = biggest(r.parts.filter(c => words.includes(c))); return w ? (w.box.font || '') + '|' + (w.box.italic ? 'i' : '') : null; };
+  const lookOf = r => { const w = biggest(r.parts.filter(c => words.includes(c))); return w ? fontFamily(w) : null; };
   const groups = [];
   for (const r of rows) {
     const look = lookOf(r), g = groups[groups.length - 1];
@@ -459,14 +462,22 @@ function fillTextArea(s, rows, words, biggest) {
   fitKiddush(s, false);   // מספר השורות, קו הבסיס, הריווח והגודל
   const all = rows.flatMap(r => r.parts), u = all.reduce((b, c) => unionBox(b, c.box), all[0].box);
   const first = biggest(all.filter(c => words.includes(c)));
+  // האזור נכתב בגרסה הרגילה של הגופן, וההדגשה והנטייה באות מהסימון שבטקסט
+  const plain = biggest(all.filter(c => words.includes(c) && !fontOf(c).bold && !fontOf(c).italic)) || first;
   // הדגשה ורקע נמדדים על שורה אחת – באזור של כמה שורות עובי הקו יחסית לגובה כולו נראה דק
   const style = analyzeSlot(st.canvas, first.box);
   // המראה של כל מילה לחוד: מה שנמצא בכולן הוא מראה האזור כולו, ומה שנמצא רק בחלקן מסומן במילים עצמן
-  const own = new Map(), ulDims = [];
-  for (const c of all.filter(c => words.includes(c))) {
+  const own = new Map(), ulDims = [], mine = all.filter(c => words.includes(c));
+  // עובי הקו של כל מילה, ביחס לגובה שלה. Word מדגיש גופן עברי שאין לו גרסה מודגשת בקו מתאר עבה, באותו גופן –
+  // אז ההדגשה נראית רק בתמונה: מילה שהקו שלה עבה בבירור מהרגיל באזור
+  const looks = new Map(mine.map(c => [c, analyzeSlot(st.canvas, c.box)]));
+  const strokes = [...looks.values()].map(l => l.stroke || 0).sort((a, b) => a - b), usual = strokes[(strokes.length - 1) >> 1];
+  for (const c of mine) {
     const size = c.box.size || c.box.h * 0.72, ul = findUnderline({ ...c.box, size, baseline: lineBase(c.box) }, style.bg);
     if (ul) ulDims.push(ul);
-    own.set(c, { b: analyzeSlot(st.canvas, c.box).bold, i: !!c.box.italic, u: !!ul });
+    const lk = looks.get(c), thick = lk.bold || (usual > 0 && lk.stroke > usual * 1.3);
+    // מילה מודגשת או נטויה בקובץ היא לרוב בגופן נפרד (David-Bold), או מוטה במטריצה (box.italic)
+    own.set(c, { b: !!fontOf(c).bold || thick, i: !!c.box.italic || !!fontOf(c).italic, u: !!ul });
   }
   const flags = ['b', 'i', 'u'], list = [...own.values()];
   const every = f => list.every(o => o[f]), some = f => list.some(o => o[f]);
@@ -480,7 +491,7 @@ function fillTextArea(s, rows, words, biggest) {
       flags.map(f => on(k, f) && !on(k + 1, f) ? '[/' + f + ']' : '').join('')).join(' ').replace(/\s+([!?.,:;…])/g, '$1');
   });
   s.old = lines.join(' ').replace(/\[\/?[biu]\]/g, '');
-  s.box = { ...s.box, x: u.x, w: u.w, ...(first.box.font ? { font: first.box.font } : {}) };
+  s.box = { ...s.box, x: u.x, w: u.w, ...(plain.box.font ? { font: plain.box.font } : {}) };
   delete s.box.italic;
   s.style = style;
   if (tagged('b')) s.bold = false;
