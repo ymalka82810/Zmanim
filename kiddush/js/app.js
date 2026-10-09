@@ -397,7 +397,7 @@ function partnersHTML(b){
 const MAX_CO = 5;
 function coRow(noAccount){
   const opts = (noAccount ? '<option value="">ללא חשבון (רישום ידני)</option>' : '<option value="" disabled selected>בחירת שותף מהקהילה</option>')
-    + S.memberChoices.map(m => `<option value="${esc(m.userId)}" data-name="${esc(m.name)}">${esc(m.name)}</option>`).join('');
+    + S.memberChoices.filter(m => noAccount || !m.isMe).map(m => `<option value="${esc(m.userId)}" data-name="${esc(m.name)}">${esc(m.name)}</option>`).join('');
   const by = syn().kiddushBy;
   return `<div class="co-row"><select data-co-member aria-label="חבר קהילה">${opts}</select>
     <div class="an-line">${by?`<span class="an-fixed">${esc(by)}</span>`:''}<input type="text" class="co-name" maxlength="60" placeholder="משפחת כהן" aria-label="שם השותף">

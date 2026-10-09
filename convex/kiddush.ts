@@ -116,6 +116,7 @@ async function buildCosponsors(
   ownerId: Id<"users">,
   input: { userId?: Id<"users">; sponsorName: string; sponsorSuffix?: string }[] | undefined,
   requireAccount: boolean,
+  selfId?: Id<"users">,
 ): Promise<Cosponsor[]> {
   const list = input ?? [];
   if (list.length > MAX_COSPONSORS) {
@@ -150,7 +151,8 @@ async function buildCosponsors(
       ...(c.userId ? { userId: c.userId } : {}),
       sponsorName,
       sponsorSuffix,
-      status: c.userId ? "pending" : "confirmed",
+      // גבאי שמוסיף את עצמו כשותף לא צריך לאשר לעצמו
+      status: c.userId && c.userId !== selfId ? "pending" : "confirmed",
     });
   }
   return out;
@@ -237,7 +239,7 @@ export const memberChoices = query({
       .withIndex("by_synagogue", (q) => q.eq("synagogueId", args.synagogueId))
       .collect();
     const choices = await Promise.all(
-      memberships.filter((m) => m.userId !== userId).map(async (m) => ({ userId: m.userId, name: await publicName(ctx, m.userId) })),
+      memberships.map(async (m) => ({ userId: m.userId, name: await publicName(ctx, m.userId), isMe: m.userId === userId })),
     );
     return choices.sort((a, b) => a.name.localeCompare(b.name, "he"));
   },
@@ -594,7 +596,7 @@ export const addSponsors = mutation({
     if (existing.length + args.cosponsors.length > MAX_COSPONSORS) {
       throw new ConvexError(`אפשר להוסיף עד ${MAX_COSPONSORS} שותפים`);
     }
-    const added = await buildCosponsors(ctx, args.synagogueId, booking.userId, args.cosponsors, false);
+    const added = await buildCosponsors(ctx, args.synagogueId, booking.userId, args.cosponsors, false, userId);
     const taken = new Set(existing.map((c) => c.userId).filter(Boolean));
     if (added.some((c) => c.userId && taken.has(c.userId))) {
       throw new ConvexError("אחד השותפים כבר ברישום");

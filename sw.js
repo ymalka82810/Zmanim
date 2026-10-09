@@ -6,20 +6,22 @@
  * בשרת המקומי (npm start) ובאפליקציה הקבצים נמצאים במכשיר, ולכן שם קודם מהרשת, כדי ששינוי יופיע מיד.
  * גופנים: מהמטמון, ואם אין – מהרשת.
  */
-const CACHE = 'luach-1e593c461f';
+const CACHE = 'luach-aaa7868bd2';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/app-update.js', 'js/app.js', 'js/astro.js', 'js/auth.js', 'js/community.js', 'js/config.js', 'js/convex-config.js', 'js/dates.js', 'js/dialog.js', 'js/font-fill.js', 'js/hebrew.js', 'js/image.js', 'js/luach.js', 'js/menu.js', 'js/moadim.js', 'js/native-files.js', 'js/preload.js', 'js/render.js', 'js/settings-sync.js', 'js/template-place.js', 'js/template-read.js', 'js/template-render.js', 'js/template-ui.js', 'js/text-edit.js', 'js/theme.js', 'js/zmanim.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon.svg', 'icons/maskable-512.png',
   'vendor/hebcal/hebcal-core-6.9.3.min.js',
   'vendor/convex/convex-browser-1.46.0.js',
+  'vendor/qrcode/qrcode-generator-1.4.4.js',
   'kiddush/', 'kiddush/index.html', 'kiddush/css/styles.css', 'kiddush/js/app.js', 'kiddush/js/calendar.js',
   'gabbai/', 'gabbai/index.html', 'gabbai/css/styles.css', 'gabbai/js/app.js',
   'aliyot/', 'aliyot/index.html', 'aliyot/js/app.js',
   'account/', 'account/index.html', 'account/css/styles.css', 'account/js/app.js',
   'community-calendar/', 'community-calendar/index.html', 'community-calendar/js/app.js',
   'guest/', 'guest/index.html', 'guest/css/styles.css', 'guest/js/app.js',
-  'week/', 'week/index.html', 'week/js/app.js'
+  'week/', 'week/index.html', 'week/js/app.js',
+  'tv/', 'tv/index.html', 'tv/css/styles.css', 'tv/js/app.js'
 ];
 
 const LOCAL = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
