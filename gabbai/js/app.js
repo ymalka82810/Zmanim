@@ -234,7 +234,7 @@ function viewMine(){
   </div>
   <div class="bar" style="margin-top:14px"><button class="btn" id="pledgeBtn">רישום חיוב חדש</button></div>
   <div class="panel scroll" style="margin-top:14px"><table><thead><tr><th>תאריך</th><th>מה</th><th class="num">סכום</th><th>סטטוס</th></tr></thead><tbody>
-    ${list.map(t=>`<tr><td>${dateCell(t.date)}</td><td>${esc(t.type==="mitzvah"?"מכירת מצווה: "+t.mitzvah:"תרומה")}<span class="sub">${esc(t.desc||"")}</span></td><td class="num">${money(t.amount)}</td>
+    ${list.map(t=>`<tr data-tx="${esc(t.id)}"><td>${dateCell(t.date)}</td><td>${esc(t.type==="mitzvah"?"מכירת מצווה: "+t.mitzvah:"תרומה")}<span class="sub">${esc(t.desc||"")}</span></td><td class="num">${money(t.amount)}</td>
     <td>${t.paid?`<span class="pill ok">שולם</span><span class="sub">${t.paidDate?esc(gFmt.format(parseIso(t.paidDate))):""} ${esc(t.method||"")}</span>`:`<span class="pill no">לא שולם</span>`}</td></tr>`).join("")}
     ${list.length?"":`<tr><td colspan="4" class="empty">עדיין לא נרשמו תרומות על שמך.</td></tr>`}
   </tbody></table></div>
@@ -409,6 +409,17 @@ function useSynagogues(synagogues){
   if(!synagogues.some(s=>s._id===id)){id=synagogues[0]?synagogues[0]._id:null;Auth.setActiveSynagogueId(id)}
   if(id!==sid||!unsubscribe) subscribe(id);
 }
+// תוצאת חיפוש (js/menu.js, SiteGo): "tx:<id>" עובר ללשונית של הרישום ומסמן את השורה שלו (עם עריכה ומחיקה).
+// רישום שאין לו שורה עם פעולות (הוצאה) נפתח בחלון העריכה
+if(window.SiteGo)SiteGo.on("tx",async id=>{
+  await SiteGo.waitFor(()=>stage==="ready");
+  const t=txs.find(x=>x.id===id);if(!t)return;
+  if(!isManager()){render();const row=$("#view").querySelector(`[data-tx="${id}"]`);if(row)SiteGo.flash(row);return}
+  tab={donation:"donations",mitzvah:"donations",petty:"petty",pettyIn:"petty",salary:"salary"}[t.type]||"home";
+  ui.donView="list";ui.donFilter="all";render();
+  const b=$("#view").querySelector(`[data-edit="${id}"]`);
+  if(b)SiteGo.flash(b);else openForm(null,t);
+});
 render();
 (async()=>{
   try{await Auth.completeSignInFromRedirect()}catch(e){console.warn(e);toast("ההתחברות נכשלה. נסו שוב.")}

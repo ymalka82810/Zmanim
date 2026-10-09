@@ -1,11 +1,14 @@
 /* החיפוש שבראש מגירת התפריט (js/menu.js). מודול שנטען בפעם הראשונה שמתחילים להקליד בשדה החיפוש.
- * מחפש בשני מקומות:
+ * מחפש בשלושה מקומות:
  *  - דפי האתר שהמשתמש רואה במגירה (SiteMenu.visiblePages), עם מילים שמובילות לכל דף – גם בלי חיבור ובלי התחברות;
+ *  - הפעולות וההגדרות שבדפים האלה (js/search-actions.js), לפי התפקיד – גם בלי חיבור;
  *  - נתוני הקהילה הפעילה ב-search:run (convex/search.ts), שמחזיר רק מה שהמשתמש רשאי לראות לפי תפקידו.
+ * כל תוצאה מובילה למקום המדויק בדף (SiteGo ב-js/menu.js): ללשונית, לחלון ולכפתור שממנו עושים את הפעולה.
  * ההשוואה (מילים נרדפות, כתיב מלא, אותיות שימוש) ב-js/search-words.js, המשותף לשרת.
  * התוצאות לא נשמרות במכשיר (בניגוד ל-SiteAuth.query), כדי שחיפושים לא יישארו באחסון של הדפדפן.
  */
 import { normalize, parseQuery, score } from './search-words.js';
+import { ACTIONS } from './search-actions.js';
 
 /* מילים שמובילות לכל דף, לפי הנתיב שב-js/menu.js: מה שיש בדף ומה שעושים בו */
 const PAGE_WORDS = {
@@ -20,6 +23,7 @@ const PAGE_WORDS = {
 
 const KINDS = {
   page:     'דפים',
+  action:   'פעולות והגדרות',
   event:    'אירועי קהילה',
   kiddush:  'קידושים',
   schedule: 'לוחות זמנים',
@@ -29,6 +33,20 @@ const KINDS = {
   fund:     'קופה',
   member:   'חברי קהילה'
 };
+
+/* הפעולות שהמשתמש יכול לעשות: הדף שלהן מוצג לו במגירה, ופעולה של גבאי ורב – רק כשידוע שהוא גבאי או רב */
+function searchActions(query){
+  const pages = new Set((window.SiteMenu ? SiteMenu.visiblePages() : []).map(p => p.path));
+  const role = window.SiteMenu ? SiteMenu.role() : { manager: null };
+  const sid = window.SiteAuth && SiteAuth.activeSynagogueId();
+  return ACTIONS
+    .filter(a => pages.has(a.page) && (a.who !== 'manager' || role.manager === true) && (sid || !a.go.includes('{sid}')))
+    .map(a => ({ kind: 'action', title: a.title, sub: '', dateKey: null,
+      href: SiteGo.href(a.page, 'ui:' + a.go.replace(/\{sid\}/g, sid)), score: score(a.title, a.words || '', query) }))
+    .filter(a => a.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8);
+}
 
 const css = `
 .sm-results .ss-group{margin:12px 10px 4px;font-size:.8rem;font-weight:700;color:#5d6b82}
@@ -112,6 +130,8 @@ function render(items, query, note){
       if (r.sub) s.append(highlighted(r.sub, query));
       a.append(s);
     }
+    // מעבר באותו דף משנה רק את ה-#, ולכן סוגרים את המגירה כדי שיראו לאן הגיעו
+    a.addEventListener('click', () => SiteMenu.close());
     results.append(a);
   }
   if (note){
@@ -132,7 +152,7 @@ async function run(){
     render([], query, q.trim() ? 'יש להקליד לפחות שתי אותיות' : '');
     return;
   }
-  const pages = searchPages(query);
+  const pages = searchPages(query).concat(searchActions(query));
   const Auth = window.SiteAuth;
   const sid = Auth && Auth.isAuthenticated() ? Auth.activeSynagogueId() : null;
   if (!sid){
@@ -144,7 +164,7 @@ async function run(){
   try { data = await Auth.client().query('search:run', { synagogueId: sid, q }); }
   catch (e){ failed = true; }
   if (id !== seq) return;   // בינתיים הקלידו עוד
-  const items = pages.concat((data && data.items || []).map(r => ({ ...r, href: SiteMenu.href(r.page) })));
+  const items = pages.concat((data && data.items || []).map(r => ({ ...r, href: SiteGo.href(r.page, r.go) })));
   const note = failed ? 'אין חיבור, ולכן החיפוש הוא רק בדפי האתר.'
     : !items.length ? 'לא נמצאו תוצאות.'
     : data && data.more ? 'יש תוצאות נוספות – אפשר לדייק את החיפוש.' : '';

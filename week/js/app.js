@@ -358,5 +358,12 @@ document.addEventListener('change', e => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#sheetWrap').hidden) closeSheet(); });
 
+/* תוצאת חיפוש (js/menu.js, SiteGo): "yahrzeit:<id>" פותח את חלון העריכה של האזכרה (שם גם המחיקה) */
+if (window.SiteGo) SiteGo.on('yahrzeit', async id => {
+  const items = await SiteGo.waitFor(() => S.yahrzeits && S.yahrzeits.items);
+  const y = items.find(x => x._id === id);
+  if (y && (y.mine || isManager())) yahrzeitSheet(y);
+});
+
 boot();
 })();

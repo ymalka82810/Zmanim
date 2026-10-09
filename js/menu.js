@@ -78,6 +78,9 @@ const css = `
 .sm-pin{--sm-bar-h:max(48px,env(safe-area-inset-top,0px));--sm-top:calc(var(--sm-bar-h) + 6px)}
 .sm-pin .sm-bar{position:sticky;top:0;z-index:40;height:var(--sm-bar-h);padding-top:0;overflow:hidden}
 .sm-pin .sm-stripe{position:sticky;top:var(--sm-bar-h);z-index:40}
+@keyframes sg-flash{0%,100%{box-shadow:0 0 0 0 rgba(171,127,46,0)}15%,60%{box-shadow:0 0 0 4px rgba(171,127,46,.85)}}
+.sg-flash{animation:sg-flash 1.3s ease-in-out 2;border-radius:8px;background-color:rgba(251,231,180,.45)!important}
+:root[data-theme="dark"] .sg-flash{background-color:rgba(90,74,30,.55)!important}
 @media print{.sm-bar,.sm-stripe,.sm-day,.sm-layer{display:none!important}}
 `;
 
@@ -202,6 +205,12 @@ window.SiteMenu = {
     return PAGES.filter(p => !hiddenPage(p, d)).map(p => ({ path: p.path, title: p.title, href: new URL(p.path, ROOT).href }));
   },
   href(path){ return new URL(path, ROOT).href; },
+  /* מה שידוע על המשתמש בקהילה הפעילה, לחיפוש: manager – true/false, או null כשלא ידוע (לא מחובר, או עוד לא נטען) */
+  role(){
+    const d = badges.data || cachedCounts();
+    return { manager: d ? d.manager : null, features: d && Array.isArray(d.features) ? d.features : [] };
+  },
+  close(){ closeMenu(); },
   /* s: { _id, name, il } של הקהילה הפעילה, או null כשאין */
   setCommunity(s){
     write(COMMUNITY_KEY, s && s.name ? { _id: s._id, name: s.name, il: !!s.il } : null);
@@ -340,7 +349,104 @@ function build(){
   document.body.prepend(bar, stripe, dayBox);
   document.body.appendChild(layer);
   pinTop(bar);
+  checkGo();
 }
+
+/* ---------- מעבר למקום מדויק בדף: #go=... ----------
+ * תוצאת חיפוש מובילה לכתובת עם #go=<יעד>, והדף פותח את המקום שממנו עושים את הפעולה ומסמן אותו בהבהוב.
+ * יעד הוא אחד מאלה:
+ *  ui:<צעד>|<צעד>|...       – סלקטורים. כל צעד חוץ מהאחרון נלחץ (לשונית, כפתור שפותח חלון), והאחרון מסומן.
+ *                              הוא לא נלחץ, כך שחיפוש לעולם לא מבצע פעולה (מחיקה, שליחה) בעצמו
+ *  <שם>:<ערך>;<צעד>|...     – רשומה: הדף רשם ב-SiteGo.on(שם, fn) איך מגיעים אליה (מעבר לחודש, פתיחת חלון),
+ *                              ואחר כך, אם יש, צעדים כמו ב-ui
+ * כל צעד מחכה שהאלמנט יופיע (הנתונים מגיעים מהשרת אחרי שהדף נטען), ופותח <details> סגור שהוא בתוכו */
+const GO_WAIT = 12000;
+const goHandlers = {};
+
+function waitFor(test, ms = GO_WAIT){
+  return new Promise((resolve, reject) => {
+    const t0 = Date.now();
+    (function poll(){
+      let v = null;
+      try { v = typeof test === 'string' ? document.querySelector(test) : test(); } catch (e) { /* סלקטור לא תקין */ }
+      if (v) return resolve(v);
+      if (Date.now() - t0 > ms) return reject(new Error('not found: ' + test));
+      setTimeout(poll, 120);
+    })();
+  });
+}
+
+function reveal(el){
+  for (let d = el.closest('details:not([open])'); d; d = d.closest('details:not([open])')) d.open = true;
+}
+
+/* מסמן את המקום: גוללים אליו ומהבהבים את השורה כולה (שורה בטבלה או ברשימה), או את האלמנט עצמו */
+function flash(el){
+  reveal(el);
+  const target = el.closest('tr, .li, .al-row, .file-row, .community-file, .syn-item') || el;
+  target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  target.classList.remove('sg-flash');
+  void target.offsetWidth;
+  target.classList.add('sg-flash');
+  setTimeout(() => target.classList.remove('sg-flash'), 2600);
+  if (el.matches('button, a, select, input:not([type=file]), textarea')) el.focus({ preventScroll: true });
+}
+
+/* האלמנט הראשון שמתאים לסלקטור ונראה על המסך. אלמנט שקיים בדף אבל מוסתר (עורך שעוד לא נפתח, לשונית אחרת)
+ * עוד לא נחשב, אלא אם הוא מוסתר רק בתוך <details> סגור – אותו פותחים */
+function visible(selector){
+  for (const el of document.querySelectorAll(selector)){
+    if (el.closest('details:not([open])')) reveal(el);
+    if (el.getClientRects().length) return el;
+  }
+  return null;
+}
+
+async function runSteps(steps){
+  for (let i = 0; i < steps.length; i++){
+    const el = await waitFor(() => visible(steps[i]));
+    if (i === steps.length - 1){ flash(el); return; }
+    reveal(el);
+    // לשונית שכבר נבחרה ו-<details> שכבר פתוח – לחיצה הייתה מחליפה מצב
+    if (el.matches('summary') && el.parentElement.open) continue;
+    if (el.getAttribute('aria-selected') === 'true' || el.getAttribute('aria-current') === 'page') continue;
+    el.click();
+    await new Promise(r => setTimeout(r, 150));
+  }
+}
+
+async function go(spec){
+  const i = spec.indexOf(':');
+  if (i < 0) return;
+  const name = spec.slice(0, i), rest = spec.slice(i + 1);
+  const j = name === 'ui' ? -1 : rest.indexOf(';');
+  const arg = j < 0 ? rest : rest.slice(0, j);
+  const steps = (name === 'ui' ? rest : j < 0 ? '' : rest.slice(j + 1)).split('|').filter(Boolean);
+  if (name !== 'ui'){
+    const handler = await waitFor(() => goHandlers[name]);
+    await handler(arg);
+  }
+  if (steps.length) await runSteps(steps);
+}
+
+function checkGo(){
+  const m = /(?:^#|&)go=([^&]*)/.exec(location.hash);
+  if (!m) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  let spec = '';
+  try { spec = decodeURIComponent(m[1]); } catch (e) { return; }
+  go(spec).catch(e => console.warn('SiteGo', e));
+}
+window.addEventListener('hashchange', checkGo);
+
+window.SiteGo = {
+  /* דף רושם איך מגיעים לרשומה שלו: fn(ערך) – יכולה להיות אסינכרונית (לחכות לנתונים עם SiteGo.waitFor) */
+  on(name, fn){ goHandlers[name] = fn; },
+  waitFor,
+  flash,
+  /* כתובת ליעד: path – נתיב הדף ביחס לשורש האתר, spec – היעד כמו למעלה */
+  href(path, spec){ return new URL(path, ROOT).href + (spec ? '#go=' + encodeURIComponent(spec) : ''); }
+};
 
 /* ---------- חיפוש בראש המגירה ----------
  * כשיש טקסט בשדה, התוצאות (js/search.js) מוצגות במקום רשימת הדפים והמגירה מתרחבת.

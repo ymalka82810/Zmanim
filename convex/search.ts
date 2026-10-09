@@ -35,6 +35,9 @@ type Entry = {
   dateKey: string | null;
   /** נתיב הדף ביחס לשורש האתר, כמו ב-js/menu.js */
   page: string;
+  /** המקום המדויק בדף שממנו עושים את הפעולה על הרשומה (#go= ב-js/menu.js): "day:<תאריך>", "tx:<id>", "ui:<צעדים>"...
+   * רק מקום שהמשתמש רואה בדף לפי ההרשאה שלו – גבאי מגיע לכפתורי העריכה, חבר קהילה לשורה עצמה */
+  go: string;
   /** טקסט נוסף שנכלל בחיפוש ולא מוצג (טלפון, מייל, הערה) */
   extra?: string;
 };
@@ -68,7 +71,7 @@ const join = (...parts: (string | null | undefined)[]) => parts.map((p) => (p ??
 const SOURCES: Record<SearchKind, Source> = {
   // events:list – כל חברי הקהילה
   event: {
-    build: async ({ ctx, synagogueId }) => {
+    build: async ({ ctx, synagogueId, manager }) => {
       const docs = await ctx.db
         .query("communityEvents")
         .withIndex("by_synagogue_date", (q) => q.eq("synagogueId", synagogueId))
@@ -79,6 +82,7 @@ const SOURCES: Record<SearchKind, Source> = {
         sub: e.details,
         dateKey: e.dateKey,
         page: "community-calendar/",
+        go: manager ? `day:${e.dateKey};[data-act=editEvent][data-id="${e._id}"]` : `day:${e.dateKey}`,
       }));
     },
   },
@@ -101,7 +105,7 @@ const SOURCES: Record<SearchKind, Source> = {
         }
         const showPrivate = manager || mine;
         if (b.status === "blocked") {
-          entries.push({ kind: "kiddush", title: b.blockLabel || "תאריך חסום", sub: "תאריך חסום לקידוש", dateKey: b.dateKey, page: "kiddush/" });
+          entries.push({ kind: "kiddush", title: b.blockLabel || "תאריך חסום", sub: "תאריך חסום לקידוש", dateKey: b.dateKey, page: "kiddush/", go: `day:${b.dateKey}` });
           continue;
         }
         entries.push({
@@ -110,6 +114,7 @@ const SOURCES: Record<SearchKind, Source> = {
           sub: join(occasionLine(b).replace(/\n/g, " · "), b.status === "pending" ? "ממתין לאישור" : ""),
           dateKey: b.dateKey,
           page: "kiddush/",
+          go: `day:${b.dateKey}`,
           extra: showPrivate ? join(b.phone, b.note, manager ? await name(b.userId) : "") : "",
         });
       }
@@ -140,6 +145,7 @@ const SOURCES: Record<SearchKind, Source> = {
           sub: join(money(t.amount), t.desc, open),
           dateKey: t.date || null,
           page: "gabbai/",
+          go: `tx:${t._id}`,
           extra: join(t.category, t.vendor, t.method, t.month, String(t.amount)),
         };
       });
@@ -160,12 +166,16 @@ const SOURCES: Record<SearchKind, Source> = {
         if (!mine && !y.shared && !manager) {
           continue;
         }
+        // מי שיכול לערוך (בעל האזכרה, גבאי ורב) מגיע לחלון העריכה; חבר קהילה – ליום האזכרה ביומן הקהילה
+        const next = nextYahrzeit(y, today);
+        const edit = mine || manager;
         entries.push({
           kind: "yahrzeit",
           title: `אזכרה: ${[y.relation, y.name].filter(Boolean).join(" ")}`,
           sub: join(hebrewDateText(y.hDay, y.hMonth, y.hYear), mine ? "שלי" : await name(y.userId)),
-          dateKey: nextYahrzeit(y, today),
-          page: "week/",
+          dateKey: next,
+          page: edit ? "week/" : "community-calendar/",
+          go: edit ? `yahrzeit:${y._id}` : next ? `day:${next}` : "",
         });
       }
       return entries;
@@ -190,6 +200,7 @@ const SOURCES: Record<SearchKind, Source> = {
             sub: join(ROLE[m.role], m.tribe === "kohen" ? "כהן" : m.tribe === "levi" ? "לוי" : "", m.phone),
             dateKey: null,
             page: "account/",
+            go: `ui:[data-open="${synagogueId}"]|#btnOpenMembers|#sheet2 [data-role="${m.userId}"]`,
             extra: join(user?.email, user?.name, m.phone?.replace(/\D/g, "")),
           };
         }),
@@ -213,6 +224,7 @@ const SOURCES: Record<SearchKind, Source> = {
           sub: f.status === "pending" ? "לוח זמנים · ממתין לאישור" : "לוח זמנים",
           dateKey: f.firstDate,
           page: manager ? "" : "community-calendar/",
+          go: manager ? `ui:#tab-luach|#communityFiles [data-remove="${f._id}"]` : `day:${f.firstDate}`,
         }));
     },
   },
@@ -241,6 +253,7 @@ const SOURCES: Record<SearchKind, Source> = {
           sub: join("עלייה לתורה", reasonLabel(a.reason)),
           dateKey: a.dateKey,
           page: "aliyot/",
+          go: manager ? `day:${a.dateKey};[data-act=delAliyah][data-id="${a._id}"]` : `ui:.al-row[data-id="${a._id}"]`,
         })),
         ...(await Promise.all(
           claims.map(async (c) => ({
@@ -249,6 +262,7 @@ const SOURCES: Record<SearchKind, Source> = {
             sub: join(reasonLabel(c.reason), c.note),
             dateKey: c.dateKey,
             page: "aliyot/",
+            go: manager ? `day:${c.dateKey};[data-act=delClaim][data-id="${c._id}"]` : `ui:[data-act=delClaim][data-id="${c._id}"]`,
           })),
         )),
       ];
@@ -258,7 +272,7 @@ const SOURCES: Record<SearchKind, Source> = {
   // minyan:list – כל חברי הקהילה
   minyan: {
     feature: "week",
-    build: async ({ ctx, synagogueId }) => {
+    build: async ({ ctx, synagogueId, manager }) => {
       const docs = await ctx.db
         .query("minyanim")
         .withIndex("by_synagogue", (q) => q.eq("synagogueId", synagogueId))
@@ -269,6 +283,9 @@ const SOURCES: Record<SearchKind, Source> = {
         sub: join(m.time, m.days.length === 7 ? "כל יום" : m.days.map((d) => DAY_NAMES[d]).join(" ")),
         dateKey: null,
         page: "week/",
+        go: manager
+          ? `ui:[data-act=manageMinyan]|[data-act=editMinyan][data-id="${m._id}"]`
+          : `ui:[data-act=rsvp][data-id="${m._id}"]`,
       }));
     },
   },
@@ -349,7 +366,7 @@ export const run = query({
 
     const items = picked
       .slice(0, MAX_TOTAL)
-      .map((e) => ({ kind: e.kind, title: e.title, sub: e.sub, dateKey: e.dateKey, page: e.page }));
+      .map((e) => ({ kind: e.kind, title: e.title, sub: e.sub, dateKey: e.dateKey, page: e.page, go: e.go }));
     return { items, more };
   },
 });

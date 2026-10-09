@@ -697,5 +697,13 @@ document.addEventListener('change', e => {
 document.addEventListener('input', e => { if (e.target.classList?.contains('co-name')) e.target.dataset.auto = '0'; });
 document.addEventListener('keydown',e => { if (e.key === 'Escape' && !$('#sheetWrap').hidden) closeSheet(); });
 
+/* תוצאת חיפוש (js/menu.js, SiteGo): "day:YYYY-MM-DD" פותח בלוח את השבת או החג, עם הפעולות שאפשר לעשות בהם */
+if (window.SiteGo) SiteGo.on('day', async k => {
+  await SiteGo.waitFor(() => S.board);
+  S.view = 'cal'; S.anchor = pkey(k);
+  renderAll();
+  slotSheet(k);
+});
+
 boot();
 })();

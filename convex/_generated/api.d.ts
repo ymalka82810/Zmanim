@@ -30,6 +30,7 @@ import type * as minyan from "../minyan.js";
 import type * as notifications from "../notifications.js";
 import type * as roles from "../roles.js";
 import type * as schedules from "../schedules.js";
+import type * as search from "../search.js";
 import type * as storage from "../storage.js";
 import type * as synagogues from "../synagogues.js";
 import type * as users from "../users.js";
@@ -67,6 +68,7 @@ declare const fullApi: ApiFromModules<{
   notifications: typeof notifications;
   roles: typeof roles;
   schedules: typeof schedules;
+  search: typeof search;
   storage: typeof storage;
   synagogues: typeof synagogues;
   users: typeof users;

@@ -297,5 +297,13 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#sheetWrap').hidden) closeSheet(); });
 
+/* תוצאת חיפוש (js/menu.js, SiteGo): "day:YYYY-MM-DD" עובר לחודש ופותח את היום, עם האירועים והפעולות עליהם */
+if (window.SiteGo) SiteGo.on('day', async k => {
+  await SiteGo.waitFor(() => S.board);
+  S.anchor = pkey(k);
+  render();
+  daySheet(k);
+});
+
 boot();
 })();

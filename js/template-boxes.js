@@ -2,7 +2,7 @@
 
 import { SIZES } from './config.js';
 import { wordBoxes } from './template-read.js';
-import { analyzeSlot, inkLines, specialHost, slotText, slotKey } from './template-render.js';
+import { analyzeSlot, inkLines, specialHost, slotText, slotKey, slotRanks as pageRanks } from './template-render.js';
 import { esc } from './render.js';
 import { openTextEdit } from './text-edit.js';
 import { $, st, openSlots } from './template-state.js';

@@ -208,7 +208,7 @@ function memberHTML(){
   const claims = d.myClaims.map(c => `<div class="li"><div class="grow"><div class="t">${esc(dayInfo(c.dateKey).title)} <span class="chip pend">${esc(c.reasonLabel)}</span></div>
     <div class="meta">${esc(gFull(pkey(c.dateKey)))}${c.note ? ' · ' + esc(c.note) : ''}</div></div>
     <button class="btn danger" type="button" data-act="delClaim" data-id="${c._id}">מחיקה</button></div>`).join('');
-  const mine = d.mine.map(a => `<div class="al-row"><div class="nm">${esc(a.aliyah)}</div><div class="who">${esc(dayInfo(a.dateKey).title)}<div class="meta">${esc(gFull(pkey(a.dateKey)))}</div></div></div>`).join('');
+  const mine = d.mine.map(a => `<div class="al-row" data-id="${a._id}"><div class="nm">${esc(a.aliyah)}</div><div class="who">${esc(dayInfo(a.dateKey).title)}<div class="meta">${esc(gFull(pkey(a.dateKey)))}</div></div></div>`).join('');
   return `<div class="card"><h3>כהן, לוי או ישראל?</h3><p class="small muted">לפי הסימון הגבאי יודע לאיזו עלייה להציע אותך.</p>${tribeSelect('myTribe', d.myTribe, '')}</div>
     <div class="card"><div class="sechead" style="margin:0 0 4px"><h3>החיובים שלי</h3><button class="btn sec" type="button" data-act="addClaim">+ רישום חיוב</button></div>
       ${claims ? `<div class="list">${claims}</div>` : '<p class="small muted">יש לך שמחה או אזכרה? רשום כאן את השבת, והגבאי יראה שיש לך חיוב לעלייה. אזכרות מלוח האזכרות מגיעות אליו לבד.</p>'}</div>
@@ -334,6 +334,14 @@ document.addEventListener('change', guard(async e => {
   }
 }));
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#sheetWrap').hidden) closeSheet(); });
+
+/* תוצאת חיפוש (js/menu.js, SiteGo): "day:YYYY-MM-DD" עובר לחלוקת העליות של אותו יום; הצעדים שאחריו מסמנים את השורה */
+if (window.SiteGo) SiteGo.on('day', async k => {
+  await SiteGo.waitFor(() => S.data);
+  S.view = 'day';
+  setDate(k);
+  render();
+});
 
 boot();
 })();
