@@ -1115,7 +1115,11 @@ $('tplSlots').addEventListener('input', e => {
     if (v === 'kiddush') { fitKiddush(s, true); schedulePreviewRefresh(); }
     if (v === 'zman' && !s.zman) Object.assign(s, { zman: 'sunset', when: s.when || when0 });
     if (v === 'gregDate' && !s.fmt) s.fmt = { sep: '/', year: 4, pad: false };
-    if (v === 'text' && s.text == null) s.text = s.old || '';
+    if (v === 'text' && s.text == null) {
+      // אזור שסומן בגרירה על טקסט: הטקסט שבו וחלוקת השורות נקראים מהקובץ, כמו בקידוש
+      if (!s.old) fitKiddush(s, false);
+      s.text = s.old || '';
+    }
     focusSlot(+ed.dataset.i); return;
   }
   if (k === 'sizePct' || k === 'lineHeightPct') { s[k] = Number(v); schedulePreviewRefresh(); return; }
