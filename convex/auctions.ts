@@ -67,8 +67,7 @@ const minNext = (a: Doc<"auctions">) => (a.topAmount === undefined ? a.minBid : 
 
 /**
  * המכרזים של הקהילה: הפתוחים ואלה שעוד לא נפתחו, ו-40 האחרונים שנסגרו. לכל מכרז 8 ההצעות הגבוהות.
- * כל חבר קהילה רואה את שמות המציעים – זו מכירה פומבית. הגבאי והרב מקבלים גם את רשימת החברים, להצעה בשם מישהו.
- */
+ * כל חבר קהילה רואה את שמות המציעים – זו מכירה פומבית. */
 export const list = query({
   args: { synagogueId: v.id("synagogues") },
   handler: async (ctx, args) => {
@@ -82,6 +81,13 @@ export const list = query({
         .withIndex("by_synagogue_status_closes", (q) => q.eq("synagogueId", args.synagogueId).eq("status", status));
     const active = [...(await byStatus("scheduled").collect()), ...(await byStatus("open").collect())];
     const closed = await byStatus("closed").order("desc").take(40);
+
+    const memberships = await ctx.db
+      .query("memberships")
+      .withIndex("by_synagogue", (q) => q.eq("synagogueId", args.synagogueId))
+      .collect();
+    const members = await Promise.all(memberships.map(async (m) => ({ userId: m.userId, name: displayName(await ctx.db.get(m.userId)) })));
+    members.sort((a, b) => a.name.localeCompare(b.name, "he"));
 
     const view = async (a: Doc<"auctions">) => {
       const bids = await ctx.db
@@ -106,16 +112,6 @@ export const list = query({
         recorded: a.transactionId !== undefined,
       };
     };
-
-    let members: { userId: Id<"users">; name: string }[] = [];
-    if (manager) {
-      const memberships = await ctx.db
-        .query("memberships")
-        .withIndex("by_synagogue", (q) => q.eq("synagogueId", args.synagogueId))
-        .collect();
-      members = await Promise.all(memberships.map(async (m) => ({ userId: m.userId, name: displayName(await ctx.db.get(m.userId)) })));
-      members.sort((a, b) => a.name.localeCompare(b.name, "he"));
-    }
 
     return {
       role: membership.role,
@@ -288,7 +284,7 @@ export const remove = mutation({
 
 /**
  * הצעת מחיר. ההצעה צריכה להיות לפחות ההצעה הגבוהה + קפיצת המחיר (או מחיר הפתיחה, כשאין עדיין הצעות).
- * מי שההצעה שלו כבר הגבוהה לא מתחרה בעצמו. גבאי ורב יכולים לרשום הצעה בשם חבר או אורח (הצעה שנאמרה בבית הכנסת).
+ * מי שההצעה שלו כבר הגבוהה לא מתחרה בעצמו. כל חבר קהילה יכול להציע גם בשם חבר אחר או אורח.
  */
 export const bid = mutation({
   args: {
@@ -299,7 +295,7 @@ export const bid = mutation({
     name: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { userId: callerId, membership } = await requireMember(ctx, args.synagogueId);
+    const { userId: callerId } = await requireMember(ctx, args.synagogueId);
     await requireFeature(ctx, args.synagogueId, "aliyot");
     const a = await getAuction(ctx, args.synagogueId, args.id);
     const now = Date.now();
@@ -313,9 +309,6 @@ export const bid = mutation({
     let bidder: Id<"users"> | undefined = callerId;
     let name = "";
     if ((args.userId || args.name) && args.userId !== callerId) {
-      if (!isManager(membership.role)) {
-        throw new ConvexError("רק גבאי או רב יכולים להציע בשם מישהו אחר");
-      }
       bidder = args.userId;
       if (bidder && (await getMembership(ctx, args.synagogueId, bidder)) === null) {
         throw new ConvexError("החבר לא נמצא בקהילה");

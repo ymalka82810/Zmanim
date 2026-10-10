@@ -141,8 +141,8 @@ function auctionHTML(a){
       <button class="btn" type="button" data-act="auBidTyped" data-id="${a._id}">הצעה</button></div>` : '';
   const bids = a.bids.length ? `<details><summary>${a.bidCount} הצעות</summary><ul class="au-bids">
       ${a.bids.map(b => `<li class="${b.mine ? 'me' : ''}"><span>${esc(b.name)}</span><span>${shekel(b.amount)} · ${esc(when(b.at).replace(/^היום ב-/, ''))}</span></li>`).join('')}</ul></details>` : '';
+  const forOther = live ? `<div class="au-tools"><button class="btn ghost" type="button" data-act="auBidFor" data-id="${a._id}">הצעה עבור מישהו אחר…</button></div>` : '';
   const tools = isManager() ? `<div class="au-tools">
-      ${live ? `<button class="btn sec" type="button" data-act="auBidFor" data-id="${a._id}">הצעה בשם…</button>` : ''}
       <button class="btn sec" type="button" data-act="auEdit" data-id="${a._id}">עריכה</button>
       ${p !== 'closing' ? `<button class="btn sec" type="button" data-act="auCloseNow" data-id="${a._id}">סגירה עכשיו</button>` : ''}
       <button class="btn danger" type="button" data-act="auDel" data-id="${a._id}" aria-label="מחיקת המכרז">×</button></div>` : '';
@@ -150,7 +150,7 @@ function auctionHTML(a){
     <div class="au-head"><h3>${esc(a.title)}</h3><span class="chip ${live ? 'pend' : p === 'scheduled' ? 'appr' : 'block'}">${live ? 'פתוח' : p === 'scheduled' ? 'טרם נפתח' : 'נסגר'}</span></div>
     <div class="au-clock" data-clock="${a._id}">${clockText(a)}</div>
     <div class="meta">${p === 'scheduled' ? 'נפתח ' + esc(when(a.opensAt)) + ' · ' : ''}נסגר ${esc(when(a.closesAt))} · קפיצה ${shekel(a.step)}</div>
-    ${top}${bid}${bids}${tools}</div>`;
+    ${top}${bid}${forOther}${bids}${tools}</div>`;
 }
 
 function closedHTML(){
@@ -178,10 +178,19 @@ const pricesHTML = (minBid, step, locked) => `<div class="au-2">
     <div><label class="f" for="auMin">מחיר פתיחה (₪)</label><input type="text" inputmode="numeric" id="auMin" value="${minBid}"${locked ? ' disabled' : ''}></div>
     <div><label class="f" for="auStep">קפיצת מחיר (₪)</label><input type="text" inputmode="numeric" id="auStep" value="${step}"${locked ? ' disabled' : ''}></div></div>`;
 
-function itemsHTML(dateKey){
+/* כיבודים נוספים שהגבאי הוסיף: נשמרים במכשיר ומוצעים בכל מכרז חדש, עד שמוחקים אותם */
+const CUSTOM_KEY = 'auctionCustomHonors';
+function loadCustom(){
+  try { const v = JSON.parse(localStorage.getItem(CUSTOM_KEY)); return Array.isArray(v) ? v.filter(x => typeof x === 'string') : []; } catch { return []; }
+}
+function saveCustom(list){ try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(list)); } catch {} }
+
+function itemsHTML(dateKey, checked = new Set()){
   const { seq } = X.dayInfo(dateKey), taken = new Set(S.data.active.filter(a => a.dateKey === dateKey).map(a => a.title));
-  const box = n => `<label><input type="checkbox" name="auItem" value="${esc(n)}"${taken.has(n) ? ' disabled' : ''}>${esc(n)}${taken.has(n) ? ' ✓' : ''}</label>`;
-  return `<div class="au-items" id="auSeq">${seq.map(box).join('')}</div><div class="au-items">${HONORS.map(box).join('')}</div>
+  const box = (n, del) => `<label><input type="checkbox" name="auItem" value="${esc(n)}"${taken.has(n) ? ' disabled' : checked.has(n) ? ' checked' : ''}>${esc(n)}${taken.has(n) ? ' ✓' : ''}${del ? `<button class="link" type="button" data-act="auDelCustom" data-name="${esc(n)}" aria-label="מחיקת ${esc(n)} מהרשימה">×</button>` : ''}</label>`;
+  const custom = loadCustom().filter(n => !seq.includes(n) && !HONORS.includes(n));
+  return `<div class="au-items" id="auSeq">${seq.map(n => box(n)).join('')}</div><div class="au-items">${HONORS.map(n => box(n)).join('')}${custom.map(n => box(n, true)).join('')}</div>
+    <div class="row"><input type="text" id="auOther" maxlength="40" placeholder="כיבוד נוסף, לדוגמה: חתן תורה"><button class="btn ghost" type="button" data-act="auAddCustom">הוספה</button></div>
     <div class="row"><button class="link" type="button" data-act="auAllSeq">כל העליות</button><button class="link" type="button" data-act="auNone">ניקוי</button></div>`;
 }
 
@@ -191,7 +200,6 @@ function addSheet(dateKey){
     `<label class="f" for="auDate">שבת או יום</label><input type="date" id="auDate" value="${dateKey}">
      <div class="meta" id="auDateTitle">${esc(X.dayInfo(dateKey).title)}</div>
      <label class="f">על מה המכרז</label><div id="auItemsWrap">${itemsHTML(dateKey)}</div>
-     <label class="f" for="auOther">כיבודים נוספים (לא חובה, מופרדים בפסיק)</label><input type="text" id="auOther" maxlength="200" placeholder="לדוגמה: חתן תורה, אתה הראית">
      ${timesHTML(t.opensAt, t.closesAt, false)}${pricesHTML(DEFAULT_MIN, DEFAULT_STEP, false)}
      <p class="small muted">לכל עלייה נפתח מכרז נפרד. בסגירה הזוכה נרשם בחלוקת העליות של אותו יום, ובקופה כחוב פתוח.</p>
      <div class="row" style="margin-top:12px"><button class="btn" type="button" data-act="auSaveNew">פתיחת המכרז</button><button class="btn ghost" type="button" data-act="close">ביטול</button></div>`);
@@ -209,9 +217,11 @@ function editSheet(a){
 }
 
 function bidForSheet(a){
-  const opts = S.data.members.map(m => `<option value="${m.userId}">${esc(m.name)}</option>`).join('');
-  X.openSheet(X.sheetHead('הצעה בשם מישהו', `${a.title} · מינימום ${shekel(a.next)}`) +
-    `<label class="f" for="auPerson">מי הציע</label><select id="auPerson"><option value="">— בחירה —</option>${opts}<option value="guest">אורח (שם חופשי)</option></select>
+  const opts = S.data.members.map(m => `<label class="au-person" data-n="${esc(m.name)}"><input type="radio" name="auWho" value="${m.userId}"> ${esc(m.name)}</label>`).join('');
+  X.openSheet(X.sheetHead('הצעה עבור מישהו אחר', `${a.title} · מינימום ${shekel(a.next)}`) +
+    `<label class="f" for="auSearch">חיפוש חבר קהילה</label><input type="search" id="auSearch" placeholder="הקלד שם" autocomplete="off">
+     <div class="au-people" style="max-height:240px;overflow:auto;margin:8px 0">${opts}
+       <label class="au-person"><input type="radio" name="auWho" value="guest"> אורח (שם חופשי)</label></div>
      <div id="auGuestWrap" hidden><label class="f" for="auName">שם האורח</label><input type="text" id="auName" maxlength="80"></div>
      <label class="f" for="auAmount">סכום (₪)</label><input type="text" inputmode="numeric" id="auAmount" value="${a.next}">
      <div class="row" style="margin-top:12px"><button class="btn" type="button" data-act="auSaveBidFor" data-id="${a._id}">רישום ההצעה</button><button class="btn ghost" type="button" data-act="close">ביטול</button></div>`);
@@ -220,6 +230,12 @@ function bidForSheet(a){
 function checkHoly(){
   const w = $('#auHolyWarn');
   if (w) w.hidden = !(onHoly(fromLocalInput($('#auOpens').value)) || onHoly(fromLocalInput($('#auCloses').value)));
+}
+/** בונה מחדש את בחירת העליות והכיבודים ושומר על הסימונים; extra – כיבוד שנוסף עכשיו ומסומן */
+function refreshItems(extra){
+  const checked = new Set([...document.querySelectorAll('#auItemsWrap input:checked')].map(i => i.value));
+  if (extra) checked.add(extra);
+  $('#auItemsWrap').innerHTML = itemsHTML($('#auDate').value, checked);
 }
 const num = v => Number(String(v).replace(/[^\d.]/g, ''));
 const find = id => S.data && (S.data.active.find(a => a._id === id) || S.data.closed.find(a => a._id === id));
@@ -242,7 +258,21 @@ function makeActions(){
     auAdd: () => addSheet(X.dateKey() >= dkey(today0()) ? X.dateKey() : X.nextSlotKey(addDays(today0(), -1))),
     auEdit: d => { const a = find(d.id); if (a) editSheet(a); },
     auBidFor: d => { const a = find(d.id); if (a) bidForSheet(a); },
+    auSaveBidFor: guard(async d => {
+      const v = document.querySelector('input[name="auWho"]:checked')?.value;
+      const extra = v === 'guest' ? { name: $('#auName').value.trim() } : v ? { userId: v } : null;
+      if (!extra || (!extra.userId && !extra.name)) return toast('נא לבחור חבר קהילה או לכתוב שם');
+      if (await placeBid(d.id, num($('#auAmount').value), extra)) closeSheet();
+    }),
     auAllSeq: () => document.querySelectorAll('#auSeq input:not(:disabled)').forEach(i => { i.checked = true; }),
+    auAddCustom: () => {
+      const name = $('#auOther').value.trim().replace(/\s+/g, ' ');
+      if (!name) return toast('נא לכתוב את שם הכיבוד');
+      const list = loadCustom();
+      if (!list.includes(name) && !HONORS.includes(name)) saveCustom(list.concat(name));
+      refreshItems(name);
+    },
+    auDelCustom: d => { saveCustom(loadCustom().filter(n => n !== d.name)); refreshItems(); },
     auNone: () => document.querySelectorAll('#auItemsWrap input').forEach(i => { i.checked = false; }),
     auBid: guard(async d => placeBid(d.id, Number(d.amount))),
     auBidTyped: guard(async d => {
@@ -250,17 +280,10 @@ function makeActions(){
       if (!amount) return toast('נא לכתוב סכום');
       if (await placeBid(d.id, amount)) input.value = '';
     }),
-    auSaveBidFor: guard(async d => {
-      const v = $('#auPerson').value;
-      const extra = v === 'guest' ? { name: $('#auName').value.trim() } : v ? { userId: v } : null;
-      if (!extra || (!extra.userId && !extra.name)) return toast('נא לבחור חבר קהילה או לכתוב שם');
-      if (await placeBid(d.id, num($('#auAmount').value), extra)) closeSheet();
-    }),
     auSaveNew: guard(async () => {
       const dateKey = $('#auDate').value;
       if (!dateKey) return toast('נא לבחור תאריך');
-      const titles = [...document.querySelectorAll('#auItemsWrap input:checked')].map(i => i.value)
-        .concat($('#auOther').value.split(',').map(s => s.trim()).filter(Boolean));
+      const titles = [...document.querySelectorAll('#auItemsWrap input:checked')].map(i => i.value);
       if (!titles.length) return toast('נא לבחור עלייה או כיבוד');
       await call('auctions:create', { dateKey, titles, opensAt: fromLocalInput($('#auOpens').value), closesAt: fromLocalInput($('#auCloses').value),
         minBid: num($('#auMin').value), step: num($('#auStep').value) });
@@ -295,14 +318,19 @@ api.init = deps => {
     const t = e.target;
     if (t.id === 'auDate' && t.value){
       $('#auDateTitle').textContent = X.dayInfo(t.value).title;
-      $('#auItemsWrap').innerHTML = itemsHTML(t.value);
+      refreshItems();
       $('#auCloses').value = toLocalInput(defaultTimes(t.value).closesAt);
       checkHoly();
     } else if (t.id === 'auOpens' || t.id === 'auCloses') checkHoly();
-    else if (t.id === 'auPerson') $('#auGuestWrap').hidden = t.value !== 'guest';
+    else if (t.name === 'auWho') $('#auGuestWrap').hidden = t.value !== 'guest';  });
+  document.addEventListener('input', e => {
+    if (e.target.id !== 'auSearch') return;
+    const q = e.target.value.trim();
+    document.querySelectorAll('.au-people .au-person[data-n]').forEach(l => { l.hidden = !!q && !l.dataset.n.includes(q); });
   });
   document.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && e.target.matches('.au-bid input')) api.actions.auBidTyped({ id: e.target.id.slice(4) });
+    if (e.key === 'Enter' && e.target.id === 'auOther'){ e.preventDefault(); api.actions.auAddCustom(); }
+    else if (e.key === 'Enter' && e.target.matches('.au-bid input')) api.actions.auBidTyped({ id: e.target.id.slice(4) });
   });
 };
 window.AliyotAuctions = api;
