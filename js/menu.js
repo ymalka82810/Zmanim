@@ -16,6 +16,7 @@ const ROOT = new URL('..', document.currentScript.src);
 const PAGES = [
   { path: '',                   title: 'לוח זמנים', hideForMember: true },
   { path: 'week/',              title: 'השבוע שלי', feature: 'week' },
+  { path: 'catalog/',           title: 'קטלוג בית הכנסת', feature: 'catalog' },
   { path: 'kiddush/',          title: 'לוח קידושים' },
   { path: 'gabbai/',            title: 'קופת בית הכנסת' },
   { path: 'aliyot/',            title: 'חלוקת עליות', feature: 'aliyot' },

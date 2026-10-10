@@ -6,7 +6,7 @@
  * בשרת המקומי (npm start) ובאפליקציה הקבצים נמצאים במכשיר, ולכן שם קודם מהרשת, כדי ששינוי יופיע מיד.
  * גופנים: מהמטמון, ואם אין – מהרשת.
  */
-const CACHE = 'luach-b22f2b5dae';
+const CACHE = 'luach-6694271b26';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/app-update.js', 'js/app.js', 'js/astro.js', 'js/auth.js', 'js/community.js', 'js/config.js', 'js/convex-config.js', 'js/dates.js', 'js/dialog.js', 'js/font-fill.js', 'js/heb-date.js', 'js/hebrew.js', 'js/image.js', 'js/luach.js', 'js/menu.js', 'js/moadim.js', 'js/native-files.js', 'js/preload.js', 'js/render.js', 'js/search-actions.js', 'js/search-words.js', 'js/search.js', 'js/settings-sync.js', 'js/special-donations.js', 'js/tab-arrows.js', 'js/template-boxes.js', 'js/template-build.js', 'js/template-fields.js', 'js/template-fonts.js', 'js/template-lines.js', 'js/template-move.js', 'js/template-place.js', 'js/template-read.js', 'js/template-render.js', 'js/template-rules.js', 'js/template-slots.js', 'js/template-state.js', 'js/template-ui.js', 'js/text-edit.js', 'js/theme.js', 'js/wizard.js', 'js/zmanim.js',
@@ -21,6 +21,7 @@ const SHELL = [
   'community-calendar/', 'community-calendar/index.html', 'community-calendar/js/app.js',
   'guest/', 'guest/index.html', 'guest/css/styles.css', 'guest/js/app.js',
   'week/', 'week/index.html', 'week/js/app.js',
+  'catalog/', 'catalog/index.html', 'catalog/js/app.js',
   'tv/', 'tv/index.html', 'tv/css/styles.css', 'tv/js/app.js',
   'screen/', 'screen/index.html', 'screen/css/styles.css', 'screen/js/app.js'
 ];

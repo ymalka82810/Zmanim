@@ -19,6 +19,7 @@ const BASIC_FEATURES = ['החשבון שלי', 'לוח קידושים', 'קופ�
 const FEATURES = {
   aliyot: { title: 'חלוקת עליות', desc: 'רישום מי עלה לתורה, הצעה למי לתת עלייה לפי חיובים ולפי מי שלא עלה זמן רב, ומכרז עליות וכיבודים בזמן אמת.' },
   week: { title: 'השבוע שלי', desc: 'מסך אישי לכל חבר: אזכרות, הרשמה למניין, הקידוש והחוב שלו בקופה.' },
+  catalog: { title: 'קטלוג בית הכנסת', desc: 'חפצים שבית הכנסת מוכר, כמו מזוזות, לולבים ואתרוגים, עם מחיר ותמונה. הגבאי והרב מנהלים, וכל הקהילה רואה.' },
 };
 
 const S = { ready:false, isAuthenticated:false, me:null, synagogues:[], invitations:[], joinCode:null, joinInfo:undefined, detail:null, members:null, pending:null, features:null, errorLogs:null, membersSheetOpen:false, membersSearch:'' };

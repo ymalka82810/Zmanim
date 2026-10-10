@@ -16,7 +16,7 @@ async function listFiles(dir) {
     .map(name => dir + '/' + name);
 }
 
-const PAGES = ['kiddush', 'gabbai', 'aliyot', 'account', 'community-calendar', 'guest', 'week', 'tv', 'screen'];
+const PAGES = ['kiddush', 'gabbai', 'aliyot', 'account', 'community-calendar', 'guest', 'week', 'catalog', 'tv', 'screen'];
 
 async function buildShell() {
   const shell = ['./', 'index.html', 'css/app.css', 'manifest.webmanifest'];

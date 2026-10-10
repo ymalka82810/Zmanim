@@ -199,6 +199,21 @@ export default defineSchema({
     closedAt: v.optional(v.number()),
   }).index("by_synagogue", ["synagogueId"]),
 
+  // קטלוג בית הכנסת (convex/catalog.ts): חפצים למכירה, כמו מזוזות, לולבים ואתרוגים. בלי price – "לפי פנייה לגבאי"
+  catalogItems: defineTable({
+    synagogueId: v.id("synagogues"),
+    title: v.string(),
+    desc: v.string(),
+    category: v.string(),
+    price: v.optional(v.number()),
+    contact: v.optional(v.string()),
+    imageId: v.optional(v.id("_storage")),
+    imageSize: v.optional(v.number()),
+    status: v.union(v.literal("available"), v.literal("sold")),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+  }).index("by_synagogue", ["synagogueId"]),
+
   // תרומה לזמן מיוחד (convex/specialDonations.ts): פדיון כפרות, מחצית השקל, מתנות לאביונים, קמחא דפסחא, נדר ביזכור
   // או שם חופשי, שהגבאי או הרב פותחים וסוגרים. texts – הנוסח לכל עדה שמוצעת (ashkenaz/sefard/mizrach/chabad), אם יש.
   // amount – הסכום המוצע (במחצית השקל – לנפש; בלי סכום הוא מחושב לפי מחיר הכסף, silverPrice)

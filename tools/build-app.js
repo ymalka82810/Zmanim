@@ -12,6 +12,7 @@ const FILES = [
   'aliyot/index.html', 'aliyot/js',
   'community-calendar/index.html', 'community-calendar/js',
   'week/index.html', 'week/js',
+  'catalog/index.html', 'catalog/js',
   'guest/index.html', 'guest/css', 'guest/js',
   'screen/index.html', 'screen/css', 'screen/js'
 ];
