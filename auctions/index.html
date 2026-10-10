@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="theme-color" content="#2c4a7c">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>מכרז עליות</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;700;900&family=Assistant:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="../vendor/hebcal/hebcal-core-6.9.3.min.js"></script>
+<link rel="stylesheet" href="../kiddush/css/styles.css">
+<style>
+.au-day{font-family:var(--serif);font-size:1.3rem;margin:22px 0 10px}
+.au-day .meta{font-family:var(--sans);font-weight:400}
+.au-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px}
+.au{display:flex;flex-direction:column;gap:8px;margin:0}
+.au.live{border-color:var(--gold)}
+.au-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.au-head h3{margin:0}
+.au-clock{font-size:.9rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.au.live .au-clock{color:var(--pend);font-weight:700}
+.au-top{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:10px 12px;border-radius:12px;background:var(--surface2)}
+.au-top b{font-family:var(--serif);font-size:1.6rem;line-height:1.1}
+.au-top.mine{background:var(--free-soft);color:var(--free)}
+@keyframes au-bump{0%{transform:scale(1)}30%{transform:scale(1.04);box-shadow:0 0 0 4px var(--gold)}100%{transform:scale(1)}}
+.au-top.bump{animation:au-bump .9s ease}
+.au-bid{display:flex;gap:6px;flex-wrap:wrap}
+.au-bid .btn{padding:8px 12px}
+.au-bid input{flex:1;min-width:90px;width:auto}
+.au-tools{display:flex;gap:4px;flex-wrap:wrap}
+.au-tools .btn{padding:6px 10px;font-size:.88rem}
+.au details summary{cursor:pointer;color:var(--muted);font-size:.88rem}
+.au-bids{margin:6px 0 0;padding:0;list-style:none;font-size:.9rem}
+.au-bids li{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px dashed var(--line)}
+.au-bids li:last-child{border-bottom:0}
+.au-bids li.me{color:var(--free);font-weight:600}
+.au-items{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0}
+.au-items label{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface2);cursor:pointer}
+.au-items input{width:auto;margin:0}
+.au-2{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+.au-warn{color:var(--pend);font-size:.88rem;margin:6px 0 0}
+</style>
+<script src="../js/theme.js"></script>
+</head>
+<body>
+<div class="wrap" id="app"><div class="empty">טוען…</div></div>
+<div class="sheet-wrap" id="sheetWrap" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
+<script src="../js/menu.js"></script>
+<script src="../js/dialog.js"></script>
+<script src="../js/convex-config.js"></script>
+<script src="../vendor/convex/convex-browser-1.46.0.js"></script>
+<script src="../js/auth.js"></script>
+<script src="../kiddush/js/calendar.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

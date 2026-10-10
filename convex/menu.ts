@@ -56,6 +56,15 @@ export const counts = query({
       account = await countAwaiting(ctx, args.synagogueId, userId);
     }
     const features = enabledFeatures(await ctx.db.get(args.synagogueId));
+    // מכרזים פתוחים עכשיו, כדי שחברי הקהילה ישימו לב שאפשר להציע
+    const openAuctions = features.includes("auctions")
+      ? (
+          await ctx.db
+            .query("auctions")
+            .withIndex("by_synagogue_status_closes", (q) => q.eq("synagogueId", args.synagogueId).eq("status", "open"))
+            .collect()
+        ).length
+      : 0;
 
     return {
       manager,
@@ -65,6 +74,7 @@ export const counts = query({
       "kiddush/": kiddush,
       "gabbai/": unread(fundNotes),
       "account/": account,
+      "auctions/": features.includes("auctions") ? openAuctions : 0,
     };
   },
 });

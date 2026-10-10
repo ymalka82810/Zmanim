@@ -289,6 +289,40 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_synagogue_date", ["synagogueId", "dateKey"]),
 
+  // מכרז על עלייה או כיבוד (convex/auctions.ts). top*: ההצעה הגבוהה עד עכשיו. בסגירה נרשמים חיוב בקופה (transactionId)
+  // ועלייה בחלוקת העליות (aliyahId, אם הפיצר פעיל)
+  auctions: defineTable({
+    synagogueId: v.id("synagogues"),
+    dateKey: v.string(),
+    title: v.string(),
+    order: v.number(),
+    opensAt: v.number(),
+    closesAt: v.number(),
+    minBid: v.number(),
+    step: v.number(),
+    status: v.union(v.literal("scheduled"), v.literal("open"), v.literal("closed")),
+    bidCount: v.number(),
+    topAmount: v.optional(v.number()),
+    topUserId: v.optional(v.id("users")),
+    topName: v.optional(v.string()),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+    finalizedAt: v.optional(v.number()),
+    transactionId: v.optional(v.id("fundTransactions")),
+    aliyahId: v.optional(v.id("aliyot")),
+  }).index("by_synagogue_status_closes", ["synagogueId", "status", "closesAt"]),
+
+  // הצעות במכרז. userId לחבר קהילה; אורח (הצעה שהגבאי רשם בשמו) בשם בלבד. by: מי רשם את ההצעה
+  auctionBids: defineTable({
+    synagogueId: v.id("synagogues"),
+    auctionId: v.id("auctions"),
+    userId: v.optional(v.id("users")),
+    name: v.string(),
+    amount: v.number(),
+    at: v.number(),
+    by: v.id("users"),
+  }).index("by_auction_amount", ["auctionId", "amount"]),
+
   fundSettings: defineTable({
     synagogueId: v.id("synagogues"),
     openMain: v.number(),

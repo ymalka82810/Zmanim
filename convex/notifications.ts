@@ -7,8 +7,9 @@ export const notificationTypeValidator = v.union(
   v.literal("fund"),
   v.literal("yahrzeit"),
   v.literal("minyan"),
+  v.literal("auction"),
 );
-export type NotificationType = "kiddush" | "fund" | "yahrzeit" | "minyan";
+export type NotificationType = "kiddush" | "fund" | "yahrzeit" | "minyan" | "auction";
 type Recipient = Id<"users"> | "managers" | "members";
 
 /** יצירת התראה. dateKey/by לקידוש ולמניין, transactionId לקופה בלבד. to: "members" – כל חברי הקהילה */

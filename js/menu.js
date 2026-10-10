@@ -19,6 +19,7 @@ const PAGES = [
   { path: 'kiddush/',          title: 'לוח קידושים' },
   { path: 'gabbai/',            title: 'קופת בית הכנסת' },
   { path: 'aliyot/',            title: 'חלוקת עליות', feature: 'aliyot' },
+  { path: 'auctions/',          title: 'מכרז עליות', feature: 'auctions' },
   { path: 'account/',           title: 'החשבון שלי' },
   { path: 'community-calendar/', title: 'יומן קהילה', showForMember: true }
 ];
@@ -81,7 +82,17 @@ const css = `
 @keyframes sg-flash{0%,100%{box-shadow:0 0 0 0 rgba(171,127,46,0)}15%,60%{box-shadow:0 0 0 4px rgba(171,127,46,.85)}}
 .sg-flash{animation:sg-flash 1.3s ease-in-out 2;border-radius:8px;background-color:rgba(251,231,180,.45)!important}
 :root[data-theme="dark"] .sg-flash{background-color:rgba(90,74,30,.55)!important}
-@media print{.sm-bar,.sm-stripe,.sm-day,.sm-layer{display:none!important}}
+.sm-toasts{position:fixed;z-index:950;top:calc(64px + env(safe-area-inset-top,0px));left:12px;display:flex;flex-direction:column;gap:8px;width:min(340px,calc(100vw - 24px));pointer-events:none;direction:rtl;font-family:"Assistant",Arial,sans-serif}
+.sm-toast{pointer-events:auto;display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;border-inline-start:4px solid #ab7f2e;background:#fff;color:#1d2b45;box-shadow:0 8px 24px rgba(10,20,40,.22);font-weight:600;line-height:1.35;text-decoration:none;opacity:0;transform:translateX(-24px);transition:opacity .25s,transform .25s}
+.sm-toast.sm-in{opacity:1;transform:none}
+.sm-toast svg{flex:none;width:22px;height:22px;color:#ab7f2e}
+.sm-toast span{flex:1;min-width:0}
+.sm-toast button{flex:none;width:26px;height:26px;padding:0;border:0;border-radius:50%;background:none;color:#5d6b82;font-size:1.1rem;line-height:1;cursor:pointer;box-shadow:none;transform:none}
+:root[data-theme="dark"] .sm-toast{background:#232a36;color:#e8ecf2;border-color:#dfb564}
+:root[data-theme="dark"] .sm-toast svg{color:#dfb564}
+:root[data-theme="dark"] .sm-toast button{color:#9ba4b3}
+@media (prefers-reduced-motion:reduce){.sm-toast{transition:none}}
+@media print{.sm-bar,.sm-stripe,.sm-day,.sm-layer,.sm-toasts{display:none!important}}
 `;
 
 /* ---------- שורת היום ---------- */
@@ -186,8 +197,54 @@ function watchCounts(){
   badges.sid = sid;
   badges.data = null;
   renderCounts();
+  watchAuctions();
   if (!sid) return;
-  badges.stop = Auth.watch('menu:counts', { synagogueId: sid }, d => { badges.data = d; renderCounts(); }, () => {});
+  badges.stop = Auth.watch('menu:counts', { synagogueId: sid }, d => { badges.data = d; renderCounts(); watchAuctions(); }, () => {});
+}
+
+/* ---------- הודעות צדדיות ממכרז העליות (auctions:live) ----------
+ * בכל דף, כשהפיצר פעיל בקהילה: "פלוני הציע ₪180 על שלישי", פתיחה וסגירה של מכרז, וזכייה.
+ * מה שכבר הוצג נשמר במכשיר (הזמן של ההודעה האחרונה), כדי שמעבר בין דפים לא יציג אותן שוב,
+ * והודעות ישנות מעשר דקות לא קופצות (למשל כשחוזרים לאפליקציה אחרי יום) */
+const auctions = { sid: null, stop: null, box: null };
+const AUCTION_SEEN = 'site.auctionSeen.', AUCTION_FRESH_MS = 10 * 60e3, TOAST_MS = 7000;
+function watchAuctions(){
+  const Auth = window.SiteAuth, d = badges.data;
+  const sid = Auth && d && Array.isArray(d.features) && d.features.includes('auctions') ? badges.sid : null;
+  if (sid === auctions.sid) return;
+  if (auctions.stop) auctions.stop();
+  auctions.stop = null;
+  auctions.sid = sid;
+  if (!sid) return;
+  auctions.stop = Auth.watch('auctions:live', { synagogueId: sid }, data => {
+    if (!data || !Array.isArray(data.events)) return;
+    const key = AUCTION_SEEN + sid, newest = data.events.reduce((m, e) => Math.max(m, e.at), 0);
+    const seen = Number(readRaw(key));
+    // בפעם הראשונה במכשיר הזה: מה שכבר קרה לא קופץ, וכל מה שיבוא מעכשיו כן
+    if (seen) data.events.filter(e => e.at > seen && e.at > Date.now() - AUCTION_FRESH_MS).reverse().forEach(e => auctionToast(e.text));
+    if (!seen || newest > seen) try { localStorage.setItem(key, String(Math.max(newest, seen || 1))); } catch (e) { /* אין גישה לאחסון */ }
+  }, () => {});
+}
+
+function auctionToast(text){
+  if (!auctions.box){
+    auctions.box = document.createElement('div');
+    auctions.box.className = 'sm-toasts';
+    auctions.box.setAttribute('role', 'status');
+    auctions.box.setAttribute('aria-live', 'polite');
+    document.body.appendChild(auctions.box);
+  }
+  const t = document.createElement('a');
+  t.className = 'sm-toast';
+  t.href = new URL('auctions/', ROOT).href;
+  t.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 13-7.5 7.5a2.12 2.12 0 0 1-3-3L11 10"/><path d="m16 16 6-6"/><path d="m8 8 6-6"/><path d="m9 7 8 8"/><path d="m21 11-8-8"/></svg><span></span><button type="button" aria-label="סגירת ההודעה">×</button>';
+  t.querySelector('span').textContent = text;
+  const remove = () => { t.classList.remove('sm-in'); setTimeout(() => t.remove(), 300); };
+  t.querySelector('button').addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); remove(); });
+  auctions.box.appendChild(t);
+  while (auctions.box.children.length > 3) auctions.box.firstChild.remove();
+  requestAnimationFrame(() => requestAnimationFrame(() => t.classList.add('sm-in')));
+  setTimeout(remove, TOAST_MS);
 }
 
 function startCounts(){

@@ -90,6 +90,9 @@ export const ACTIONS = [
   { page: 'aliyot/', title: 'היסטוריית עליות', words: 'מי עלה', go: '[data-act=view][data-v=history]|#app .card', who: 'manager' },
   { page: 'aliyot/', title: 'כהנים ולויים', words: 'שבט', go: '[data-act=view][data-v=tribes]|#app .card', who: 'manager' },
 
+  /* ---------- מכרז עליות ---------- */
+  { page: 'auctions/', title: 'פתיחת מכרז על עלייה', words: 'מכירה פומבית כיבוד חדש', go: '[data-act=add]', who: 'manager' },
+
   /* ---------- החשבון שלי ---------- */
   { page: 'account/', title: 'יציאה מהחשבון', words: 'התנתקות', go: '#btnSignOut' },
   { page: 'account/', title: 'פתיחת קהילה חדשה', words: 'יצירה', go: '#btnNewSyn' },
