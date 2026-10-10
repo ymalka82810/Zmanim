@@ -2,13 +2,14 @@
  * קודם החיובים (חתן, בר מצווה, אבי הבן/הבת, אזכרה בשבוע הקרוב מלוח האזכרות), ואחריהם מי שלא עלה הכי הרבה זמן,
  * בנפרד לכהנים, ללויים ולישראלים. עלייה שנמכרה אפשר לרשום מכאן גם כחיוב בקופה (fund:save).
  * חבר קהילה רואה את העליות שלו, מסמן אם הוא כהן או לוי, ורושם חיוב לעצמו (למשל בר מצווה של הבן).
- * הנתונים מגיעים מ-aliyot:board.
+ * הנתונים מגיעים מ-aliyot:board. הלשונית "מכרז" (מכירה פומבית של עליות וכיבודים) נמצאת ב-aliyot/js/auctions.js.
  */
 (function(){
 "use strict";
 const { H, esc, dkey, pkey, gShort, gFull, heFull, getSlots, slotFor, slotTitle } = window.KiddushCalendar || {};
 const $ = s => document.querySelector(s);
 const Auth = window.SiteAuth;
+const Auctions = window.AliyotAuctions;
 const ROLE_LABEL = { gabbai: 'גבאי', rabbi: 'רב', member: 'חבר קהילה' };
 const TRIBE_LABEL = { kohen: 'כהן', levi: 'לוי', israel: 'ישראל' };
 const ACCOUNT_URL = '../account/';
@@ -29,7 +30,9 @@ function addDays(d, n){ const x = new Date(d); x.setDate(x.getDate() + n); retur
 
 const S = {
   ready: false, fatal: null, signedIn: false, synagogues: [], sid: null,
-  dateKey: null, data: null, error: null, view: 'day',
+  dateKey: null, data: null, error: null,
+  // הודעה צדדית על מכרז (js/menu.js) מובילה ל-?view=auction
+  view: new URLSearchParams(location.search).get('view') === 'auction' ? 'auction' : 'day',
 };
 const isManager = () => !!S.data?.manager;
 /* הפיצ'ר פעיל בקהילה (convex/features.ts). בלי אישור של כל הגבאים והרב הדף לא זמין */
@@ -79,6 +82,7 @@ function attach(sid){
   // בהחלפת תאריך הנתונים הקודמים נשארים עד שהחדשים מגיעים, כדי שהדף לא יהבהב
   if (sid !== S.sid){ S.data = null; }
   S.sid = sid; S.error = null;
+  Auctions.watch(sid && featureOn(sid) ? sid : null);
   if (!sid || !featureOn(sid)) return;
   unsub = Auth.watch('aliyot:board', { synagogueId: sid, dateKey: S.dateKey }, data => { S.data = data; render(); },
     e => { console.warn(e); S.error = errMsg(e); render(); });
@@ -117,7 +121,19 @@ function render(){
   if (!featureOn(S.sid)){ app.innerHTML = hero('חלוקת העליות אינה פעילה בקהילה זו. כדי להשתמש בה, כל הגבאים והרב צריכים לאשר אותה ב"החשבון שלי", בפרטי הקהילה.', `<a class="btn" href="${ACCOUNT_URL}">לחשבון שלי</a>`); return; }
   if (S.error && !S.data){ app.innerHTML = hero(esc(S.error), `<a class="btn" href="${ACCOUNT_URL}">לחשבון שלי</a>`); return; }
   if (!S.data){ app.innerHTML = '<div class="empty">טוען…</div>'; return; }
-  app.innerHTML = headerHTML() + (isManager() ? managerHTML() : memberHTML());
+  const auction = S.view === 'auction';
+  if (auction) Auctions.beforeRender();
+  app.innerHTML = headerHTML() + segHTML() + (auction ? Auctions.html() : isManager() ? managerHTML() : memberHTML());
+  if (auction) Auctions.afterRender();
+}
+
+function segHTML(){
+  const n = Auctions.openCount();
+  const tab = (v, label) => `<button type="button" data-act="view" data-v="${v}" aria-pressed="${S.view === v}">${label}</button>`;
+  const tabs = isManager()
+    ? tab('day', 'חלוקה') + tab('auction', 'מכרז' + (n ? ` (${n})` : '')) + tab('history', 'היסטוריה') + tab('tribes', 'כהנים ולויים')
+    : tab('day', 'העליות שלי') + tab('auction', 'מכרז' + (n ? ` (${n})` : ''));
+  return `<div class="al-seg"><div class="seg" role="group">${tabs}</div></div>`;
 }
 
 function headerHTML(){
@@ -140,13 +156,9 @@ function dateBarHTML(){
 }
 
 function managerHTML(){
-  const seg = `<div class="al-seg"><div class="seg" role="group">
-    <button type="button" data-act="view" data-v="day" aria-pressed="${S.view === 'day'}">חלוקה</button>
-    <button type="button" data-act="view" data-v="history" aria-pressed="${S.view === 'history'}">היסטוריה</button>
-    <button type="button" data-act="view" data-v="tribes" aria-pressed="${S.view === 'tribes'}">כהנים ולויים</button></div></div>`;
-  if (S.view === 'history') return seg + historyHTML();
-  if (S.view === 'tribes') return seg + tribesHTML();
-  return dateBarHTML() + seg + chiyuvimHTML() + givenHTML() + suggestionsHTML();
+  if (S.view === 'history') return historyHTML();
+  if (S.view === 'tribes') return tribesHTML();
+  return dateBarHTML() + chiyuvimHTML() + givenHTML() + suggestionsHTML();
 }
 
 function chiyuvimHTML(){
@@ -320,7 +332,7 @@ const A = {
 };
 document.addEventListener('click', e => {
   const t = e.target.closest('[data-act]');
-  if (t){ const f = A[t.dataset.act]; if (f){ e.preventDefault(); f(t.dataset, t); } return; }
+  if (t){ const f = A[t.dataset.act] || Auctions.actions[t.dataset.act]; if (f){ e.preventDefault(); f(t.dataset, t); } return; }
   if (e.target === $('#sheetWrap')) closeSheet();
 });
 document.addEventListener('change', guard(async e => {
@@ -343,5 +355,7 @@ if (window.SiteGo) SiteGo.on('day', async k => {
   render();
 });
 
+Auctions.init({ call, guard, toast, openSheet, closeSheet, sheetHead, dayInfo, nextSlotKey, il, render,
+  dateKey: () => S.dateKey, active: () => S.view === 'auction' && !!S.data });
 boot();
 })();

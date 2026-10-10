@@ -10,7 +10,6 @@ const FILES = [
   'kiddush/index.html', 'kiddush/css', 'kiddush/js',
   'account/index.html', 'account/css', 'account/js',
   'aliyot/index.html', 'aliyot/js',
-  'auctions/index.html', 'auctions/js',
   'community-calendar/index.html', 'community-calendar/js',
   'week/index.html', 'week/js',
   'guest/index.html', 'guest/css', 'guest/js'

@@ -12,10 +12,9 @@ import { displayName, isManager, requireManager, requireMember } from "./roles";
 export const FEATURES = {
   aliyot: "חלוקת עליות",
   week: "השבוע שלי",
-  auctions: "מכרז עליות",
 } as const;
 export type Feature = keyof typeof FEATURES;
-export const featureValidator = v.union(v.literal("aliyot"), v.literal("week"), v.literal("auctions"));
+export const featureValidator = v.union(v.literal("aliyot"), v.literal("week"));
 
 export function enabledFeatures(synagogue: Doc<"synagogues"> | null): Feature[] {
   return (synagogue?.features ?? []).filter((f): f is Feature => f in FEATURES);

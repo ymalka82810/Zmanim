@@ -57,7 +57,7 @@ export const counts = query({
     }
     const features = enabledFeatures(await ctx.db.get(args.synagogueId));
     // מכרזים פתוחים עכשיו, כדי שחברי הקהילה ישימו לב שאפשר להציע
-    const openAuctions = features.includes("auctions")
+    const openAuctions = features.includes("aliyot")
       ? (
           await ctx.db
             .query("auctions")
@@ -74,7 +74,7 @@ export const counts = query({
       "kiddush/": kiddush,
       "gabbai/": unread(fundNotes),
       "account/": account,
-      "auctions/": features.includes("auctions") ? openAuctions : 0,
+      "aliyot/": openAuctions,
     };
   },
 });

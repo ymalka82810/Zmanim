@@ -88,10 +88,9 @@ export const ACTIONS = [
   { page: 'aliyot/', title: 'כהן, לוי או ישראל', words: 'שבט', go: '#myTribe' },
   { page: 'aliyot/', title: 'מתן עלייה', words: 'רישום עלייה כיבוד', go: '[data-act=view][data-v=day]|[data-act=give]', who: 'manager' },
   { page: 'aliyot/', title: 'היסטוריית עליות', words: 'מי עלה', go: '[data-act=view][data-v=history]|#app .card', who: 'manager' },
+  { page: 'aliyot/', title: 'מכרז עליות', words: 'מכירה פומבית הצעת מחיר', go: '[data-act=view][data-v=auction]|#app .au-grid, #app .card' },
+  { page: 'aliyot/', title: 'פתיחת מכרז על עלייה', words: 'מכירה פומבית כיבוד חדש', go: '[data-act=view][data-v=auction]|[data-act=auAdd]', who: 'manager' },
   { page: 'aliyot/', title: 'כהנים ולויים', words: 'שבט', go: '[data-act=view][data-v=tribes]|#app .card', who: 'manager' },
-
-  /* ---------- מכרז עליות ---------- */
-  { page: 'auctions/', title: 'פתיחת מכרז על עלייה', words: 'מכירה פומבית כיבוד חדש', go: '[data-act=add]', who: 'manager' },
 
   /* ---------- החשבון שלי ---------- */
   { page: 'account/', title: 'יציאה מהחשבון', words: 'התנתקות', go: '#btnSignOut' },

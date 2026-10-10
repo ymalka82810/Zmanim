@@ -10,7 +10,7 @@ import { hasFeature, requireFeature } from "./features";
 import * as Notifications from "./notifications";
 
 /**
- * מכרז עליות: הגבאי או הרב פותחים מכירה פומבית על עלייה או כיבוד (שלישי, מפטיר, פתיחת הארון, גלילה,
+ * מכרז עליות, חלק מפיצר חלוקת העליות (לשונית "מכרז" ב-aliyot/): הגבאי או הרב פותחים מכירה פומבית על עלייה או כיבוד (שלישי, מפטיר, פתיחת הארון, גלילה,
  * או כל שם אחר), עם שעת פתיחה ושעת סגירה. חברי הקהילה מציעים בזמן אמת, וכל הצעה נשלחת כהתראה (type "auction")
  * לכל הקהילה, שמוצגת כהודעה צדדית בכל דף (js/menu.js, auctions:live).
  * בשעת הסגירה (ctx.scheduler) הזוכה נרשם כחוב פתוח בקופה, ובחלוקת העליות אם הפיצ'ר פעיל.
@@ -73,7 +73,7 @@ export const list = query({
   args: { synagogueId: v.id("synagogues") },
   handler: async (ctx, args) => {
     const { userId, membership } = await requireMember(ctx, args.synagogueId);
-    await requireFeature(ctx, args.synagogueId, "auctions");
+    await requireFeature(ctx, args.synagogueId, "aliyot");
     const manager = isManager(membership.role);
     const synagogue = await ctx.db.get(args.synagogueId);
     const byStatus = (status: Doc<"auctions">["status"]) =>
@@ -137,7 +137,7 @@ export const live = query({
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     const membership = userId === null ? null : await getMembership(ctx, args.synagogueId, userId);
-    if (userId === null || membership === null || !(await hasFeature(ctx, args.synagogueId, "auctions"))) {
+    if (userId === null || membership === null || !(await hasFeature(ctx, args.synagogueId, "aliyot"))) {
       return null;
     }
     const manager = isManager(membership.role);
@@ -163,7 +163,7 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const { userId } = await requireManager(ctx, args.synagogueId);
-    await requireFeature(ctx, args.synagogueId, "auctions");
+    await requireFeature(ctx, args.synagogueId, "aliyot");
     if (!DATE_KEY_RE.test(args.dateKey)) {
       throw new ConvexError("תאריך לא תקין");
     }
@@ -221,7 +221,7 @@ export const update = mutation({
   },
   handler: async (ctx, args) => {
     await requireManager(ctx, args.synagogueId);
-    await requireFeature(ctx, args.synagogueId, "auctions");
+    await requireFeature(ctx, args.synagogueId, "aliyot");
     const a = await getAuction(ctx, args.synagogueId, args.id);
     if (a.status === "closed") {
       throw new ConvexError("המכרז כבר נסגר");
@@ -248,7 +248,7 @@ export const closeNow = mutation({
   args: { synagogueId: v.id("synagogues"), id: v.id("auctions") },
   handler: async (ctx, args) => {
     await requireManager(ctx, args.synagogueId);
-    await requireFeature(ctx, args.synagogueId, "auctions");
+    await requireFeature(ctx, args.synagogueId, "aliyot");
     const a = await getAuction(ctx, args.synagogueId, args.id);
     if (a.status === "closed") {
       return;
@@ -263,7 +263,7 @@ export const remove = mutation({
   args: { synagogueId: v.id("synagogues"), id: v.id("auctions") },
   handler: async (ctx, args) => {
     const { userId } = await requireManager(ctx, args.synagogueId);
-    await requireFeature(ctx, args.synagogueId, "auctions");
+    await requireFeature(ctx, args.synagogueId, "aliyot");
     const a = await getAuction(ctx, args.synagogueId, args.id);
     const bids = await ctx.db
       .query("auctionBids")
@@ -300,7 +300,7 @@ export const bid = mutation({
   },
   handler: async (ctx, args) => {
     const { userId: callerId, membership } = await requireMember(ctx, args.synagogueId);
-    await requireFeature(ctx, args.synagogueId, "auctions");
+    await requireFeature(ctx, args.synagogueId, "aliyot");
     const a = await getAuction(ctx, args.synagogueId, args.id);
     const now = Date.now();
     if (a.status === "closed" || now >= a.closesAt) {
@@ -452,6 +452,7 @@ async function settle(ctx: MutationCtx, id: Id<"auctions">) {
       createdAt: now,
       createdBy: a.createdBy,
     });
+    // הפיצר יכול היה להיכבות בין פתיחת המכרז לסגירתו
     if (await hasFeature(ctx, a.synagogueId, "aliyot")) {
       patch.aliyahId = await ctx.db.insert("aliyot", {
         synagogueId: a.synagogueId,

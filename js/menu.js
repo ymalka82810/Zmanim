@@ -19,7 +19,6 @@ const PAGES = [
   { path: 'kiddush/',          title: 'לוח קידושים' },
   { path: 'gabbai/',            title: 'קופת בית הכנסת' },
   { path: 'aliyot/',            title: 'חלוקת עליות', feature: 'aliyot' },
-  { path: 'auctions/',          title: 'מכרז עליות', feature: 'auctions' },
   { path: 'account/',           title: 'החשבון שלי' },
   { path: 'community-calendar/', title: 'יומן קהילה', showForMember: true }
 ];
@@ -203,14 +202,14 @@ function watchCounts(){
 }
 
 /* ---------- הודעות צדדיות ממכרז העליות (auctions:live) ----------
- * בכל דף, כשהפיצר פעיל בקהילה: "פלוני הציע ₪180 על שלישי", פתיחה וסגירה של מכרז, וזכייה.
+ * בכל דף, כשחלוקת העליות פעילה בקהילה: "פלוני הציע ₪180 על שלישי", פתיחה וסגירה של מכרז, וזכייה.
  * מה שכבר הוצג נשמר במכשיר (הזמן של ההודעה האחרונה), כדי שמעבר בין דפים לא יציג אותן שוב,
  * והודעות ישנות מעשר דקות לא קופצות (למשל כשחוזרים לאפליקציה אחרי יום) */
 const auctions = { sid: null, stop: null, box: null };
 const AUCTION_SEEN = 'site.auctionSeen.', AUCTION_FRESH_MS = 10 * 60e3, TOAST_MS = 7000;
 function watchAuctions(){
   const Auth = window.SiteAuth, d = badges.data;
-  const sid = Auth && d && Array.isArray(d.features) && d.features.includes('auctions') ? badges.sid : null;
+  const sid = Auth && d && Array.isArray(d.features) && d.features.includes('aliyot') ? badges.sid : null;
   if (sid === auctions.sid) return;
   if (auctions.stop) auctions.stop();
   auctions.stop = null;
@@ -236,7 +235,7 @@ function auctionToast(text){
   }
   const t = document.createElement('a');
   t.className = 'sm-toast';
-  t.href = new URL('auctions/', ROOT).href;
+  t.href = new URL('aliyot/?view=auction', ROOT).href;
   t.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 13-7.5 7.5a2.12 2.12 0 0 1-3-3L11 10"/><path d="m16 16 6-6"/><path d="m8 8 6-6"/><path d="m9 7 8 8"/><path d="m21 11-8-8"/></svg><span></span><button type="button" aria-label="סגירת ההודעה">×</button>';
   t.querySelector('span').textContent = text;
   const remove = () => { t.classList.remove('sm-in'); setTimeout(() => t.remove(), 300); };

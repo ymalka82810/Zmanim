@@ -6,7 +6,7 @@
  * בשרת המקומי (npm start) ובאפליקציה הקבצים נמצאים במכשיר, ולכן שם קודם מהרשת, כדי ששינוי יופיע מיד.
  * גופנים: מהמטמון, ואם אין – מהרשת.
  */
-const CACHE = 'luach-aca83b740d';
+const CACHE = 'luach-a8ff7b07eb';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/app-update.js', 'js/app.js', 'js/astro.js', 'js/auth.js', 'js/community.js', 'js/config.js', 'js/convex-config.js', 'js/dates.js', 'js/dialog.js', 'js/font-fill.js', 'js/hebrew.js', 'js/image.js', 'js/luach.js', 'js/menu.js', 'js/moadim.js', 'js/native-files.js', 'js/preload.js', 'js/render.js', 'js/search-actions.js', 'js/search-words.js', 'js/search.js', 'js/settings-sync.js', 'js/template-boxes.js', 'js/template-build.js', 'js/template-fields.js', 'js/template-fonts.js', 'js/template-lines.js', 'js/template-move.js', 'js/template-place.js', 'js/template-read.js', 'js/template-render.js', 'js/template-rules.js', 'js/template-slots.js', 'js/template-state.js', 'js/template-ui.js', 'js/text-edit.js', 'js/theme.js', 'js/wizard.js', 'js/zmanim.js',
@@ -16,8 +16,7 @@ const SHELL = [
   'vendor/qrcode/qrcode-generator-1.4.4.js',
   'kiddush/', 'kiddush/index.html', 'kiddush/css/styles.css', 'kiddush/js/app.js', 'kiddush/js/calendar.js',
   'gabbai/', 'gabbai/index.html', 'gabbai/css/styles.css', 'gabbai/js/app.js',
-  'aliyot/', 'aliyot/index.html', 'aliyot/js/app.js',
-  'auctions/', 'auctions/index.html', 'auctions/js/app.js',
+  'aliyot/', 'aliyot/index.html', 'aliyot/js/app.js', 'aliyot/js/auctions.js',
   'account/', 'account/index.html', 'account/css/styles.css', 'account/js/app.js',
   'community-calendar/', 'community-calendar/index.html', 'community-calendar/js/app.js',
   'guest/', 'guest/index.html', 'guest/css/styles.css', 'guest/js/app.js',

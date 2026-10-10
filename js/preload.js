@@ -100,6 +100,7 @@ async function run(onProgress, options){
   );
   if (features.includes('aliyot')) jobs.push(
     () => loadCalendar().then(() => Auth.query('aliyot:board', { synagogueId: sid, dateKey: aliyotDateKey() })),
+    cached('auctions:list'),
   );
   await stage(0.7, jobs);
 }
