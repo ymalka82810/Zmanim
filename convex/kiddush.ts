@@ -261,6 +261,17 @@ export const board = query({
       .withIndex("by_synagogue_date", (q) => q.eq("synagogueId", args.synagogueId))
       .collect();
     const by = synagogue.kiddushBy ?? DEFAULT_KIDDUSH_BY;
+    // כל משתמש נטען פעם אחת גם כשיש לו הזמנות רבות
+    const publicNames = new Map<Id<"users">, Promise<string>>();
+    const userNames = new Map<Id<"users">, Promise<string>>();
+    const cached = (cache: Map<Id<"users">, Promise<string>>, load: typeof publicName, id: Id<"users">) => {
+      let p = cache.get(id);
+      if (p === undefined) {
+        p = load(ctx, id);
+        cache.set(id, p);
+      }
+      return p;
+    };
     const bookings = await Promise.all(
       bookingDocs.map(async (b) => {
         const mine = b.userId === userId && !b.manual;
@@ -287,12 +298,12 @@ export const board = query({
             : [],
           awaitingPartners: hasPendingCosponsor(b),
           partner: partnerEntry?.status ?? null,
-          invitedBy: partnerEntry ? await publicName(ctx, b.userId) : null,
+          invitedBy: partnerEntry ? await cached(publicNames, publicName, b.userId) : null,
           blockLabel: b.blockLabel,
           termsVersion: b.termsVersion,
           phone: showPrivate ? b.phone : "",
           note: showPrivate ? b.note : "",
-          registrant: manager ? await userName(ctx, b.userId) : null,
+          registrant: manager ? await cached(userNames, userName, b.userId) : null,
         };
       }),
     );

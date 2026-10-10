@@ -115,9 +115,82 @@ async function myNotifications(ctx: QueryCtx, synagogueId: Id<"synagogues">, use
   return await Notifications.listForRecipient(ctx, synagogueId, "fund", userId);
 }
 
-/** גבאי ורב מקבלים את כל הקופה. חבר קהילה מקבל רק תרומות ומצוות שמשויכות אליו, וכן תזכורות תשלום אישיות. */
+const SINCE_RE = /^d{4}-d{2}-d{2}$/;
+
+/**
+ * רישומי הקופה לגבאי. בלי since: כולם. עם since: הרישומים מהתאריך ואילך, וכן כל חיוב שטרם שולם
+ * גם אם ישן, כדי שהרשימות והחובות הפתוחים יהיו שלמים. את מה שלפני since מסכמת fund:carry.
+ */
+async function managerTxs(ctx: QueryCtx, synagogueId: Id<"synagogues">, since: string | undefined) {
+  if (!since || !SINCE_RE.test(since)) {
+    return await ctx.db
+      .query("fundTransactions")
+      .withIndex("by_synagogue", (q) => q.eq("synagogueId", synagogueId))
+      .collect();
+  }
+  const recent = await ctx.db
+    .query("fundTransactions")
+    .withIndex("by_synagogue_date", (q) => q.eq("synagogueId", synagogueId).gte("date", since))
+    .collect();
+  const unpaid = await ctx.db
+    .query("fundTransactions")
+    .withIndex("by_synagogue_paid", (q) => q.eq("synagogueId", synagogueId).eq("paid", false))
+    .collect();
+  return [...recent, ...unpaid.filter((t) => t.date < since)];
+}
+
+/**
+ * תנועות הקופה לפני since, מסוכמות ליתרת פתיחה נוספת לכל חשבון. שאילתה נפרדת מ-fund:ledger, כדי
+ * שהיא תתעדכן רק כשרישום ישן משתנה ולא בכל רישום חדש. תשלום שהתקבל מאז since על חיוב ישן
+ * (paidDate מאוחר מ-since) חוזר כרישום, כי הוא תנועה של התקופה החדשה.
+ */
+export const carry = query({
+  args: { synagogueId: v.id("synagogues"), since: v.string() },
+  handler: async (ctx, args) => {
+    const { membership } = await requireMember(ctx, args.synagogueId);
+    if (!isManager(membership.role)) {
+      throw new ConvexError("אין הרשאה");
+    }
+    if (!SINCE_RE.test(args.since)) {
+      throw new ConvexError("תאריך לא תקין");
+    }
+    const old = await ctx.db
+      .query("fundTransactions")
+      .withIndex("by_synagogue_date", (q) => q.eq("synagogueId", args.synagogueId).lt("date", args.since))
+      .collect();
+    let main = 0;
+    let petty = 0;
+    const later: Doc<"fundTransactions">[] = [];
+    for (const t of old) {
+      if (INCOME_TYPES.has(t.type)) {
+        if (!t.paid) {
+          continue;
+        }
+        if ((t.paidDate || t.date) >= args.since) {
+          later.push(t);
+        } else {
+          main += t.amount;
+        }
+      } else if (t.type === "expense") {
+        main -= t.amount;
+      } else if (t.type === "pettyIn") {
+        main -= t.amount;
+        petty += t.amount;
+      } else if (t.type === "petty") {
+        petty -= t.amount;
+      }
+    }
+    return {
+      main: Math.round(main * 100) / 100,
+      petty: Math.round(petty * 100) / 100,
+      txs: later.map(forClient),
+    };
+  },
+});
+
+/** גבאי ורב מקבלים את הקופה (ראו managerTxs). חבר קהילה מקבל רק תרומות ומצוות שמשויכות אליו, וכן תזכורות תשלום אישיות. */
 export const ledger = query({
-  args: { synagogueId: v.id("synagogues") },
+  args: { synagogueId: v.id("synagogues"), since: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const { userId, membership } = await requireMember(ctx, args.synagogueId);
     const synagogue = await ctx.db.get(args.synagogueId);
@@ -141,10 +214,7 @@ export const ledger = query({
       };
     }
 
-    const txs = await ctx.db
-      .query("fundTransactions")
-      .withIndex("by_synagogue", (q) => q.eq("synagogueId", args.synagogueId))
-      .collect();
+    const txs = await managerTxs(ctx, args.synagogueId, args.since);
     const settings = await ctx.db
       .query("fundSettings")
       .withIndex("by_synagogue", (q) => q.eq("synagogueId", args.synagogueId))

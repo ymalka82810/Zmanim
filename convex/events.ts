@@ -29,6 +29,15 @@ export const list = query({
       .query("communityEvents")
       .withIndex("by_synagogue_date", (q) => q.eq("synagogueId", args.synagogueId))
       .collect();
+    const names = new Map<Id<"users">, Promise<string>>();
+    const nameOf = (id: Id<"users">) => {
+      let p = names.get(id);
+      if (p === undefined) {
+        p = userName(ctx, id);
+        names.set(id, p);
+      }
+      return p;
+    };
     return await Promise.all(
       docs
         .sort((a, b) => (a.dateKey < b.dateKey ? -1 : a.dateKey > b.dateKey ? 1 : a.createdAt - b.createdAt))
@@ -38,7 +47,7 @@ export const list = query({
           title: e.title,
           details: e.details,
           show: e.show ?? "board",
-          createdBy: await userName(ctx, e.createdBy),
+          createdBy: await nameOf(e.createdBy),
           createdAt: e.createdAt,
         })),
     );

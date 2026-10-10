@@ -45,6 +45,8 @@ function dateCell(s){const h=heb(s);return `${esc(gFmt.format(parseIso(s)))}<spa
 // ---------- state & storage (Convex: convex/fund.ts) ----------
 const Auth=window.SiteAuth;
 let txs=[]; let settings={synName:"קופת בית הכנסת",openMain:0,openPetty:0,israel:1};
+// הקופה נטענת מתחילת השנה הקודמת. מה שלפני כן מגיע כיתרת פתיחה נוספת (carry), ו"הצגת כל ההיסטוריה" טוענת הכול
+let since=defaultSince(), carry={main:0,petty:0}, ledgerTxs=[], carryTxs=[], carryReady=true, ledgerReady=false;
 let members=[], campaigns=[], role=null, sid=null, stage="loading", ledgerError="", notifications=[];
 const isManager=()=>role==="gabbai"||role==="rabbi";
 const LS="gabbai-fallback-v1";
@@ -101,8 +103,9 @@ function moves(account){
   out.sort((x,y)=>x.date<y.date?-1:x.date>y.date?1:(x.t.createdAt||0)-(y.t.createdAt||0));
   return out;
 }
+function openingOf(account){return (Number(account==="main"?settings.openMain:settings.openPetty)||0)+(account==="main"?carry.main:carry.petty)}
 function balance(account,upto){
-  let b=Number(account==="main"?settings.openMain:settings.openPetty)||0;
+  let b=openingOf(account);
   for(const m of moves(account)){if(upto&&m.date>upto)break;b+=m.cr-m.dr}
   return b;
 }
@@ -156,7 +159,7 @@ function viewHome(){
 function statement(acct,from,to){
   const all=moves(acct);
   const dayBefore=from?iso(new Date(parseIso(from).getTime()-864e5)):"";
-  let bal=from?balance(acct,dayBefore):(Number(acct==="main"?settings.openMain:settings.openPetty)||0);
+  let bal=from?balance(acct,dayBefore):openingOf(acct);
   const opening=bal; const rows=[];
   for(const m of all){ if(from&&m.date<from)continue; if(to&&m.date>to)continue; bal+=m.cr-m.dr; rows.push({...m,bal}) }
   return {opening,rows,closing:bal,cr:sum(rows,r=>r.cr),dr:sum(rows,r=>r.dr)};
@@ -318,7 +321,8 @@ function render(){
   document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===tab));
   const v={home:viewHome,ledger:viewLedger,donations:viewDonations,campaigns:viewCampaigns,petty:viewPetty,salary:viewSalary}[tab]();
   const local=localData();
-  $("#view").innerHTML=(local?`<div class="panel" style="padding:12px;margin-top:14px">נמצאו בדפדפן הזה ${local.txs.length} רישומי קופה מהגרסה הקודמת. <button class="btn" id="importLocal">העברה לקופת הקהילה</button></div>`:"")+v;
+  const older=since&&manager?`<div class="panel" style="padding:12px;margin-top:14px">מוצגים רישומים מ-${esc(gFmt.format(parseIso(since)))} ואילך, וכן כל חיוב שטרם שולם. היתרות כוללות את כל ההיסטוריה. <button class="btn ghost" id="allHistory">הצגת כל ההיסטוריה</button></div>`:"";
+  $("#view").innerHTML=older+(local?`<div class="panel" style="padding:12px;margin-top:14px">נמצאו בדפדפן הזה ${local.txs.length} רישומי קופה מהגרסה הקודמת. <button class="btn" id="importLocal">העברה לקופת הקהילה</button></div>`:"")+v;
   const names=[...new Set(txs.filter(x=>x.name).map(x=>x.name))];
   $("#donorList").innerHTML=names.map(n=>`<option value="${esc(n)}">`).join("");
   if(!dlg.open) $("#donor").innerHTML=`<option value="">לא חבר קהילה (שם חופשי)</option>`+members.map(m=>`<option value="${esc(m.userId)}">${esc(m.name)}</option>`).join("");
@@ -517,6 +521,7 @@ $("#view").addEventListener("click",async e=>{
   if(b.id==="csv") return exportCsv();
   if(b.id==="pdf") return print();
   if(b.id==="importLocal") return importLocal();
+  if(b.id==="allHistory") return setSince("");
   if(b.id==="signIn") return Auth.signInWithGoogle(location.href).catch(()=>toast("ההתחברות נכשלה"));
   if(b.id==="pledgeBtn") return openPledge();
   if(b.id==="markFundRead"){try{await markFundRead()}catch(err){}return}
@@ -535,7 +540,7 @@ $("#view").addEventListener("click",async e=>{
 });
 // רשימת התרומות של מגבית נשארת פתוחה גם כשהנתונים מתעדכנים והדף מצויר מחדש
 $("#view").addEventListener("toggle",e=>{const d=e.target;if(d.matches&&d.matches("details[data-camp]")){if(d.open)ui.openCamps.add(d.dataset.camp);else ui.openCamps.delete(d.dataset.camp)}},true);
-$("#view").addEventListener("change",e=>{if(e.target.id==="lf"){ui.from=e.target.value;render()}if(e.target.id==="lt"){ui.to=e.target.value;render()}});
+$("#view").addEventListener("change",e=>{if(e.target.id==="lf"){ui.from=e.target.value;if(since&&(!ui.from||ui.from<since)){setSince(ui.from?ui.from.slice(0,4)+"-01-01":"")}render()}if(e.target.id==="lt"){ui.to=e.target.value;render()}});
 
 async function exportCsv(){
   const s=statement(ui.acct,ui.from,ui.to);
@@ -557,19 +562,35 @@ async function exportCsv(){
 }
 
 // ---------- boot ----------
-let unsubscribe=null;
-function subscribe(id){
-  if(unsubscribe){unsubscribe();unsubscribe=null}
+let unsubscribe=null, unsubscribeCarry=null;
+function defaultSince(){return (new Date().getFullYear()-1)+"-01-01"}
+function mergeTxs(){const seen=new Set(ledgerTxs.map(t=>t.id));txs=ledgerTxs.concat(carryTxs.filter(t=>!seen.has(t.id)))}
+function unwatch(){if(unsubscribe){unsubscribe();unsubscribe=null}if(unsubscribeCarry){unsubscribeCarry();unsubscribeCarry=null}}
+// since="" טוען את כל ההיסטוריה
+function setSince(s){if(s===since||!sid)return;since=s;subscribe(sid,true)}
+function subscribe(id,keepStage){
+  unwatch();
+  if(id!==sid){since=defaultSince();carry={main:0,petty:0};carryTxs=[]}
   sid=id;
   if(!id){stage="noCommunity";return render()}
-  stage="loading";render();
-  unsubscribe=Auth.watch("fund:ledger",{synagogueId:id},d=>{
-    role=d.role;txs=d.txs;members=d.members;campaigns=d.campaigns||[];notifications=d.notifications||[];
+  if(!keepStage){stage="loading";render()}
+  carryReady=true;ledgerReady=false;
+  if(since){
+    carryReady=false;
+    unsubscribeCarry=Auth.watch("fund:carry",{synagogueId:id,since},c=>{
+      carry={main:c.main,petty:c.petty};carryTxs=c.txs;carryReady=true;mergeTxs();if(ledgerReady){stage="ready";render()}
+    },e=>{
+      // חבר קהילה רגיל אינו גבאי ולכן אינו צריך את הסיכום
+      carry={main:0,petty:0};carryTxs=[];carryReady=true;mergeTxs();if(ledgerReady){stage="ready";render()}
+    });
+  }else{carry={main:0,petty:0};carryTxs=[]}
+  unsubscribe=Auth.watch("fund:ledger",since?{synagogueId:id,since}:{synagogueId:id},d=>{
+    role=d.role;ledgerTxs=d.txs;mergeTxs();members=d.members;campaigns=d.campaigns||[];notifications=d.notifications||[];
     settings=Object.assign({},settings,d.settings||{},{synName:d.synagogue.name,israel:d.synagogue.il?1:0});
-    hcache.clear();stage="ready";render();
+    hcache.clear();ledgerReady=true;if(carryReady){stage="ready";render()}
   },e=>{console.warn(e);ledgerError=errText(e,"לא ניתן לטעון את הקופה.");stage="error";render()});
 }
-function signedOut(){if(unsubscribe){unsubscribe();unsubscribe=null}sid=null;stage="signedOut";render()}
+function signedOut(){unwatch();sid=null;stage="signedOut";render()}
 async function load(){
   if(!Auth.isAuthenticated()) return signedOut();
   // הקהילות מהכניסה הקודמת מוצגות מיד, והרשימה מהשרת מחליפה אותן כשהיא מגיעה

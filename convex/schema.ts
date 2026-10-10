@@ -180,6 +180,9 @@ export default defineSchema({
     .index("by_synagogue", ["synagogueId"])
     .index("by_synagogue_donor", ["synagogueId", "donorId"])
     .index("by_synagogue_hebrewYear", ["synagogueId", "hebrewYear"])
+    // חלון תאריכים בדף הקופה (fund:ledger), והחיובים הפתוחים בלי קשר לתאריך
+    .index("by_synagogue_date", ["synagogueId", "date"])
+    .index("by_synagogue_paid", ["synagogueId", "paid"])
     // תזכורות התשלום היומיות קוראות רק את הלא-משולמים
     .index("by_paid", ["paid"])
     .index("by_campaign", ["campaignId"])

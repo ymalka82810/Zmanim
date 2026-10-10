@@ -136,15 +136,32 @@ export const board = query({
       .query("memberships")
       .withIndex("by_synagogue", (q) => q.eq("synagogueId", args.synagogueId))
       .collect();
+    // מעבר יחיד על העליות במקום שני סינונים לכל חבר
+    const stats = new Map<Id<"users">, { last: string; countYear: number }>();
+    for (const a of aliyot) {
+      if (!a.userId || a.dateKey >= args.dateKey) {
+        continue;
+      }
+      const s = stats.get(a.userId);
+      if (s === undefined) {
+        stats.set(a.userId, { last: a.dateKey, countYear: a.dateKey >= since ? 1 : 0 });
+      } else {
+        if (a.dateKey > s.last) {
+          s.last = a.dateKey;
+        }
+        if (a.dateKey >= since) {
+          s.countYear++;
+        }
+      }
+    }
     const members = await Promise.all(memberships.map(async (m) => {
-      const mine = aliyot.filter((a) => a.userId === m.userId && a.dateKey < args.dateKey);
-      const last = mine.reduce<string | null>((max, a) => (max === null || a.dateKey > max ? a.dateKey : max), null);
+      const s = stats.get(m.userId);
       return {
         userId: m.userId,
         name: await userName(ctx, m.userId),
         tribe: m.tribe ?? "israel",
-        last,
-        countYear: mine.filter((a) => a.dateKey >= since).length,
+        last: s?.last ?? null,
+        countYear: s?.countYear ?? 0,
         given: givenUsers.has(m.userId),
       };
     }));
