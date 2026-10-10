@@ -18,7 +18,7 @@ import { parseQuery, score } from "../js/search-words.js";
  * וגבאי ורב מוצאים גם את מה שפתוח רק להם (כל הקופה, רשימת החברים, לוחות שממתינים לאישור, טלפונים והערות).
  * מקור של פיצ'ר כבוי (convex/features.ts) לא נכנס לאינדקס. מקור חדש – מוסיפים ל-SOURCES עם אותה בדיקת הרשאה של הדף שלו.
  *
- * האינדקס נבנה בכל חיפוש מהנתונים של הקהילה (קהילה אחת היא עשרות עד אלפי רשומות). ההשוואה עצמה (ניקוד,
+ * האינדקס נבנה בכל חיפוש מהנתונים של הקהילה (קהילה אחת היא עשרות עד אלפי רשומות; מכל טבלה נקראות לכל היותר MAX_SCAN החדשות, ואם יש יותר – more). ההשוואה עצמה (ניקוד,
  * כתיב מלא, מילים נרדפות, אותיות שימוש) ב-js/search-words.js, המשותף לחיפוש בדפדפן.
  * כל מילה בחיפוש צריכה להופיע (באחת מצורותיה) בטקסט של הרשומה, גם כחלק ממילה.
  */
@@ -51,6 +51,8 @@ type Viewer = {
   features: Feature[];
   today: string;
   name: (userId: Id<"users">) => Promise<string>;
+  /** קורא עד MAX_SCAN רשומות (החדשות קודם); אם יש יותר – חותך ומסמן ש-more */
+  scan: <T>(q: { take: (n: number) => Promise<T[]> }) => Promise<T[]>;
 };
 
 type Source = { feature?: Feature; managerOnly?: boolean; build: (v: Viewer) => Promise<Entry[]> };
@@ -71,11 +73,13 @@ const join = (...parts: (string | null | undefined)[]) => parts.map((p) => (p ??
 const SOURCES: Record<SearchKind, Source> = {
   // events:list – כל חברי הקהילה
   event: {
-    build: async ({ ctx, synagogueId, manager }) => {
-      const docs = await ctx.db
-        .query("communityEvents")
-        .withIndex("by_synagogue_date", (q) => q.eq("synagogueId", synagogueId))
-        .collect();
+    build: async ({ ctx, synagogueId, manager, scan }) => {
+      const docs = await scan(
+        ctx.db
+          .query("communityEvents")
+          .withIndex("by_synagogue_date", (q) => q.eq("synagogueId", synagogueId))
+          .order("desc"),
+      );
       return docs.map((e) => ({
         kind: "event",
         title: e.title,
@@ -90,11 +94,13 @@ const SOURCES: Record<SearchKind, Source> = {
   // kiddush:board – כולם רואים את הקידושים שבלוח; טלפון והערה – רק הנרשם עצמו, גבאי ורב.
   // חבר קהילה לא מוצא בקשה של אחר שעוד ממתינה לאישור, וגם לא תאריך חסום
   kiddush: {
-    build: async ({ ctx, synagogueId, synagogue, userId, manager, name }) => {
-      const docs = await ctx.db
-        .query("kiddushBookings")
-        .withIndex("by_synagogue_date", (q) => q.eq("synagogueId", synagogueId))
-        .collect();
+    build: async ({ ctx, synagogueId, synagogue, userId, manager, name, scan }) => {
+      const docs = await scan(
+        ctx.db
+          .query("kiddushBookings")
+          .withIndex("by_synagogue_date", (q) => q.eq("synagogueId", synagogueId))
+          .order("desc"),
+      );
       const by = synagogue.kiddushBy ?? DEFAULT_KIDDUSH_BY;
       const entries: Entry[] = [];
       for (const b of docs) {
@@ -124,17 +130,21 @@ const SOURCES: Record<SearchKind, Source> = {
 
   // fund:ledger – גבאי ורב: כל הקופה. חבר קהילה: רק התרומות ומכירות המצווה שמשויכות אליו
   fund: {
-    build: async ({ ctx, synagogueId, userId, manager }) => {
+    build: async ({ ctx, synagogueId, userId, manager, scan }) => {
       const docs = manager
-        ? await ctx.db
-            .query("fundTransactions")
-            .withIndex("by_synagogue", (q) => q.eq("synagogueId", synagogueId))
-            .collect()
-        : (
-            await ctx.db
+        ? await scan(
+            ctx.db
               .query("fundTransactions")
-              .withIndex("by_synagogue_donor", (q) => q.eq("synagogueId", synagogueId).eq("donorId", userId))
-              .collect()
+              .withIndex("by_synagogue", (q) => q.eq("synagogueId", synagogueId))
+              .order("desc"),
+          )
+        : (
+            await scan(
+              ctx.db
+                .query("fundTransactions")
+                .withIndex("by_synagogue_donor", (q) => q.eq("synagogueId", synagogueId).eq("donorId", userId))
+                .order("desc"),
+            )
           ).filter((t) => DONOR_TYPES.has(t.type));
       return docs.map((t) => {
         const what = t.type === "mitzvah" ? `${FUND_TYPES.mitzvah}: ${t.mitzvah}` : FUND_TYPES[t.type] ?? t.type;
@@ -155,11 +165,13 @@ const SOURCES: Record<SearchKind, Source> = {
   // yahrzeits:list – חבר רואה את שלו ואת הגלויות לקהילה; גבאי ורב רואים הכול
   yahrzeit: {
     feature: "week",
-    build: async ({ ctx, synagogueId, userId, manager, today, name }) => {
-      const docs = await ctx.db
-        .query("yahrzeits")
-        .withIndex("by_synagogue", (q) => q.eq("synagogueId", synagogueId))
-        .collect();
+    build: async ({ ctx, synagogueId, userId, manager, today, name, scan }) => {
+      const docs = await scan(
+        ctx.db
+          .query("yahrzeits")
+          .withIndex("by_synagogue", (q) => q.eq("synagogueId", synagogueId))
+          .order("desc"),
+      );
       const entries: Entry[] = [];
       for (const y of docs) {
         const mine = y.userId === userId;
@@ -185,11 +197,13 @@ const SOURCES: Record<SearchKind, Source> = {
   // members:list – גבאי ורב בלבד, כולל מייל וטלפון
   member: {
     managerOnly: true,
-    build: async ({ ctx, synagogueId }) => {
-      const memberships = await ctx.db
-        .query("memberships")
-        .withIndex("by_synagogue", (q) => q.eq("synagogueId", synagogueId))
-        .collect();
+    build: async ({ ctx, synagogueId, scan }) => {
+      const memberships = await scan(
+        ctx.db
+          .query("memberships")
+          .withIndex("by_synagogue", (q) => q.eq("synagogueId", synagogueId))
+          .order("desc"),
+      );
       const ROLE = { gabbai: "גבאי", rabbi: "רב", member: "חבר קהילה" };
       return await Promise.all(
         memberships.map(async (m) => {
@@ -232,19 +246,23 @@ const SOURCES: Record<SearchKind, Source> = {
   // aliyot:board – גבאי ורב: כל העליות והחיובים. חבר קהילה: רק העליות שלו והחיובים העתידיים שלו
   aliyah: {
     feature: "aliyot",
-    build: async ({ ctx, synagogueId, userId, manager, today, name }) => {
+    build: async ({ ctx, synagogueId, userId, manager, today, name, scan }) => {
       const reasonLabel = (r: string | undefined) => (r ? (REASONS as Record<string, string>)[r] ?? r : "");
       const aliyot = (
-        await ctx.db
-          .query("aliyot")
-          .withIndex("by_synagogue_date", (q) => q.eq("synagogueId", synagogueId))
-          .collect()
+        await scan(
+          ctx.db
+            .query("aliyot")
+            .withIndex("by_synagogue_date", (q) => q.eq("synagogueId", synagogueId))
+            .order("desc"),
+        )
       ).filter((a) => manager || a.userId === userId);
       const claims = (
-        await ctx.db
-          .query("aliyahClaims")
-          .withIndex("by_synagogue_date", (q) => (manager ? q.eq("synagogueId", synagogueId) : q.eq("synagogueId", synagogueId).gte("dateKey", today)))
-          .collect()
+        await scan(
+          ctx.db
+            .query("aliyahClaims")
+            .withIndex("by_synagogue_date", (q) => (manager ? q.eq("synagogueId", synagogueId) : q.eq("synagogueId", synagogueId).gte("dateKey", today)))
+            .order("desc"),
+        )
       ).filter((c) => manager || c.userId === userId);
       return [
         ...aliyot.map((a) => ({
@@ -272,11 +290,13 @@ const SOURCES: Record<SearchKind, Source> = {
   // minyan:list – כל חברי הקהילה
   minyan: {
     feature: "week",
-    build: async ({ ctx, synagogueId, manager }) => {
-      const docs = await ctx.db
-        .query("minyanim")
-        .withIndex("by_synagogue", (q) => q.eq("synagogueId", synagogueId))
-        .collect();
+    build: async ({ ctx, synagogueId, manager, scan }) => {
+      const docs = await scan(
+        ctx.db
+          .query("minyanim")
+          .withIndex("by_synagogue", (q) => q.eq("synagogueId", synagogueId))
+          .order("desc"),
+      );
       return docs.map((m) => ({
         kind: "minyan",
         title: m.name,
@@ -296,6 +316,8 @@ const entryScore = (e: Entry, query: string[][]) =>
 
 const MAX_PER_KIND = 8;
 const MAX_TOTAL = 40;
+/** תקרת הרשומות שנקראות מכל טבלה בחיפוש אחד, החדשות קודם – שהעלות לא תגדל עם ההיסטוריה של הקהילה */
+const MAX_SCAN = 1500;
 
 /**
  * חיפוש בקהילה הפעילה. null – המשתמש לא מחובר או לא חבר בקהילה (החיפוש מציג אז רק את דפי האתר).
@@ -318,6 +340,7 @@ export const run = query({
       return { items: [], more: false };
     }
 
+    let more = false;
     const names = new Map<Id<"users">, Promise<string>>();
     const viewer: Viewer = {
       ctx,
@@ -327,6 +350,14 @@ export const run = query({
       manager: isManager(membership.role),
       features: enabledFeatures(synagogue),
       today: todayKey(),
+      scan: async (q) => {
+        const docs = await q.take(MAX_SCAN + 1);
+        if (docs.length > MAX_SCAN) {
+          more = true;
+          docs.pop();
+        }
+        return docs;
+      },
       name: (id) => {
         if (!names.has(id)) {
           names.set(id, ctx.db.get(id).then(displayName));
@@ -347,7 +378,6 @@ export const run = query({
       const d = daysBetween(viewer.today, e.dateKey);
       return d >= 0 ? d : -d + 0.5;
     };
-    let more = false;
     const picked: (Entry & { score: number })[] = [];
     for (const entries of built) {
       const matches = entries
