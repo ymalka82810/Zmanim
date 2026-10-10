@@ -278,11 +278,18 @@ let toastT;
 function toast(msg){ let t = document.querySelector('.toast'); if (!t){ t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); } t.textContent = msg; clearTimeout(toastT); toastT = setTimeout(() => t.remove(), 3200); }
 
 /** בחירת אדם: חברי הקהילה (מי שכבר עלה היום בסוף), או אורח בשם חופשי */
-function personField(userId, name, preferTribe){
-  const members = S.data.members.slice().sort((a, b) => (a.given - b.given) || ((b.tribe === preferTribe) - (a.tribe === preferTribe)));
+const isKohenLevi = a => a === 'כהן' || a === 'לוי';
+function personOptions(userId, name, preferTribe, aliyah){
+  // מי שמסומן ישראל לא מוצע לעלייה של כהן או לוי
+  const members = S.data.members.filter(m => !(isKohenLevi(aliyah) && m.tribe === 'israel'))
+    .sort((a, b) => (a.given - b.given) || ((b.tribe === preferTribe) - (a.tribe === preferTribe)));
   const guest = !userId && !!name;
   const opts = members.map(m => `<option value="${m.userId}"${m.userId === userId ? ' selected' : ''}>${esc(m.name)}${m.tribe !== 'israel' ? ' (' + TRIBE_LABEL[m.tribe] + ')' : ''} · ${esc(m.given ? 'כבר עלה היום' : ago(m.last))}</option>`).join('');
-  return `<label class="f" for="fPerson">מי</label><select id="fPerson"><option value="">— בחירה —</option>${opts}<option value="guest"${guest ? ' selected' : ''}>אורח (שם חופשי)</option></select>
+  return `<option value="">— בחירה —</option>${opts}<option value="guest"${guest ? ' selected' : ''}>אורח (שם חופשי)</option>`;
+}
+function personField(userId, name, preferTribe, aliyah){
+  const guest = !userId && !!name;
+  return `<label class="f" for="fPerson">מי</label><select id="fPerson">${personOptions(userId, name, preferTribe, aliyah)}</select>
     <div id="guestWrap"${guest ? '' : ' hidden'}><label class="f" for="fName">שם האורח</label><input type="text" id="fName" maxlength="80" value="${esc(guest ? name : '')}"></div>`;
 }
 function reasonOptions(selected, withNone){
@@ -301,7 +308,7 @@ function giveSheet(d){
   openSheet(sheetHead('רישום עלייה', title) +
     `<label class="f" for="fAliyah">עלייה או כיבוד</label><select id="fAliyah">${names.map(n => `<option${n === aliyah ? ' selected' : ''}>${esc(n)}${taken.has(n) ? ' ✓' : ''}</option>`).join('')}<option value="__other"${listed || !aliyah ? '' : ' selected'}>אחר…</option></select>
      <div id="otherWrap"${listed || !aliyah ? ' hidden' : ''}><input type="text" id="fOther" maxlength="40" placeholder="לדוגמה: חתן תורה" value="${esc(listed ? '' : aliyah)}"></div>
-     ${personField(d.u || '', d.n || '', preferTribe)}
+     ${personField(d.u || '', d.n || '', preferTribe, aliyah)}
      <label class="f" for="fReason">חיוב</label><select id="fReason">${reasonOptions(d.r || '', true)}</select>
      <label class="f" for="fAmount">נמכרה בסכום (₪, לא חובה)</label><input type="text" inputmode="decimal" id="fAmount" placeholder="ירשם בקופה כחוב פתוח על שם העולה">
      <div class="row" style="margin-top:16px"><button class="btn" type="button" data-act="saveAliyah">שמירה</button><button class="btn ghost" type="button" data-act="close">ביטול</button></div>`);
@@ -382,7 +389,13 @@ document.addEventListener('click', e => {
 document.addEventListener('change', guard(async e => {
   const t = e.target;
   if (t.id === 'pickDate') setDate(t.value);
-  else if (t.id === 'fAliyah') $('#otherWrap').hidden = t.value !== '__other';
+  else if (t.id === 'fAliyah'){
+    $('#otherWrap').hidden = t.value !== '__other';
+    const p = $('#fPerson'), cur = p.value;
+    p.innerHTML = personOptions(cur !== 'guest' ? cur : '', cur === 'guest' ? 'x' : '', t.value === 'כהן' ? 'kohen' : t.value === 'לוי' ? 'levi' : '', t.value);
+    if (cur && !p.value) p.value = '';
+    $('#guestWrap').hidden = p.value !== 'guest';
+  }
   else if (t.id === 'fPerson') $('#guestWrap').hidden = t.value !== 'guest';
   else if (t.dataset.tribeFor !== undefined){
     await call('aliyot:setTribe', { ...(t.dataset.tribeFor ? { userId: t.dataset.tribeFor } : {}), tribe: t.value });

@@ -334,8 +334,12 @@ export const bid = mutation({
     let forName = "";
     if (args.forUserId || args.forName) {
       if (args.forUserId) {
-        if ((await getMembership(ctx, args.synagogueId, args.forUserId)) === null) {
+        const forMembership = await getMembership(ctx, args.synagogueId, args.forUserId);
+        if (forMembership === null) {
           throw new ConvexError("החבר לא נמצא בקהילה");
+        }
+        if ((a.title === "כהן" || a.title === "לוי") && (forMembership.tribe ?? "israel") === "israel") {
+          throw new ConvexError("מי שמסומן ישראל לא יכול לעלות לעליית כהן או לוי");
         }
         forUserId = args.forUserId;
       } else {

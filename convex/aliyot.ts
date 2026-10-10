@@ -182,8 +182,12 @@ export const add = mutation({
     }
     let name = clip(args.name ?? "", 80);
     if (args.userId) {
-      if ((await getMembership(ctx, args.synagogueId, args.userId)) === null) {
+      const membership = await getMembership(ctx, args.synagogueId, args.userId);
+      if (membership === null) {
         throw new ConvexError("החבר לא נמצא בקהילה");
+      }
+      if ((aliyah === "כהן" || aliyah === "לוי") && (membership.tribe ?? "israel") === "israel") {
+        throw new ConvexError("מי שמסומן ישראל לא יכול לעלות לעליית כהן או לוי");
       }
       name = await userName(ctx, args.userId);
     }

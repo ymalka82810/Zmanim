@@ -217,7 +217,9 @@ function editSheet(a){
 }
 
 function bidForSheet(a){
-  const opts = S.data.members.map(m => `<label class="au-person" data-n="${esc(m.name)}"><input type="radio" name="auWho" value="${m.userId}"> ${esc(m.name)}</label>`).join('');
+  // מי שמסומן ישראל לא מוצע לעליית כהן או לוי
+  const kohenLevi = a.title === 'כהן' || a.title === 'לוי';
+  const opts = S.data.members.filter(m => !(kohenLevi && m.tribe === 'israel')).map(m => `<label class="au-person" data-n="${esc(m.name)}"><input type="radio" name="auWho" value="${m.userId}"> ${esc(m.name)}</label>`).join('');
   X.openSheet(X.sheetHead('הצעה כדי שמישהו אחר יעלה', `${a.title} · מינימום ${shekel(a.next)}`) +
     `<p class="small muted">ההצעה נרשמת על שמך, ואתה המשלם. בקהילה יופיע שמך בלבד; הגבאי והרב יראו עבור מי ביקשת שיעלה.</p>
      <label class="f" for="auSearch">מי יעלה? חיפוש חבר קהילה</label><input type="search" id="auSearch" placeholder="הקלד שם" autocomplete="off">
