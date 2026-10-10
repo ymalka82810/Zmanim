@@ -24,7 +24,8 @@ const clone = o => JSON.parse(JSON.stringify(o));
 
 /* ---------- טעינה ---------- */
 async function boot(){
-  render();
+  S.signedIn = Auth.isAuthenticated();
+  if (S.signedIn) $('#app').innerHTML = '<div class="empty">טוען…</div>';
   try { await Auth.completeSignInFromRedirect(); } catch(e){ console.warn(e); }
   Auth.onChange(() => { S.signedIn = Auth.isAuthenticated(); load(); });
   S.signedIn = Auth.isAuthenticated();
