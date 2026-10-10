@@ -203,8 +203,11 @@ export default defineSchema({
     by: v.optional(v.id("users")),
     dateKey: v.optional(v.string()),
     transactionId: v.optional(v.id("fundTransactions")),
+    // הודעה על פתיחת מגבית, שנמחקת יחד עם המגבית
+    campaignId: v.optional(v.id("fundCampaigns")),
   })
     .index("by_synagogue_type_at", ["synagogueId", "type", "at"])
+    .index("by_campaign", ["campaignId"])
     .index("by_synagogue_type_to_at", ["synagogueId", "type", "to", "at"]),
 
   scheduleFiles: defineTable({

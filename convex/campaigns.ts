@@ -194,6 +194,7 @@ export const save = mutation({
         type: "fund",
         to: m.userId,
         text: `נפתחה מגבית חדשה: ${title} (עלות ₪${goal.toLocaleString("he-IL")}). אפשר לתרום לה בדף הקופה.`,
+        campaignId: id,
       });
     }
     return { id };
@@ -221,6 +222,12 @@ export const remove = mutation({
       throw new ConvexError("יש תרומות שרשומות למגבית הזו, ולכן אפשר רק לסגור אותה. כדי למחוק יש למחוק קודם את התרומות");
     }
     if (campaign.imageId) await ctx.storage.delete(campaign.imageId);
+    // ההודעות על פתיחת המגבית נמחקות איתה, גם אצל מי שעוד לא קרא אותן
+    const notes = await ctx.db
+      .query("notifications")
+      .withIndex("by_campaign", (q) => q.eq("campaignId", campaign._id))
+      .collect();
+    for (const n of notes) await ctx.db.delete(n._id);
     await ctx.db.delete(campaign._id);
   },
 });

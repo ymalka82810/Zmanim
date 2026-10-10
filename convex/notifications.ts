@@ -23,6 +23,7 @@ export async function create(
     by?: Id<"users">;
     dateKey?: string;
     transactionId?: Id<"fundTransactions">;
+    campaignId?: Id<"fundCampaigns">;
   },
 ) {
   await ctx.db.insert("notifications", {
@@ -35,6 +36,7 @@ export async function create(
     by: args.by,
     dateKey: args.dateKey,
     transactionId: args.transactionId,
+    campaignId: args.campaignId,
   });
 }
 
