@@ -33,6 +33,8 @@ import type * as notifications from "../notifications.js";
 import type * as roles from "../roles.js";
 import type * as schedules from "../schedules.js";
 import type * as search from "../search.js";
+import type * as silverPrice from "../silverPrice.js";
+import type * as specialDonations from "../specialDonations.js";
 import type * as storage from "../storage.js";
 import type * as synagogues from "../synagogues.js";
 import type * as users from "../users.js";
@@ -73,6 +75,8 @@ declare const fullApi: ApiFromModules<{
   roles: typeof roles;
   schedules: typeof schedules;
   search: typeof search;
+  silverPrice: typeof silverPrice;
+  specialDonations: typeof specialDonations;
   storage: typeof storage;
   synagogues: typeof synagogues;
   users: typeof users;

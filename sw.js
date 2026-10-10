@@ -6,16 +6,16 @@
  * בשרת המקומי (npm start) ובאפליקציה הקבצים נמצאים במכשיר, ולכן שם קודם מהרשת, כדי ששינוי יופיע מיד.
  * גופנים: מהמטמון, ואם אין – מהרשת.
  */
-const CACHE = 'luach-c4a1f3e7d2';
+const CACHE = 'luach-0d9d109052';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
-  'js/app-update.js', 'js/app.js', 'js/astro.js', 'js/auth.js', 'js/community.js', 'js/config.js', 'js/convex-config.js', 'js/dates.js', 'js/dialog.js', 'js/font-fill.js', 'js/hebrew.js', 'js/image.js', 'js/luach.js', 'js/menu.js', 'js/moadim.js', 'js/native-files.js', 'js/preload.js', 'js/render.js', 'js/search-actions.js', 'js/search-words.js', 'js/search.js', 'js/settings-sync.js', 'js/template-boxes.js', 'js/template-build.js', 'js/template-fields.js', 'js/template-fonts.js', 'js/template-lines.js', 'js/template-move.js', 'js/template-place.js', 'js/template-read.js', 'js/template-render.js', 'js/template-rules.js', 'js/template-slots.js', 'js/template-state.js', 'js/template-ui.js', 'js/text-edit.js', 'js/theme.js', 'js/wizard.js', 'js/zmanim.js',
+  'js/app-update.js', 'js/app.js', 'js/astro.js', 'js/auth.js', 'js/community.js', 'js/config.js', 'js/convex-config.js', 'js/dates.js', 'js/dialog.js', 'js/font-fill.js', 'js/hebrew.js', 'js/image.js', 'js/luach.js', 'js/menu.js', 'js/moadim.js', 'js/native-files.js', 'js/preload.js', 'js/render.js', 'js/search-actions.js', 'js/search-words.js', 'js/search.js', 'js/settings-sync.js', 'js/special-donations.js', 'js/template-boxes.js', 'js/template-build.js', 'js/template-fields.js', 'js/template-fonts.js', 'js/template-lines.js', 'js/template-move.js', 'js/template-place.js', 'js/template-read.js', 'js/template-render.js', 'js/template-rules.js', 'js/template-slots.js', 'js/template-state.js', 'js/template-ui.js', 'js/text-edit.js', 'js/theme.js', 'js/wizard.js', 'js/zmanim.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon.svg', 'icons/maskable-512.png',
   'vendor/hebcal/hebcal-core-6.9.3.min.js',
   'vendor/convex/convex-browser-1.46.0.js',
   'vendor/qrcode/qrcode-generator-1.4.4.js',
   'kiddush/', 'kiddush/index.html', 'kiddush/css/styles.css', 'kiddush/js/app.js', 'kiddush/js/calendar.js',
-  'gabbai/', 'gabbai/index.html', 'gabbai/css/styles.css', 'gabbai/js/app.js',
+  'gabbai/', 'gabbai/index.html', 'gabbai/css/special.css', 'gabbai/css/styles.css', 'gabbai/js/app.js', 'gabbai/js/special.js',
   'aliyot/', 'aliyot/index.html', 'aliyot/js/app.js', 'aliyot/js/auctions.js',
   'account/', 'account/index.html', 'account/css/styles.css', 'account/js/app.js',
   'community-calendar/', 'community-calendar/index.html', 'community-calendar/js/app.js',

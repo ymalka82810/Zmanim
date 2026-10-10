@@ -21,4 +21,10 @@ crons.daily(
   internal.schedules.purgeOldTrash,
 );
 
+crons.daily(
+  "silver price for machatzit hashekel",
+  { hourUTC: 9, minuteUTC: 30 },
+  internal.silverPrice.refresh,
+);
+
 export default crons;

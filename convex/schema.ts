@@ -171,11 +171,14 @@ export default defineSchema({
     hebrewYear: v.optional(v.number()),
     // תרומה למגבית (fundCampaigns). רק לרישום מסוג donation
     campaignId: v.optional(v.id("fundCampaigns")),
+    // תרומה לזמן מיוחד (specialDonations), כמו פדיון כפרות או מחצית השקל. רק לרישום מסוג donation
+    specialId: v.optional(v.id("specialDonations")),
   })
     .index("by_synagogue", ["synagogueId"])
     .index("by_synagogue_donor", ["synagogueId", "donorId"])
     .index("by_synagogue_hebrewYear", ["synagogueId", "hebrewYear"])
-    .index("by_campaign", ["campaignId"]),
+    .index("by_campaign", ["campaignId"])
+    .index("by_special", ["specialId"]),
 
   // מגבית בקופה (convex/campaigns.ts): מטרה שהגבאי או הרב פתחו, עם עלות (goal) שסך התרומות אליה לא יעבור, ותמונת תיאור
   fundCampaigns: defineTable({
@@ -190,6 +193,30 @@ export default defineSchema({
     createdAt: v.number(),
     closedAt: v.optional(v.number()),
   }).index("by_synagogue", ["synagogueId"]),
+
+  // תרומה לזמן מיוחד (convex/specialDonations.ts): פדיון כפרות, מחצית השקל, מתנות לאביונים, קמחא דפסחא, נדר ביזכור
+  // או שם חופשי, שהגבאי או הרב פותחים וסוגרים. texts – הנוסח לכל עדה שמוצעת (ashkenaz/sefard/mizrach/chabad), אם יש.
+  // amount – הסכום המוצע (במחצית השקל – לנפש; בלי סכום הוא מחושב לפי מחיר הכסף, silverPrice)
+  specialDonations: defineTable({
+    synagogueId: v.id("synagogues"),
+    kind: v.string(),
+    title: v.string(),
+    desc: v.string(),
+    amount: v.optional(v.number()),
+    texts: v.optional(v.record(v.string(), v.string())),
+    status: v.union(v.literal("open"), v.literal("closed")),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+    closedAt: v.optional(v.number()),
+  }).index("by_synagogue", ["synagogueId"]),
+
+  // מחיר גרם כסף טהור בשקלים, לחישוב מחצית השקל (convex/silverPrice.ts). רשומה אחת, שמתעדכנת פעם ביום
+  silverPrice: defineTable({
+    ilsPerGram: v.number(),
+    usdPerOunce: v.number(),
+    usdIls: v.number(),
+    at: v.number(),
+  }),
 
   // התראות קידוש וקופה משותפות. dateKey/by רלוונטיים לקידוש בלבד, transactionId לקופה בלבד
   notifications: defineTable({
