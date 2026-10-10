@@ -132,7 +132,7 @@ function activeHTML(){
 function auctionHTML(a){
   const p = phase(a), live = p === 'open';
   const top = a.top
-    ? `<div class="au-top${a.top.mine ? ' mine' : ''}" data-top="${a._id}"><b>${shekel(a.top.amount)}</b><span>${esc(a.top.name)}${a.top.mine ? ' · ההצעה שלך מובילה' : ''}</span></div>`
+    ? `<div class="au-top${a.top.mine ? ' mine' : ''}" data-top="${a._id}"><b>${shekel(a.top.amount)}</b><span>${esc(a.top.name)}${a.top.forName ? ' · עבור ' + esc(a.top.forName) : ''}${a.top.mine ? ' · ההצעה שלך מובילה' : ''}</span></div>`
     : `<div class="au-top" data-top="${a._id}"><span class="meta">מחיר פתיחה</span><b>${shekel(a.minBid)}</b></div>`;
   const quick = [a.next, a.next + a.step, a.next + a.step * 4];
   const bid = live && !(a.top && a.top.mine) ? `<div class="au-bid">
@@ -140,8 +140,8 @@ function auctionHTML(a){
       <input type="text" inputmode="numeric" id="amt-${a._id}" placeholder="סכום אחר" aria-label="סכום אחר על ${esc(a.title)}">
       <button class="btn" type="button" data-act="auBidTyped" data-id="${a._id}">הצעה</button></div>` : '';
   const bids = a.bids.length ? `<details><summary>${a.bidCount} הצעות</summary><ul class="au-bids">
-      ${a.bids.map(b => `<li class="${b.mine ? 'me' : ''}"><span>${esc(b.name)}</span><span>${shekel(b.amount)} · ${esc(when(b.at).replace(/^היום ב-/, ''))}</span></li>`).join('')}</ul></details>` : '';
-  const forOther = live ? `<div class="au-tools"><button class="btn ghost" type="button" data-act="auBidFor" data-id="${a._id}">הצעה עבור מישהו אחר…</button></div>` : '';
+      ${a.bids.map(b => `<li class="${b.mine ? 'me' : ''}"><span>${esc(b.name)}${b.forName ? ' · עבור ' + esc(b.forName) : ''}</span><span>${shekel(b.amount)} · ${esc(when(b.at).replace(/^היום ב-/, ''))}</span></li>`).join('')}</ul></details>` : '';
+  const forOther = live ? `<div class="au-tools"><button class="btn ghost" type="button" data-act="auBidFor" data-id="${a._id}">הצעה כדי שמישהו אחר יעלה…</button></div>` : '';
   const tools = isManager() ? `<div class="au-tools">
       <button class="btn sec" type="button" data-act="auEdit" data-id="${a._id}">עריכה</button>
       ${p !== 'closing' ? `<button class="btn sec" type="button" data-act="auCloseNow" data-id="${a._id}">סגירה עכשיו</button>` : ''}
@@ -158,7 +158,7 @@ function closedHTML(){
   if (!list.length) return '';
   return `<div class="card" style="margin-top:22px"><h3>מכרזים שנסגרו</h3><div class="list">${list.map(a => `<div class="li"><div class="grow">
       <div class="t">${esc(a.title)} <span class="meta">· ${esc(X.dayInfo(a.dateKey).title)}</span></div>
-      <div class="meta">${a.top ? `${esc(a.top.name)}${a.top.mine ? ' (את/ה)' : ''} · ${shekel(a.top.amount)}${a.recorded && isManager() ? ' · נרשם בקופה ובחלוקה' : ''}` : 'לא היו הצעות'}</div></div>
+      <div class="meta">${a.top ? `${esc(a.top.name)}${a.top.forName ? ' · עבור ' + esc(a.top.forName) : ''}${a.top.mine ? ' (את/ה)' : ''} · ${shekel(a.top.amount)}${a.recorded && isManager() ? ' · נרשם בקופה ובחלוקה' : ''}` : 'לא היו הצעות'}</div></div>
       ${isManager() ? `<button class="btn danger" type="button" data-act="auDel" data-id="${a._id}" aria-label="מחיקה מהרשימה">×</button>` : ''}</div>`).join('')}</div></div>`;
 }
 
@@ -218,8 +218,9 @@ function editSheet(a){
 
 function bidForSheet(a){
   const opts = S.data.members.map(m => `<label class="au-person" data-n="${esc(m.name)}"><input type="radio" name="auWho" value="${m.userId}"> ${esc(m.name)}</label>`).join('');
-  X.openSheet(X.sheetHead('הצעה עבור מישהו אחר', `${a.title} · מינימום ${shekel(a.next)}`) +
-    `<label class="f" for="auSearch">חיפוש חבר קהילה</label><input type="search" id="auSearch" placeholder="הקלד שם" autocomplete="off">
+  X.openSheet(X.sheetHead('הצעה כדי שמישהו אחר יעלה', `${a.title} · מינימום ${shekel(a.next)}`) +
+    `<p class="small muted">ההצעה נרשמת על שמך, ואתה המשלם. בקהילה יופיע שמך בלבד; הגבאי והרב יראו עבור מי ביקשת שיעלה.</p>
+     <label class="f" for="auSearch">מי יעלה? חיפוש חבר קהילה</label><input type="search" id="auSearch" placeholder="הקלד שם" autocomplete="off">
      <div class="au-people" style="max-height:240px;overflow:auto;margin:8px 0">${opts}
        <label class="au-person"><input type="radio" name="auWho" value="guest"> אורח (שם חופשי)</label></div>
      <div id="auGuestWrap" hidden><label class="f" for="auName">שם האורח</label><input type="text" id="auName" maxlength="80"></div>
@@ -244,10 +245,10 @@ async function placeBid(id, amount, extra){
   const a = find(id);
   if (!a) return;
   if (!(amount >= a.next)) return X.toast(`ההצעה צריכה להיות לפחות ${shekel(a.next)}`);
-  const who = extra && (extra.name || S.data.members.find(m => m.userId === extra.userId)?.name);
-  if (!await SiteDialog.confirm(`${who ? who + ': ' : ''}להציע ${shekel(amount)} על ${a.title}?`, { ok: 'הצעה' })) return false;
+  const who = extra && (extra.forName || S.data.members.find(m => m.userId === extra.forUserId)?.name);
+  if (!await SiteDialog.confirm(`להציע ${shekel(amount)} על ${a.title}${who ? ', כדי ש' + who + ' יעלה' : ''}?`, { ok: 'הצעה' })) return false;
   await X.call('auctions:bid', { id, amount, ...(extra || {}) });
-  X.toast(who ? 'ההצעה נרשמה' : 'ההצעה שלך נרשמה');
+  X.toast('ההצעה שלך נרשמה');
   return true;
 }
 
@@ -260,8 +261,8 @@ function makeActions(){
     auBidFor: d => { const a = find(d.id); if (a) bidForSheet(a); },
     auSaveBidFor: guard(async d => {
       const v = document.querySelector('input[name="auWho"]:checked')?.value;
-      const extra = v === 'guest' ? { name: $('#auName').value.trim() } : v ? { userId: v } : null;
-      if (!extra || (!extra.userId && !extra.name)) return toast('נא לבחור חבר קהילה או לכתוב שם');
+      const extra = v === 'guest' ? { forName: $('#auName').value.trim() } : v ? { forUserId: v } : null;
+      if (!extra || (!extra.forUserId && !extra.forName)) return toast('נא לבחור מי יעלה: חבר קהילה או אורח');
       if (await placeBid(d.id, num($('#auAmount').value), extra)) closeSheet();
     }),
     auAllSeq: () => document.querySelectorAll('#auSeq input:not(:disabled)').forEach(i => { i.checked = true; }),

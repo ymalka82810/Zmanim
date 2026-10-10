@@ -401,6 +401,9 @@ export default defineSchema({
     topAmount: v.optional(v.number()),
     topUserId: v.optional(v.id("users")),
     topName: v.optional(v.string()),
+    // "עבור": מי שהמציע ביקש שיעלה במקומו. גלוי לגבאי ולרב בלבד
+    topForUserId: v.optional(v.id("users")),
+    topForName: v.optional(v.string()),
     createdBy: v.id("users"),
     createdAt: v.number(),
     finalizedAt: v.optional(v.number()),
@@ -408,12 +411,14 @@ export default defineSchema({
     aliyahId: v.optional(v.id("aliyot")),
   }).index("by_synagogue_status_closes", ["synagogueId", "status", "closesAt"]),
 
-  // הצעות במכרז. userId לחבר קהילה; אורח (הצעה שהגבאי רשם בשמו) בשם בלבד. by: מי רשם את ההצעה
+  // הצעות במכרז. userId/name: המציע, שהוא גם המשלם. forUserId/forName: מי שהמציע ביקש שיעלה במקומו (גלוי לגבאי ולרב בלבד)
   auctionBids: defineTable({
     synagogueId: v.id("synagogues"),
     auctionId: v.id("auctions"),
     userId: v.optional(v.id("users")),
     name: v.string(),
+    forUserId: v.optional(v.id("users")),
+    forName: v.optional(v.string()),
     amount: v.number(),
     at: v.number(),
     by: v.id("users"),

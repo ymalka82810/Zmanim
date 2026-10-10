@@ -89,6 +89,9 @@ export const list = query({
     const members = await Promise.all(memberships.map(async (m) => ({ userId: m.userId, name: displayName(await ctx.db.get(m.userId)) })));
     members.sort((a, b) => a.name.localeCompare(b.name, "he"));
 
+    const forNameOf = async (id: Id<"users"> | undefined, name: string | undefined) =>
+      id ? displayName(await ctx.db.get(id)) : (name ?? "");
+
     const view = async (a: Doc<"auctions">) => {
       const bids = await ctx.db
         .query("auctionBids")
@@ -106,9 +109,26 @@ export const list = query({
         step: a.step,
         status: a.status,
         bidCount: a.bidCount,
-        top: a.topAmount === undefined ? null : { amount: a.topAmount, name: a.topName ?? "", mine: a.topUserId === userId },
+        top:
+          a.topAmount === undefined
+            ? null
+            : {
+                amount: a.topAmount,
+                name: a.topName ?? "",
+                mine: a.topUserId === userId,
+                ...(manager ? { forName: await forNameOf(a.topForUserId, a.topForName) } : {}),
+              },
         next: minNext(a),
-        bids: bids.map((b) => ({ _id: b._id, amount: b.amount, name: b.name, at: b.at, mine: b.userId === userId })),
+        bids: await Promise.all(
+          bids.map(async (b) => ({
+            _id: b._id,
+            amount: b.amount,
+            name: b.name,
+            at: b.at,
+            mine: b.userId === userId,
+            ...(manager ? { forName: await forNameOf(b.forUserId, b.forName) } : {}),
+          })),
+        ),
         recorded: a.transactionId !== undefined,
       };
     };
@@ -284,15 +304,16 @@ export const remove = mutation({
 
 /**
  * הצעת מחיר. ההצעה צריכה להיות לפחות ההצעה הגבוהה + קפיצת המחיר (או מחיר הפתיחה, כשאין עדיין הצעות).
- * מי שההצעה שלו כבר הגבוהה לא מתחרה בעצמו. כל חבר קהילה יכול להציע גם בשם חבר אחר או אורח.
+ * מי שההצעה שלו כבר הגבוהה לא מתחרה בעצמו. המציע הוא תמיד המשלם, וכולם רואים את שמו.
+ * אפשר לציין "עבור" (חבר קהילה או אורח): מי שהמציע מבקש שיעלה במקומו. זה גלוי לגבאי ולרב בלבד.
  */
 export const bid = mutation({
   args: {
     synagogueId: v.id("synagogues"),
     id: v.id("auctions"),
     amount: v.number(),
-    userId: v.optional(v.id("users")),
-    name: v.optional(v.string()),
+    forUserId: v.optional(v.id("users")),
+    forName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { userId: callerId } = await requireMember(ctx, args.synagogueId);
@@ -306,21 +327,28 @@ export const bid = mutation({
       throw new ConvexError("המכרז עוד לא נפתח");
     }
 
-    let bidder: Id<"users"> | undefined = callerId;
-    let name = "";
-    if ((args.userId || args.name) && args.userId !== callerId) {
-      bidder = args.userId;
-      if (bidder && (await getMembership(ctx, args.synagogueId, bidder)) === null) {
-        throw new ConvexError("החבר לא נמצא בקהילה");
+    const bidder = callerId;
+    const name = displayName(await ctx.db.get(bidder));
+
+    let forUserId: Id<"users"> | undefined;
+    let forName = "";
+    if (args.forUserId || args.forName) {
+      if (args.forUserId) {
+        if ((await getMembership(ctx, args.synagogueId, args.forUserId)) === null) {
+          throw new ConvexError("החבר לא נמצא בקהילה");
+        }
+        forUserId = args.forUserId;
+      } else {
+        forName = clip(args.forName ?? "", 80);
+        if (!forName) {
+          throw new ConvexError("נא לבחור חבר קהילה או לכתוב שם");
+        }
       }
-      name = bidder ? "" : clip(args.name ?? "", 80);
-      if (!bidder && !name) {
-        throw new ConvexError("נא לבחור חבר קהילה או לכתוב שם");
+      if (forUserId === bidder) {
+        forUserId = undefined;
       }
     }
-    if (bidder) {
-      name = displayName(await ctx.db.get(bidder));
-    }
+    const hasFor = forUserId !== undefined || forName !== "";
 
     const amount = Math.round(args.amount);
     if (!(amount > 0 && amount < 1e8)) {
@@ -330,15 +358,17 @@ export const bid = mutation({
     if (amount < needed) {
       throw new ConvexError(`ההצעה צריכה להיות לפחות ${shekel(needed)}`);
     }
-    if (a.topAmount !== undefined && (bidder ? a.topUserId === bidder : !a.topUserId && a.topName === name)) {
+    if (a.topAmount !== undefined && a.topUserId === bidder) {
       throw new ConvexError("ההצעה הגבוהה כבר שלך");
     }
 
     await ctx.db.insert("auctionBids", {
       synagogueId: args.synagogueId,
       auctionId: a._id,
-      ...(bidder ? { userId: bidder } : {}),
+      userId: bidder,
       name,
+      ...(forUserId ? { forUserId } : {}),
+      ...(forName ? { forName } : {}),
       amount,
       at: now,
       by: callerId,
@@ -349,6 +379,8 @@ export const bid = mutation({
       topAmount: amount,
       topUserId: bidder,
       topName: name,
+      topForUserId: forUserId,
+      topForName: forName || undefined,
       bidCount: a.bidCount + 1,
     });
     await Notifications.create(ctx, {
@@ -356,16 +388,27 @@ export const bid = mutation({
       type: "auction",
       to: "members",
       text: `${name} הציע ${shekel(amount)} על ${a.title}`,
-      by: bidder ?? callerId,
+      by: bidder,
       dateKey: a.dateKey,
     });
+    if (hasFor) {
+      const forLabel = forUserId ? displayName(await ctx.db.get(forUserId)) : forName;
+      await Notifications.create(ctx, {
+        synagogueId: args.synagogueId,
+        type: "auction",
+        to: "managers",
+        text: `${name} הציע ${shekel(amount)} על ${a.title} עבור ${forLabel}`,
+        by: bidder,
+        dateKey: a.dateKey,
+      });
+    }
     if (outbid && outbid !== bidder) {
       await Notifications.create(ctx, {
         synagogueId: args.synagogueId,
         type: "auction",
         to: outbid,
         text: `ההצעה שלך על ${a.title} נעקפה: ${shekel(amount)}`,
-        by: bidder ?? callerId,
+        by: bidder,
         dateKey: a.dateKey,
       });
     }
@@ -447,12 +490,16 @@ async function settle(ctx: MutationCtx, id: Id<"auctions">) {
     });
     // הפיצר יכול היה להיכבות בין פתיחת המכרז לסגירתו
     if (await hasFeature(ctx, a.synagogueId, "aliyot")) {
+      // כשהזוכה קנה עבור מישהו אחר, זה מי שיעלה; הזוכה נשאר המשלם בקופה
+      const forUser =
+        a.topForUserId && (await getMembership(ctx, a.synagogueId, a.topForUserId)) !== null ? a.topForUserId : undefined;
+      const caller = forUser ? displayName(await ctx.db.get(forUser)) : a.topForName || "";
       patch.aliyahId = await ctx.db.insert("aliyot", {
         synagogueId: a.synagogueId,
         dateKey: a.dateKey,
         aliyah: a.title,
-        ...(winner ? { userId: winner } : {}),
-        name,
+        ...(forUser ? { userId: forUser } : !caller && winner ? { userId: winner } : {}),
+        name: caller || name,
         createdBy: a.createdBy,
         createdAt: now,
         hebrewYear: hebrewYearOf(a.dateKey),
