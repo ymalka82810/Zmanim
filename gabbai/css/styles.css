@@ -39,7 +39,7 @@ header.day h1{font-family:var(--serif);font-weight:900;font-size:1.85rem;line-he
 .iconbtn:hover:not(:disabled){border-color:var(--tchelet)}
 
 nav.tabs{position:sticky;top:var(--sm-top,env(safe-area-inset-top,0px));z-index:5;background:var(--bg);padding:0 16px}
-nav.tabs .in{max-width:948px;margin:0 auto;display:flex;gap:6px;overflow-x:auto;box-shadow:inset 0 -1px 0 var(--line)}
+nav.tabs .in{max-width:948px;margin:0 auto;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;box-shadow:inset 0 -1px 0 var(--line)}
 nav.tabs .tab-arrows-wrap{max-width:948px;margin:0 auto}
 .tab-arrows-wrap{position:relative}
 .tab-arrow{position:absolute;top:0;z-index:2;width:34px;padding:0 0 4px;border:0;border-radius:0;box-shadow:none;transform:none;margin:0;font-size:1.7rem;line-height:1;cursor:pointer;color:var(--tchelet)}
@@ -47,7 +47,7 @@ nav.tabs .tab-arrows-wrap{max-width:948px;margin:0 auto}
 .tab-arrow-left{left:0;background:linear-gradient(to right,var(--bg) 55%,transparent);text-align:left;padding-left:6px}
 .tab-arrow-right{right:0;background:linear-gradient(to left,var(--bg) 55%,transparent);text-align:right;padding-right:6px}
 .tab-arrow:hover{background-color:transparent}
-nav.tabs button{flex:0 0 auto;background:transparent;border:0;border-bottom:2px solid transparent;border-radius:8px 8px 0 0;box-shadow:none;transform:none;padding:9px 20px;cursor:pointer;color:var(--muted);font-weight:600;transition:color .15s ease,background-color .15s ease}
+nav.tabs button{flex:0 0 auto;white-space:nowrap;background:transparent;border:0;border-bottom:2px solid transparent;border-radius:8px 8px 0 0;box-shadow:none;transform:none;padding:9px 20px;cursor:pointer;color:var(--muted);font-weight:600;transition:color .15s ease,background-color .15s ease}
 nav.tabs button:hover:not(:disabled){color:var(--tchelet);background:color-mix(in srgb,var(--tchelet) 6%,transparent);box-shadow:none;transform:none}
 nav.tabs button[aria-selected="true"]{color:var(--tchelet);border-bottom-color:var(--gold);font-weight:700;background:transparent}
 
