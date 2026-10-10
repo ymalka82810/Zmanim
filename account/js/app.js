@@ -497,19 +497,18 @@ function renderSignedIn(app){
   </div>
   ${me.needsHebrewName ? renderHebrewNameCard() : ''}
   ${renderInvitations()}
-  <div class="sechead"><h2>הקהילות שלי</h2></div>
-  <div class="card">`;
+  <div class="sechead"><h2>הקהילות שלי</h2></div>`;
   if (!S.synagogues.length){
-    html += `<p class="muted">עדיין לא הצטרפת לקהילה ולא פתחת אחת.</p>`;
+    html += `<div class="card"><p class="muted">עדיין לא הצטרפת לקהילה ולא פתחת אחת.</p></div>`;
   } else {
     if (S.synagogues.length > 1) html += `<p class="muted small">הקהילה הפעילה היא זו שלוח הזמנים, הקידושים והקופה מציגים.</p>`;
-    html += S.synagogues.map(s => `
-      <div class="syn-item" data-open="${s._id}" role="button" tabindex="0">
+    html += `<div class="syn-grid">` + S.synagogues.map(s => `
+      <div class="card syn-item${s._id === active ? ' is-active' : ''}" data-open="${s._id}" role="button" tabindex="0">
         <div class="info"><div class="n">${esc(s.name)}${s._id === active ? '<span class="active-badge">פעילה</span>' : ''}</div><div class="c">${esc(s.city)}, ${s.il ? 'ארץ ישראל' : 'חוץ לארץ'}</div></div>
         <span class="role-chip ${s.role}">${ROLE[s.role]}</span>
-      </div>`).join('');
+      </div>`).join('') + `</div>`;
   }
-  html += `</div><button class="btn sec" id="btnNewSyn">פתיחת קהילה חדשה</button>`;
+  html += `<button class="btn sec" id="btnNewSyn">פתיחת קהילה חדשה</button>`;
   if (me.isOwner) html += renderErrorLogs();
   app.innerHTML = html;
   $('#btnSignOut').addEventListener('click', signOut);

@@ -84,8 +84,11 @@ input[type=text],input[type=email],input[type=search],input[type=url],select,tex
 .owner-badge{display:inline-block;margin-inline-start:6px;background:var(--pend-soft);color:var(--pend);border-radius:999px;padding:2px 9px;font-size:.75rem;font-weight:700}
 
 /* כרטיס בית כנסת ברשימה */
-.syn-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 4px;border-bottom:1px solid var(--line)}
-.syn-item:last-child{border-bottom:0}
+.syn-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-bottom:12px}
+.syn-grid .card{margin-bottom:0}
+.syn-item{display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;transition:transform .12s ease,box-shadow .12s ease}
+.syn-item:hover{transform:translateY(-1px);box-shadow:var(--sh-md)}
+.syn-item.is-active{border-color:var(--free)}
 .syn-item .info{min-width:0}
 .syn-item .info .n{font-weight:700}
 .syn-item .info .c{color:var(--muted);font-size:.85rem}
