@@ -10,6 +10,16 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&a
 const errMsg = e => (e && typeof e.data === 'string') ? e.data : 'הפעולה לא נשמרה. נסו שוב.';
 const when = new Intl.DateTimeFormat('he-IL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const dShort = iso => { const [y, m, d] = iso.split('-'); return `${+d}.${+m}`; };
+const GRID = 12;
+const TILES = { head: 'כותרת ושעון', board: 'לוח ושקופיות', zmanim: 'זמני היום', qr: 'קוד QR', ticker: 'פס רץ' };
+const T = (id, x, y, w, h) => ({ id, x, y, w, h });
+/** x נספר מימין (המסך בעברית). "אוטומטי" – בלי פריסה מותאמת: המסך מסדר לבד לפי מה שמוצג */
+const PRESETS = {
+  auto: { name: 'אוטומטי', layout: null },
+  side: { name: 'זמנים בשמאל', layout: [T('head', 0, 0, 12, 2), T('board', 0, 2, 7, 9), T('zmanim', 7, 2, 5, 6), T('qr', 7, 8, 5, 3), T('ticker', 0, 11, 12, 1)] },
+  sideR: { name: 'זמנים בימין', layout: [T('head', 0, 0, 12, 2), T('board', 5, 2, 7, 9), T('zmanim', 0, 2, 5, 6), T('qr', 0, 8, 5, 3), T('ticker', 0, 11, 12, 1)] },
+  bottom: { name: 'זמנים למטה', layout: [T('head', 0, 0, 12, 2), T('board', 0, 2, 12, 6), T('zmanim', 0, 8, 8, 3), T('qr', 8, 8, 4, 3), T('ticker', 0, 11, 12, 1)] },
+};
 const SHOW = { zmanim: 'זמני היום', board: 'לוחות הזמנים המאושרים', qr: 'קוד QR' };
 
 const S = { signedIn: false, sid: null, synagogue: null, data: null, error: null, form: null, base: '', dirty: false };
@@ -74,6 +84,7 @@ function tvUrl(){
 function changes(a, b){
   const out = [];
   for (const k of Object.keys(SHOW)) if (a.show[k] !== b.show[k]) out.push(`${SHOW[k]}: ${b.show[k] ? 'יוצגו' : 'יוסתרו'}`);
+  if (JSON.stringify(a.layout) !== JSON.stringify(b.layout)) out.push(b.layout ? 'פריסת המסך שונתה' : 'פריסת המסך חזרה לאוטומטית');
   if (a.rotateSec !== b.rotateSec) out.push(`החלפה כל ${b.rotateSec} שניות`);
   if (a.qr !== b.qr) out.push(b.qr === 'donate' ? 'ה-QR יוביל לתרומה' : 'ה-QR יוביל לעמוד האורחים');
   if (a.qrText !== b.qrText) out.push(`כיתוב ה-QR: ${b.qrText || 'ברירת המחדל'}`);
@@ -119,6 +130,23 @@ function slideCard(s, i, n){
   </div>`;
 }
 
+const hidden = (id, f) => (id === 'zmanim' && !f.show.zmanim) || (id === 'qr' && !f.show.qr) || (id === 'ticker' && !f.ticker.trim());
+const place = (el, t) => { el.style.gridColumn = `${t.x + 1} / span ${t.w}`; el.style.gridRow = `${t.y + 1} / span ${t.h}`; };
+const overlaps = (list, t) => list.some(o => o !== t && t.x < o.x + o.w && o.x < t.x + t.w && t.y < o.y + o.h && o.y < t.y + t.h);
+
+function layoutHTML(){
+  const f = S.form, lay = f.layout || PRESETS.side.layout;
+  const active = Object.keys(PRESETS).find(k => JSON.stringify(PRESETS[k].layout) === JSON.stringify(f.layout)) || '';
+  return `<section class="scr-sec">
+    <h2>פריסת המסך</h2>
+    <p class="small muted">התחילו מסידור מוכן, ואז גררו כל אריח למקום אחר, או משכו את הפינה שלו כדי לשנות גודל. אריחים לא יכולים לחפוף. "אוטומטי" – המסך מסדר לבד לפי מה שמוצג.</p>
+    <div class="lay-presets">${Object.entries(PRESETS).map(([k, p]) => `<button type="button" class="chip${k === active ? ' on' : ''}" data-act="layout" data-preset="${k}">${esc(p.name)}</button>`).join('')}</div>
+    <div class="lay-grid${f.layout ? '' : ' auto'}" id="layGrid">${lay.map(t => `<div class="lay-tile lay-${t.id}${hidden(t.id, f) ? ' off' : ''}" data-id="${t.id}" style="grid-column:${t.x + 1} / span ${t.w};grid-row:${t.y + 1} / span ${t.h}">
+      <span>${esc(TILES[t.id])}${hidden(t.id, f) ? ' (מוסתר)' : ''}</span><i class="lay-rs" aria-hidden="true"></i></div>`).join('')}</div>
+    ${f.layout ? '' : '<p class="small muted">גרירה של אריח תעביר אותך לפריסה מותאמת.</p>'}
+  </section>`;
+}
+
 function formHTML(){
   const f = S.form, single = S.data.managers <= 1;
   return `<form id="scrForm">
@@ -128,6 +156,8 @@ function formHTML(){
       <label class="f" for="scrRotate">החלפה בין לוחות ושקופיות כל (שניות)</label>
       <input type="number" id="scrRotate" min="5" max="120" step="1" value="${f.rotateSec}">
     </section>
+
+    ${layoutHTML()}
 
     <section class="scr-sec">
       <h2>שקופיות הודעה</h2>
@@ -219,10 +249,45 @@ document.addEventListener('input', e => {
   refreshSubmit();
 });
 
+/* ---------- גרירת אריחים ---------- */
+let drag = null;
+document.addEventListener('pointerdown', e => {
+  const tile = e.target.closest('.lay-tile');
+  if (!tile || !S.form || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const r = tile.parentElement.getBoundingClientRect();
+  const list = clone(S.form.layout || PRESETS.side.layout), t = list.find(x => x.id === tile.dataset.id);
+  drag = { tile, list, t, orig: { ...t }, resize: !!e.target.closest('.lay-rs'), sx: e.clientX, sy: e.clientY, cw: r.width / GRID, ch: r.height / GRID, bad: false };
+  tile.setPointerCapture(e.pointerId);
+  tile.classList.add('drag');
+  e.preventDefault();
+});
+document.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const { t, orig } = drag, clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  // המסך מימין לשמאל: תזוזה שמאלה מגדילה את x
+  const dx = Math.round(-(e.clientX - drag.sx) / drag.cw), dy = Math.round((e.clientY - drag.sy) / drag.ch);
+  if (drag.resize) { t.w = clamp(orig.w + dx, 1, GRID - t.x); t.h = clamp(orig.h + dy, 1, GRID - t.y); }
+  else { t.x = clamp(orig.x + dx, 0, GRID - t.w); t.y = clamp(orig.y + dy, 0, GRID - t.h); }
+  drag.bad = overlaps(drag.list, t);
+  place(drag.tile, t);
+  drag.tile.classList.toggle('bad', drag.bad);
+});
+function endDrag(){
+  if (!drag) return;
+  const { t, orig, bad, list } = drag;
+  drag = null;
+  if (bad) toast('אריחים לא יכולים לחפוף');
+  else if (JSON.stringify(t) !== JSON.stringify(orig)) { S.form.layout = list; touch(); }
+  render();
+}
+document.addEventListener('pointerup', endDrag);
+document.addEventListener('pointercancel', endDrag);
+
 document.addEventListener('click', async e => {
   const b = e.target.closest('[data-act]');
   if (!b) return;
   const act = b.dataset.act, f = S.form;
+  if (act === 'layout') { f.layout = clone(PRESETS[b.dataset.preset].layout); touch(); render(); return; }
   if (act === 'signIn') return Auth.signInWithGoogle(location.href).catch(() => {});
   if (act === 'copyTv') {
     try { await navigator.clipboard.writeText(tvUrl()); toast('הקישור למסך הועתק'); } catch(err){ toast('העתקה נכשלה'); }

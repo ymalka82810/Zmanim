@@ -23,3 +23,16 @@
 .scr-submit .btn{flex:1}
 .scr-tv{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px}
 .scr-tv a.btn{text-decoration:none}
+/* פריסת המסך: תצוגה מקדימה 16:9 על רשת 12×12 (מימין לשמאל), אריחים נגררים */
+.lay-presets{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.lay-presets .chip{border:1px solid var(--line);background:var(--surface2);color:var(--ink);border-radius:999px;padding:6px 12px;font-weight:600;box-shadow:none}
+.lay-presets .chip.on{background:var(--wine);border-color:var(--wine);color:#fff}
+.lay-grid{display:grid;grid-template-columns:repeat(12,1fr);grid-template-rows:repeat(12,1fr);aspect-ratio:16/9;width:100%;background-color:#0c1120;border-radius:10px;position:relative;overflow:hidden;background-image:linear-gradient(to right,rgba(255,255,255,.07) 1px,transparent 1px),linear-gradient(to bottom,rgba(255,255,255,.07) 1px,transparent 1px);background-size:calc(100% / 12) calc(100% / 12)}
+.lay-grid.auto .lay-tile{opacity:.75}
+.lay-tile{position:relative;box-sizing:border-box;border:2px solid #fff;border-radius:6px;margin:1px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:.72rem;font-weight:700;color:#fff;touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab;overflow:hidden;background:#3a5a94}
+.lay-tile>span{pointer-events:none;padding:2px}
+.lay-head{background:#5b4a8a}.lay-board{background:#2f6f5e}.lay-zmanim{background:#3a5a94}.lay-qr{background:#8a6a2a}.lay-ticker{background:#8a3a4a}
+.lay-tile.off{opacity:.45;border-style:dashed}
+.lay-tile.drag{cursor:grabbing;z-index:2;box-shadow:0 0 0 2px var(--gold)}
+.lay-tile.bad{background:#b3261e;border-color:#ffb4ab}
+.lay-rs{position:absolute;left:0;bottom:0;width:24px;height:24px;cursor:nesw-resize;background:rgba(255,255,255,.9);clip-path:polygon(0 0,100% 100%,0 100%)}

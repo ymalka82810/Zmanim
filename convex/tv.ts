@@ -15,6 +15,11 @@ const MAX_SLIDES = 20;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const clip = (s: unknown, max: number) => (typeof s === "string" ? s : "").trim().slice(0, max);
 
+/** פריסת המסך: רשת של GRID×GRID תאים, ולכל אריח מיקום וגודל. null – הפריסה הרגילה, שמתאימה את עצמה למה שמוצג */
+export const GRID = 12;
+export const TILE_IDS = ["head", "board", "zmanim", "qr", "ticker"] as const;
+export type Tile = { id: (typeof TILE_IDS)[number]; x: number; y: number; w: number; h: number };
+
 export type Slide = { title: string; text: string; from: string; to: string };
 export type Screen = {
   slides: Slide[];
@@ -23,6 +28,7 @@ export type Screen = {
   rotateSec: number;
   qr: "guest" | "donate";
   qrText: string;
+  layout: Tile[] | null;
 };
 
 export const DEFAULT_SCREEN: Screen = {
@@ -32,7 +38,26 @@ export const DEFAULT_SCREEN: Screen = {
   rotateSec: 20,
   qr: "guest",
   qrText: "",
+  layout: null,
 };
+
+/** פריסה תקינה: כל האריחים, בתוך הרשת ובלי חפיפה. אחרת null (הפריסה הרגילה) */
+function layoutOf(raw: unknown): Tile[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: Tile[] = [];
+  for (const id of TILE_IDS) {
+    const t = raw.find((x) => x && typeof x === "object" && (x as Record<string, unknown>).id === id) as
+      | Record<string, number>
+      | undefined;
+    if (!t) return null;
+    const { x, y, w, h } = t;
+    if (![x, y, w, h].every(Number.isInteger) || x < 0 || y < 0 || w < 1 || h < 1 || x + w > GRID || y + h > GRID) return null;
+    out.push({ id, x, y, w, h });
+  }
+  const overlap = (a: Tile, b: Tile) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  for (let i = 0; i < out.length; i++) for (let j = i + 1; j < out.length; j++) if (overlap(out[i], out[j])) return null;
+  return out;
+}
 
 /** מנקה הגדרות מסך שהגיעו מהדפדפן (או מהמסד), כך שתמיד יש מבנה תקין */
 export function normalize(raw: unknown): Screen {
@@ -60,6 +85,7 @@ export function normalize(raw: unknown): Screen {
     rotateSec: rotate >= 5 && rotate <= 120 ? rotate : DEFAULT_SCREEN.rotateSec,
     qr: o.qr === "donate" ? "donate" : "guest",
     qrText: clip(o.qrText, 60),
+    layout: layoutOf(o.layout),
   };
 }
 

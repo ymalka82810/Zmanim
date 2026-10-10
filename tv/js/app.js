@@ -14,7 +14,7 @@ const code = new URLSearchParams(location.search).get('c') || '';
 const TZ = 'Asia/Jerusalem';
 const MIN = 60000;
 const DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
-const DEFAULT_SCREEN = { slides: [], ticker: '', show: { zmanim: true, board: true, qr: true }, rotateSec: 20, qr: 'guest', qrText: '' };
+const DEFAULT_SCREEN = { slides: [], ticker: '', show: { zmanim: true, board: true, qr: true }, rotateSec: 20, qr: 'guest', qrText: '', layout: null };
 const isoToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());
 
 /** QR לעמוד האורחים באותו אתר שהמסך נפתח ממנו. donate – ישר לתרומה */
@@ -30,7 +30,7 @@ function qrSvg(donate){
 }
 const QR = { guest: qrSvg(false), donate: qrSvg(true) };
 
-let aliyot = [], board = null, screen = DEFAULT_SCREEN, slide = 0, built = '', shownHead = '', shownZm = '', rotateTimer = null;
+let aliyot = [], board = null, screen = DEFAULT_SCREEN, slide = 0, built = '', shownHead = '', shownZm = '', shownQr = '', rotateTimer = null;
 
 /** הקהילה שומרת עיר בטקסט חופשי; מתאימים לפי שם. בלי התאמה לא מציגים זמני יום, כדי לא להציג זמנים של עיר אחרת */
 const cityOf = name => {
@@ -186,17 +186,29 @@ function startTicker(){
 
 /** בונה את המסך מחדש כשהלוח או הגדרות המסך משתנים */
 function build(){
+  const lay = screen.layout;
   const aside = screen.show.zmanim || screen.show.qr;
   const sig = JSON.stringify([screen, board.name, board.city, board.il, board.files, board.zmanimConfig, aliyot]);
   if (sig === built) return;
   built = sig;
-  shownHead = shownZm = '';
+  shownHead = shownZm = shownQr = '';
   const app = $('app');
-  app.className = 'tv' + (aside ? '' : ' no-aside') + (screen.ticker ? ' with-ticker' : '');
-  app.innerHTML = `<header class="tv-head" id="tvHead"></header>
-    <main class="tv-board" id="tvBoard"></main>
-    ${aside ? '<aside class="tv-zm" id="tvZm"></aside>' : ''}
-    ${screen.ticker ? `<footer class="tv-ticker" id="tvTicker"><span>${esc(screen.ticker)}</span></footer>` : ''}`;
+  if (lay) {
+    // פריסה מותאמת: כל אריח במקום שהגבאי קבע ברשת. אריח מוסתר או ריק – לא מוצג
+    const at = id => { const t = lay.find(x => x.id === id); return `style="grid-column:${t.x + 1}/span ${t.w};grid-row:${t.y + 1}/span ${t.h}"`; };
+    app.className = 'tv custom';
+    app.innerHTML = `<header class="tv-head" id="tvHead" ${at('head')}></header>
+      <main class="tv-board" id="tvBoard" ${at('board')}></main>
+      ${screen.show.zmanim ? `<aside class="tv-zm" id="tvZm" ${at('zmanim')}></aside>` : ''}
+      ${screen.show.qr ? `<div class="tv-qrtile" id="tvQr" ${at('qr')}></div>` : ''}
+      ${screen.ticker ? `<footer class="tv-ticker" id="tvTicker" ${at('ticker')}><span>${esc(screen.ticker)}</span></footer>` : ''}`;
+  } else {
+    app.className = 'tv' + (aside ? '' : ' no-aside') + (screen.ticker ? ' with-ticker' : '');
+    app.innerHTML = `<header class="tv-head" id="tvHead"></header>
+      <main class="tv-board" id="tvBoard"></main>
+      ${aside ? '<aside class="tv-zm" id="tvZm"></aside>' : ''}
+      ${screen.ticker ? `<footer class="tv-ticker" id="tvTicker"><span>${esc(screen.ticker)}</span></footer>` : ''}`;
+  }
   slide = 0;
   drawMain();
   tick();
@@ -205,15 +217,28 @@ function build(){
   rotateTimer = setInterval(rotate, screen.rotateSec * 1000);
 }
 
+/** באריח קטן מהתוכן – מקטינים את התוכן כך שייכנס (באריח גדול משאירים כמו שהוא) */
+function fit(el){
+  if (!el) return;
+  el.style.zoom = 1;
+  const k = Math.min(el.clientHeight / el.scrollHeight, el.clientWidth / el.scrollWidth);
+  if (k < 1) el.style.zoom = Math.max(0.3, k * 0.98);
+}
+
 function tick(){
   if (!board || !built) return;
   const info = dayInfo(board);
   const head = `<div><h1 class="tv-name">${esc(board.name)}</h1>
       <div class="tv-dates">${esc(info.dayName)} · <b>${esc(info.heb)}</b>${info.tags.map(t => ' · ' + esc(t)).join('')}</div></div>
       <div class="tv-clock">${hm(Date.now(), TZ)}</div>`;
-  if (head !== shownHead) { shownHead = head; $('tvHead').innerHTML = head; }
+  if (head !== shownHead) { shownHead = head; $('tvHead').innerHTML = head; if (screen.layout) fit($('tvHead')); }
   const zmEl = $('tvZm');
-  if (zmEl) {
+  if (screen.layout) {
+    const qrEl = $('tvQr');
+    const zm = zmEl ? drawZmanim(board, info) : '', qr = qrEl ? drawQr() : '';
+    if (zmEl && zm !== shownZm) { shownZm = zm; zmEl.innerHTML = zm; fit(zmEl); }
+    if (qrEl && qr !== shownQr) { shownQr = qr; qrEl.innerHTML = qr; }
+  } else if (zmEl) {
     const zm = (screen.show.zmanim ? drawZmanim(board, info) : '') + drawQr();
     if (zm !== shownZm) { shownZm = zm; zmEl.innerHTML = zm; }
   }

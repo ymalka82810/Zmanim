@@ -56,3 +56,13 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family
 .tv-zm{overflow:hidden}
 .tv.with-ticker .tv-row{padding:.4vh .6vw;font-size:2.7vh}
 .tv.with-ticker .tv-qr svg{width:12vh;height:12vh}
+/* פריסה מותאמת (screen/): רשת 12×12, כל אריח במקום שנקבע לו. מופיע אחרון כדי לגבור על כללי הפריסה הרגילה */
+.tv.custom{grid-template-columns:repeat(12,minmax(0,1fr));grid-template-rows:repeat(12,minmax(0,1fr))}
+.tv.custom>*{min-width:0;min-height:0;overflow:hidden}
+.tv.custom .tv-head{padding-bottom:.5vh}
+.tv.custom .tv-ticker{height:auto}
+.tv.custom .tv-ticker span{top:0;bottom:0;display:flex;align-items:center;line-height:1}
+.tv-qrtile{display:flex}
+.tv-qrtile .tv-qr{margin:0;flex:1;height:100%;min-height:0}
+.tv-qrtile .tv-qr svg{height:100%;width:auto;max-width:55%;flex:none}
+.tv.custom .tv-row{padding:.4vh .6vw}
