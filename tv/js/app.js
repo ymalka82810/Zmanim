@@ -4,7 +4,7 @@
  * מוצגים, ולאן מוביל ה-QR – לעמוד האורחים, או ישר לתרומה בזמנים מיוחדים */
 import { CITIES } from '../../js/config.js';
 import { zmanim, roundZman } from '../../js/zmanim.js';
-import { todayIn, dow, hm } from '../../js/dates.js';
+import { todayIn, dow, hm, toDayNum } from '../../js/dates.js';
 import { hebDateString, yomTov, cholHamoed, parasha } from '../../js/hebrew.js';
 
 const $ = id => document.getElementById(id);
@@ -29,7 +29,7 @@ function qrSvg(donate){
 }
 const QR = { guest: qrSvg(false), donate: qrSvg(true) };
 
-let board = null, screen = DEFAULT_SCREEN, slide = 0, built = '', shownHead = '', shownZm = '', rotateTimer = null;
+let aliyot = [], board = null, screen = DEFAULT_SCREEN, slide = 0, built = '', shownHead = '', shownZm = '', rotateTimer = null;
 
 /** הקהילה שומרת עיר בטקסט חופשי; מתאימים לפי שם. בלי התאמה לא מציגים זמני יום, כדי לא להציג זמנים של עיר אחרת */
 const cityOf = name => {
@@ -88,7 +88,16 @@ function items(){
   const today = isoToday();
   const files = screen.show.board ? (board.files || []).filter(f => f.url).map(f => ({ file: f })) : [];
   const slides = screen.slides.filter(s => (!s.from || s.from <= today) && (!s.to || s.to >= today)).map(s => ({ slide: s }));
-  return files.concat(slides);
+  return files.concat(aliyot.map(d => ({ aliyot: d })), slides);
+}
+
+/** שקופית עליות של יום אחד, מהמכרזים שנסגרו: איזו עלייה ומי עולה בה */
+function aliyotSlide(d){
+  const dn = toDayNum(d.dateKey), il = board.il !== false;
+  const tag = yomTov(dn, il) || (dow(dn) === 6 && parasha(dn, il) ? 'פרשת ' + parasha(dn, il) : '');
+  return `<div class="tv-aliyot"><h2>עליות לתורה</h2>
+    <div class="tv-aliyot-day">יום ${DAYS[dow(dn)]} · ${esc(hebDateString(dn))}${tag ? ' · ' + esc(tag) : ''}</div>
+    ${d.items.map(x => `<div class="tv-aliyot-row"><span>${esc(x.title)}</span><b>${esc(x.name)}</b></div>`).join('')}</div>`;
 }
 
 function drawMain(){
@@ -103,6 +112,9 @@ function drawMain(){
   if (it.file) {
     el.className = 'tv-board';
     el.innerHTML = `<img src="${esc(it.file.url)}" alt="${esc(it.file.title)}">${list.length > 1 ? `<div class="tv-title">${esc(it.file.title)}</div>` : ''}`;
+  } else if (it.aliyot) {
+    el.className = 'tv-board tv-slide';
+    el.innerHTML = aliyotSlide(it.aliyot);
   } else {
     el.className = 'tv-board tv-slide';
     el.innerHTML = `<div>${it.slide.title ? `<h2>${esc(it.slide.title)}</h2>` : ''}${it.slide.text ? `<p>${esc(it.slide.text)}</p>` : ''}</div>`;
@@ -122,7 +134,7 @@ function startTicker(){
 /** בונה את המסך מחדש כשהלוח או הגדרות המסך משתנים */
 function build(){
   const aside = screen.show.zmanim || screen.show.qr;
-  const sig = JSON.stringify([screen, board.name, board.city, board.il, board.files]);
+  const sig = JSON.stringify([screen, board.name, board.city, board.il, board.files, aliyot]);
   if (sig === built) return;
   built = sig;
   shownHead = shownZm = '';
@@ -177,6 +189,10 @@ else {
     screen = s || DEFAULT_SCREEN;
     if (board) build();
   }, () => { /* נשארים עם ההגדרות האחרונות */ });
+  client.onUpdate('tv:aliyot', { code }, d => {
+    aliyot = d || [];
+    if (board) build();
+  }, () => { /* בלי שקופית עליות */ });
   setInterval(tick, 1000);
   // שקופית שתוקפה התחיל או נגמר בחצות
   setInterval(() => { if (board) drawMain(); }, 10 * MIN);

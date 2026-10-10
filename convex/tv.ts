@@ -94,6 +94,44 @@ export const live = query({
   },
 });
 
+/**
+ * העליות והכיבודים שנקבעו במכרזים שנסגרו, מהיום והלאה, לשקופית במסך (בלי התחברות, לפי הקוד הציבורי).
+ * מוצג מי עולה (לא מי שילם) ובלי סכומים. מקובץ לפי תאריך, בסדר המכרז
+ */
+export const aliyot = query({
+  args: { code: v.string() },
+  handler: async (ctx, args) => {
+    if (!args.code) return [];
+    const synagogue = await ctx.db
+      .query("synagogues")
+      .withIndex("by_public", (q) => q.eq("publicCode", args.code))
+      .unique();
+    if (synagogue === null) return [];
+    // שעון ישראל בקירוב (UTC+3), כמו ב-guest.ts
+    const today = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const closed = await ctx.db
+      .query("auctions")
+      .withIndex("by_synagogue_status_closes", (q) => q.eq("synagogueId", synagogue._id).eq("status", "closed"))
+      .order("desc")
+      .take(60);
+    const rows: { dateKey: string; order: number; title: string; name: string }[] = [];
+    for (const a of closed) {
+      if (a.dateKey < today || !a.aliyahId) continue;
+      const aliyah = await ctx.db.get(a.aliyahId);
+      if (aliyah === null || !aliyah.name) continue;
+      rows.push({ dateKey: a.dateKey, order: a.order, title: a.title, name: aliyah.name });
+    }
+    rows.sort((x, y) => x.dateKey.localeCompare(y.dateKey) || x.order - y.order);
+    const days: { dateKey: string; items: { title: string; name: string }[] }[] = [];
+    for (const r of rows) {
+      let day = days[days.length - 1];
+      if (!day || day.dateKey !== r.dateKey) days.push((day = { dateKey: r.dateKey, items: [] }));
+      day.items.push({ title: r.title, name: r.name });
+    }
+    return days.slice(0, 4);
+  },
+});
+
 /** טיוטה שכל הגבאים והרב הנוכחיים אישרו עולה למסך. נקרא אחרי כל אישור, וגם כשגבאי או רב עוזבים או יורדים מתפקידם */
 export async function settleTv(ctx: MutationCtx, synagogueId: Id<"synagogues">) {
   const row = await screenOf(ctx, synagogueId);

@@ -34,6 +34,11 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family
 .tv-slide{background:linear-gradient(160deg,#1e3a63,#0c1120);border:2px solid var(--gold);color:var(--ink);text-align:center;padding:4vh 4vw}
 .tv-slide h2{font-family:"Frank Ruhl Libre",serif;font-weight:900;font-size:7vh;line-height:1.2;margin:0 0 3vh;color:var(--gold)}
 .tv-slide p{font-size:4.2vh;line-height:1.5;margin:0;white-space:pre-line}
+.tv-aliyot{width:100%;max-width:80vw}
+.tv-aliyot h2{margin-bottom:1.5vh}
+.tv-aliyot-day{font-size:3.6vh;margin-bottom:3vh;opacity:.9}
+.tv-aliyot-row{display:flex;justify-content:space-between;gap:3vw;font-size:4.4vh;padding:1.2vh 0;border-top:1px solid rgba(255,255,255,.18)}
+.tv-aliyot-row span{color:var(--gold)}
 .tv-qr.donate{background:var(--gold)}
 @media (max-aspect-ratio:1/1){.tv.with-ticker{grid-template-rows:auto 1fr auto auto}}
 .tv-zm{overflow:hidden}
