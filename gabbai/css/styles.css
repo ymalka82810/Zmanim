@@ -111,6 +111,7 @@ dialog::backdrop{background:rgba(10,16,32,.55)}
 .types button{border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 4px;cursor:pointer;font-weight:600;font-size:.92rem}
 .types button[aria-pressed="true"]{background:var(--tchelet);color:#fff;border-color:var(--tchelet)}
 .f{display:flex;flex-direction:column;gap:4px}
+.f[hidden]{display:none}
 .f > span{font-size:.88rem;color:var(--muted);font-weight:600}
 .f .hint{font-size:.85rem;color:var(--gold);font-weight:600;min-height:1.2em}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
