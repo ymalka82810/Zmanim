@@ -2,7 +2,8 @@
  * משתמש באותו קוד ציבורי של עמוד האורחים (convex/guest.ts), בלי התחברות. הדף מתעדכן לבד.
  * מה שהגבאים ערכו מהטלפון ואישרו (screen/, convex/tv.ts): שקופיות הודעה שמתחלפות עם הלוחות, פס רץ, אילו חלקים
  * מוצגים, ולאן מוביל ה-QR – לעמוד האורחים, או ישר לתרומה בזמנים מיוחדים */
-import { CITIES } from '../../js/config.js';
+import { CITIES, normalize } from '../../js/config.js';
+import { findPeriod, findOccasion, occasionParts, templateFor, buildLuach, buildDaysLuach } from '../../js/luach.js';
 import { zmanim, roundZman } from '../../js/zmanim.js';
 import { todayIn, dow, hm, toDayNum } from '../../js/dates.js';
 import { hebDateString, yomTov, cholHamoed, parasha } from '../../js/hebrew.js';
@@ -100,6 +101,48 @@ function aliyotSlide(d){
     ${d.items.map(x => `<div class="tv-aliyot-row"><span>${esc(x.title)}</span><b>${esc(x.name)}</b></div>`).join('')}</div>`;
 }
 
+let cfgKey = '', cfgCache = null;
+/** הגדרות זמני התפילות של הקהילה (מהלוח הציבורי). null – אין, ואז מציגים את תמונת הלוח */
+function timesCfg(){
+  if (board.zmanimConfig !== cfgKey) {
+    cfgKey = board.zmanimConfig;
+    try { cfgCache = cfgKey ? normalize(JSON.parse(cfgKey)) : null; } catch (e) { cfgCache = null; }
+  }
+  return cfgCache;
+}
+
+/** הלוח של הקובץ כנתונים (שעות התפילות בלבד), מחושב מהגדרות הקהילה. null – אי אפשר לחשב */
+function luachOf(f){
+  const cfg = timesCfg();
+  if (!cfg || !isFinite(cfg.lat) || !isFinite(cfg.lng) || !/^\d{4}-\d{2}-\d{2}$/.test(f.firstDate || '')) return null;
+  try {
+    const dn = toDayNum(f.firstDate);
+    let p;
+    if (f.mode === 'days') p = findPeriod('days', dn, cfg.il);
+    else {
+      const occ = findOccasion(dn, cfg.il);
+      p = occ && (occasionParts(occ, cfg.merged).find(x => x.first === dn) || occasionParts(occ, cfg.merged)[0]);
+    }
+    if (!p || p.first !== dn) return null;
+    const t = cfg.templates.find(x => x.id === f.kind) || templateFor(cfg, p);
+    if (!t) return null;
+    const c = { ...cfg, rules: t.rules };
+    return p.mode === 'days' ? buildDaysLuach(c, p, null) : buildLuach(c, p, null);
+  } catch (e) { return null; }
+}
+
+/** שעות התפילות בלבד: שבת/חג – קטע לכל ערב/יום/מוצאי, ימי חול – טבלה עם עמודה לכל יום */
+function timesHtml(l){
+  if (l.type === 'days') {
+    const head = l.days.map(d => `<th>${esc(d.name)}<small>${esc(d.date)}</small></th>`).join('');
+    const rows = l.rows.map(r => `<tr><td>${esc(r.name)}</td>${r.cells.map(c => `<td>${c == null ? '' : esc(c)}</td>`).join('')}</tr>`).join('');
+    return `<div class="tv-times"><h2>${esc(l.title)}</h2><table class="tv-times-days"><thead><tr><th></th>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  const parts = l.sections.filter(s => s.rows.length).map(s => `<section class="tv-times-sec"><h3>${esc(s.title)}</h3>
+    ${s.rows.map(r => `<div class="tv-times-row"><span>${esc(r.name)}</span><b>${esc(r.text)}</b></div>`).join('')}</section>`).join('');
+  return `<div class="tv-times"><h2>${esc(l.title)}</h2><div class="tv-times-grid">${parts}</div></div>`;
+}
+
 function drawMain(){
   const list = items(), el = $('tvBoard');
   if (!el) return;
@@ -109,7 +152,11 @@ function drawMain(){
     return;
   }
   const it = list[slide % list.length];
-  if (it.file) {
+  const luach = it.file && luachOf(it.file);
+  if (luach) {
+    el.className = 'tv-board tv-slide';
+    el.innerHTML = timesHtml(luach);
+  } else if (it.file) {
     el.className = 'tv-board';
     el.innerHTML = `<img src="${esc(it.file.url)}" alt="${esc(it.file.title)}">${list.length > 1 ? `<div class="tv-title">${esc(it.file.title)}</div>` : ''}`;
   } else if (it.aliyot) {
@@ -125,16 +172,22 @@ function startTicker(){
   const box = $('tvTicker');
   if (!box) return;
   const span = box.firstElementChild;
-  // מתחיל מחוץ למסך משמאל ונע ימינה, כך שתחילת המשפט (בצד ימין שלו) נכנסת ראשונה
-  const travel = box.clientWidth + span.offsetWidth;
-  span.animate([{ transform: 'translateX(0)' }, { transform: `translateX(${travel}px)` }],
-    { duration: travel / 0.12, iterations: Infinity });
+  const unitHtml = span.innerHTML + '<i class="tv-ticker-sep">•</i>';
+  // יחידה אחת = הטקסט + מפריד; חוזרים עליה עד שהיא ממלאת לפחות את רוחב הפס, כדי שטקסט קצר לא ירוץ לבדו
+  span.innerHTML = unitHtml;
+  const unit0 = span.offsetWidth || 1;
+  const reps = Math.max(1, Math.ceil(box.clientWidth / unit0));
+  const unit = unit0 * reps;
+  // המסלול מכיל מספיק יחידות כדי לכסות את הפס לאורך כל התנועה, והלולאה חלקה (זזים בדיוק יחידה אחת)
+  span.innerHTML = unitHtml.repeat(reps * 2 + 1);
+  span.animate([{ transform: 'translateX(0)' }, { transform: `translateX(${unit}px)` }],
+    { duration: unit / 0.12, iterations: Infinity });
 }
 
 /** בונה את המסך מחדש כשהלוח או הגדרות המסך משתנים */
 function build(){
   const aside = screen.show.zmanim || screen.show.qr;
-  const sig = JSON.stringify([screen, board.name, board.city, board.il, board.files, aliyot]);
+  const sig = JSON.stringify([screen, board.name, board.city, board.il, board.files, board.zmanimConfig, aliyot]);
   if (sig === built) return;
   built = sig;
   shownHead = shownZm = '';

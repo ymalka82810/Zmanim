@@ -13,6 +13,26 @@ const DAY = 24 * 60 * 60 * 1000;
 const dayKey = (t: number) => new Date(t + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
 /**
+ * הגדרות זמני התפילות של הקהילה, בלי העיצובים והטקסטים שנערכו, כדי שמסך הטלוויזיה יחשב ויציג את הזמנים עצמם
+ * במקום תמונת הלוח. null – עוד לא נשמרו הגדרות
+ */
+async function timesConfig(ctx: QueryCtx, synagogueId: Id<"synagogues">) {
+  const doc = await ctx.db
+    .query("zmanimSettings")
+    .withIndex("by_synagogue", (q) => q.eq("synagogueId", synagogueId))
+    .unique();
+  if (doc === null) return null;
+  try {
+    const c = JSON.parse(doc.config) as Record<string, unknown> & { templates?: Record<string, unknown>[] };
+    const { shul, address, lat, lng, tz, il, candle, havdalah, merged } = c;
+    const templates = (c.templates ?? []).map((t) => ({ id: t.id, name: t.name, kind: t.kind, moadim: t.moadim, rules: t.rules }));
+    return JSON.stringify({ shul, address, lat, lng, tz, il, candle, havdalah, merged, templates });
+  } catch {
+    return null;
+  }
+}
+
+/**
  * העמוד הציבורי לאורחים (guest/?c=...), בלי התחברות: שם הקהילה, הכתובת ולוחות הזמנים המאושרים
  * של השבוע הזה והלאה. אם אין כאלה – שני הלוחות המאושרים האחרונים. קוד לא קיים או עמוד כבוי – null.
  */
@@ -57,6 +77,7 @@ export const board = query({
       name: synagogue.name,
       city: synagogue.city,
       il: synagogue.il,
+      zmanimConfig: await timesConfig(ctx, synagogue._id),
       address: synagogue.address ?? "",
       donate: await donateInfo(ctx, synagogue),
       files: await Promise.all(

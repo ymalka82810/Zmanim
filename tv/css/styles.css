@@ -30,10 +30,22 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family
 .tv.no-aside{grid-template-columns:1fr}
 .tv.with-ticker{grid-template-rows:auto 1fr auto}
 .tv-ticker{grid-column:1/-1;position:relative;overflow:hidden;height:6vh;border-radius:1vh;background:var(--gold);color:#0c1120}
-.tv-ticker span{position:absolute;top:0;right:100%;line-height:6vh;white-space:nowrap;font-size:3.4vh;font-weight:700;padding:0 2vw}
+.tv-ticker .tv-ticker-sep{font-style:normal;padding:0 2vw;opacity:.6}
+.tv-ticker span{position:absolute;top:0;right:0;line-height:6vh;white-space:nowrap;font-size:3.4vh;font-weight:700}
 .tv-slide{background:linear-gradient(160deg,#1e3a63,#0c1120);border:2px solid var(--gold);color:var(--ink);text-align:center;padding:4vh 4vw}
 .tv-slide h2{font-family:"Frank Ruhl Libre",serif;font-weight:900;font-size:7vh;line-height:1.2;margin:0 0 3vh;color:var(--gold)}
 .tv-slide p{font-size:4.2vh;line-height:1.5;margin:0;white-space:pre-line}
+.tv-times{width:100%;max-width:85vw}
+.tv-times h2{margin-bottom:2vh}
+.tv-times-grid{display:flex;flex-wrap:wrap;gap:2vh 4vw;justify-content:center}
+.tv-times-sec{flex:1 1 20vw;min-width:20vw}
+.tv-times-sec h3{font-size:4vh;color:var(--gold);margin:0 0 1vh}
+.tv-times-row{display:flex;justify-content:space-between;gap:2vw;font-size:4.4vh;padding:1vh 0;border-top:1px solid rgba(255,255,255,.18)}
+.tv-times-days{width:100%;border-collapse:collapse;font-size:3.6vh}
+.tv-times-days th{color:var(--gold);padding:1vh 1vw}
+.tv-times-days th small{display:block;font-size:2.6vh;opacity:.8;font-weight:400}
+.tv-times-days td{padding:1.2vh 1vw;border-top:1px solid rgba(255,255,255,.18)}
+.tv-times-days td:first-child{text-align:right;color:var(--gold)}
 .tv-aliyot{width:100%;max-width:80vw}
 .tv-aliyot h2{margin-bottom:1.5vh}
 .tv-aliyot-day{font-size:3.6vh;margin-bottom:3vh;opacity:.9}
