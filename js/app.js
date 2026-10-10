@@ -16,6 +16,7 @@ import { initCommunity } from './community.js';
 import { startSync } from './settings-sync.js';
 import { openTextEdit } from './text-edit.js';
 import { openWizard, closeWizard, wizardDone } from './wizard.js';
+import { detectCoords, placeFor, geoAsked, markGeoAsked, ERROR_TEXT } from './locate.js';
 
 const $ = id => document.getElementById(id);
 const BASE_LABELS = Object.keys(BASES);
@@ -1170,11 +1171,49 @@ function setCity(id) {
 }
 $('city').onchange = () => { setCity($('city').value); fill(); changed(); };
 
+/* ---------- זיהוי מיקום ---------- */
+
+function applyPlace(p) {
+  if (p.city === 'custom') Object.assign(cfg, { city: 'custom', lat: p.lat, lng: p.lng, tz: p.tz, il: p.il, candle: p.candle });
+  else setCity(p.city);
+  cursor = null;
+}
+
+/** כפתור "זיהוי המיקום שלי": מחליף את העיר, והשינוי נשמר כמו כל שינוי בהגדרות */
+$('locate').onclick = async () => {
+  const btn = $('locate');
+  btn.disabled = true; btn.textContent = 'מזהה מיקום...';
+  try {
+    const p = placeFor(await detectCoords(), CITIES, cfg.tz);
+    applyPlace(p); fill(); changed();
+    toast('המיקום זוהה: ' + p.name);
+  } catch (e) {
+    toast(ERROR_TEXT[e && e.code] || ERROR_TEXT.unavailable, true);
+  }
+  btn.disabled = false; btn.textContent = 'זיהוי המיקום שלי';
+};
+
+/**
+ * ביקור ראשון (עוד לא נשמרו הגדרות): מזהים את המיקום ומציגים לפיו את הלוח. זה לא נשמר עד שהמשתמש
+ * שומר או משנה משהו, ולכן הזיהוי חוזר בכניסה הבאה. אם המשתמש סירב או שהזיהוי נכשל, לא שואלים שוב.
+ */
+async function autoLocate() {
+  if (saved || geoAsked()) return;
+  try {
+    const p = placeFor(await detectCoords(), CITIES, cfg.tz);
+    if (saved) return; // בינתיים נשמרו הגדרות (מהאשף או מהקהילה)
+    applyPlace(p); fill(); renderLuach();
+    toast('המיקום זוהה: ' + p.name + '. אפשר לשנות בהגדרות');
+  } catch (e) {
+    markGeoAsked();
+  }
+}
+
 /* ---------- אשף התחלה ---------- */
 
 function startWizard() {
   openWizard({
-    cities: CITIES, layouts: LAYOUTS,
+    cities: cfg.city === 'custom' ? [...CITIES, ['custom', 'המיקום שזוהה']] : CITIES, layouts: LAYOUTS,
     start: { shul: cfg.shul, city: cfg.city, layout: cfg.templates[0].layout },
     drawLayouts: drawSystemLayouts,
     async onFinish({ shul, city, layout, file }) {
@@ -1462,6 +1501,7 @@ $('profiles').onclick = async e => {
 
 fill();
 renderLuach();
+autoLocate();
 renderProfiles();
 
 initCommunity({
