@@ -22,7 +22,8 @@ const S = {
 };
 /* הפיצ'ר פעיל בקהילה (convex/features.ts). בלי אישור של כל הגבאים והרב הדף לא זמין */
 const featureOn = sid => !!S.synagogues.find(s => s._id === sid)?.features?.includes('week');
-const todayKey = () => dkey(new Date());
+/* היום לפי המנהג העברי: אחרי השקיעה כבר מתחיל היום הבא (js/theme.js) */
+const todayKey = () => dkey(window.SiteTheme?.hebToday ? window.SiteTheme.hebToday() : new Date());
 const isManager = () => S.board && (S.board.role === 'gabbai' || S.board.role === 'rabbi');
 const daysUntil = k => Math.round((pkey(k) - pkey(todayKey())) / 864e5);
 const inWeek = k => { const d = daysUntil(k); return d >= 0 && d < WEEK_DAYS; };

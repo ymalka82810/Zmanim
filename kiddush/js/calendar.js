@@ -10,7 +10,8 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const pad = n => String(n).padStart(2,'0');
 const dkey = d => d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 const pkey = k => { const [y,m,d]=k.split('-').map(Number); return new Date(y,m-1,d); };
-const today0 = () => { const d=new Date(); d.setHours(0,0,0,0); return d; };
+/* היום לפי המנהג העברי: אחרי השקיעה כבר מתחיל היום הבא (js/theme.js) */
+const today0 = () => { if (window.SiteTheme?.hebToday) return window.SiteTheme.hebToday(); const d=new Date(); d.setHours(0,0,0,0); return d; };
 const gShort = d => d.getDate()+'.'+(d.getMonth()+1);
 const gFull = d => d.toLocaleDateString('he-IL',{day:'numeric',month:'long',year:'numeric'});
 const heMonth = hd => H.Locale.gettext(hd.getMonthName(), LOC);

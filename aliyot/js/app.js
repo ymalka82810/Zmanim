@@ -27,7 +27,8 @@ const ICON = {
   left: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m15 6-6 6 6 6"/></svg>',
 };
 
-function today0(){ const d = new Date(); d.setHours(0,0,0,0); return d; }
+/* היום לפי המנהג העברי: אחרי השקיעה כבר מתחיל היום הבא (js/theme.js) */
+function today0(){ if (window.SiteTheme?.hebToday) return window.SiteTheme.hebToday(); const d = new Date(); d.setHours(0,0,0,0); return d; }
 function addDays(d, n){ const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 
 const ALL_KEY = 'aliyot:allDays';

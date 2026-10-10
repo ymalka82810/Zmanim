@@ -19,7 +19,7 @@ let X = null;
 const S = { sid: null, data: null, error: null };
 const isManager = () => !!S.data?.manager;
 
-function today0(){ const d = new Date(); d.setHours(0,0,0,0); return d; }
+function today0(){ if (window.SiteTheme?.hebToday) return window.SiteTheme.hebToday(); const d = new Date(); d.setHours(0,0,0,0); return d; }
 function addDays(d, n){ const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 const shekel = n => '₪' + Math.round(n).toLocaleString('he-IL');
 

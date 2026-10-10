@@ -59,6 +59,15 @@ function sunState(now, p){
   return last ? { dark: last.dark, next: next && next.t } : null;
 }
 
+/* התאריך העברי של עכשיו כתאריך לועזי בחצות: אחרי השקיעה כבר מתחיל היום הבא */
+function hebToday(){
+  const now = Date.now(), d = new Date(now), p = place();
+  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const set = sunEvent(Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY), p.lat, p.lng, false);
+  if (set != null && now >= set) day.setDate(day.getDate() + 1);
+  return day;
+}
+
 function getPref(){
   const p = read(PREF_KEY);
   return p === 'light' || p === 'dark' ? p : 'auto';
@@ -95,6 +104,7 @@ function locate(){
 window.SiteTheme = {
   get pref(){ return getPref(); },
   get mode(){ return root.dataset.theme; },
+  hebToday,
   set(pref){
     write(PREF_KEY, pref);
     apply();
