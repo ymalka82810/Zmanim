@@ -156,6 +156,8 @@ export const board = query({
       given: given.sort((a, b) => a.createdAt - b.createdAt).map(givenView),
       chiyuvim,
       members,
+      // כל התאריכים שנרשמו בהם עליות, לדפדוף בין ימים גם כשאינם שבת או יום קריאה קבוע
+      aliyotDates: [...new Set(aliyot.map((a) => a.dateKey))],
       recent: aliyot.sort((a, b) => (a.dateKey < b.dateKey ? 1 : a.dateKey > b.dateKey ? -1 : b.createdAt - a.createdAt)).slice(0, 150).map(givenView),
     };
   },

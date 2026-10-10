@@ -149,7 +149,7 @@ try { if (sessionStorage.getItem('site.booted') && !/[?&]code=/.test(location.se
   </section>
 
   <section id="view-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
-    <nav class="tabs sub-tabs" role="tablist" aria-label="חלקי ההגדרות" id="settingsTabs">
+    <nav class="tabs sub-tabs" data-tab-arrows-auto role="tablist" aria-label="חלקי ההגדרות" id="settingsTabs">
       <button role="tab" data-pane="shul" aria-selected="true">בית הכנסת</button>
       <button role="tab" data-pane="rules" aria-selected="false">זמני התפילות</button>
       <button role="tab" data-pane="design" aria-selected="false">עיצוב הלוח</button>
@@ -335,6 +335,7 @@ try { if (sessionStorage.getItem('site.booted') && !/[?&]code=/.test(location.se
 <div class="toast" id="status" role="status" aria-live="polite"></div>
 <footer class="wrap credit">זמני היום והתפילות מחושבים במכשיר שלך.</footer>
 
+<script src="js/tab-arrows.js"></script>
 <script src="js/menu.js"></script>
 <script src="js/dialog.js"></script>
 <script src="js/native-files.js"></script>

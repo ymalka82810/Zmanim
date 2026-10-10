@@ -301,6 +301,9 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register(new URL('sw.js', ROOT).href).catch(() => {});
 }
 
+/* בחירת תאריך עברי ליד כל שדה תאריך בכל דף (js/heb-date.js) */
+{ const s = document.createElement('script'); s.src = new URL('js/heb-date.js', ROOT).href; document.head.appendChild(s); }
+
 function build(){
   const style = document.createElement('style');
   style.textContent = css;

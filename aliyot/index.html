@@ -54,7 +54,10 @@
 .au-items{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0}
 .au-items label{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface2);cursor:pointer}
 .au-items input{width:auto;margin:0}
-.au-2{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+.au-items label .link{margin:0 0 0 -2px;padding:0 4px;font-size:1.1rem;line-height:1;text-decoration:none}
+.au-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 10px}
+.au-2 input{min-width:0;max-width:100%}
+@media(max-width:480px){.au-2{grid-template-columns:minmax(0,1fr)}}
 .au-warn{color:var(--pend);font-size:.88rem;margin:6px 0 0}
 </style>
 <script src="../js/theme.js"></script>

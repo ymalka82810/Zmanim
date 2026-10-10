@@ -17,6 +17,8 @@ const ACCOUNT_URL = '../account/';
 const SEQ_SHABBAT = ['כהן', 'לוי', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שביעי', 'מפטיר'];
 const SEQ_CHAG = ['כהן', 'לוי', 'שלישי', 'רביעי', 'חמישי', 'מפטיר'];
 const SEQ_WEEKDAY = ['כהן', 'לוי', 'ישראל'];
+const SEQ_FOUR = ['כהן', 'לוי', 'שלישי', 'רביעי'];
+const SEQ_YK = ['כהן', 'לוי', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'מפטיר'];
 const HONORS = ['הוספה', 'פתיחת הארון', 'הגבהה', 'גלילה'];
 /** שמות המצוות ברשימה של הקופה (gabbai/index.html); עלייה אחרת נרשמת שם כ"עלייה לתורה" */
 const FUND_MITZVOT = ['שלישי', 'שישי', 'מפטיר', 'פתיחת הארון', 'הגבהה', 'גלילה'];
@@ -28,7 +30,9 @@ const ICON = {
 function today0(){ const d = new Date(); d.setHours(0,0,0,0); return d; }
 function addDays(d, n){ const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 
+const ALL_KEY = 'aliyot:allDays';
 const S = {
+  all: (() => { try { return localStorage.getItem(ALL_KEY) === '1'; } catch(e){ return false; } })(),
   ready: false, fatal: null, signedIn: false, synagogues: [], sid: null,
   dateKey: null, data: null, error: null,
   // הודעה צדדית על מכרז (js/menu.js) מובילה ל-?view=auction
@@ -42,7 +46,7 @@ const featureOn = sid => !!S.synagogues.find(s => s._id === sid)?.features?.incl
 /* ---------- Boot & data ---------- */
 async function boot(){
   if (!H || !window.KiddushCalendar){ S.fatal = 'לא ניתן לטעון את לוח השנה העברי. רעננו את העמוד.'; return render(); }
-  S.dateKey = nextSlotKey(addDays(today0(), -1));
+  S.dateKey = stepKey(addDays(today0(), -1), 1);
   render();
   try { await Auth.completeSignInFromRedirect(); } catch(e){ console.warn(e); }
   Auth.onChange(() => { S.signedIn = Auth.isAuthenticated(); loadSynagogues(); });
@@ -98,10 +102,47 @@ const il = () => S.data ? !!S.data.synagogue.il : true;
 /** השבת או החג הבאים אחרי התאריך */
 function nextSlotKey(d){ const s = getSlots(addDays(d, 1), addDays(d, 60), il()); return s.length ? s[0].key : dkey(addDays(d, 1)); }
 function prevSlotKey(d){ const s = getSlots(addDays(d, -60), addDays(d, -1), il()); return s.length ? s[s.length - 1].key : dkey(addDays(d, -1)); }
+
+/* מצב "כל ימי הקריאה" (גבאי ורב): בנוסף לשבתות וחגים, גם שני וחמישי, צומות, ראשי חודשים, חנוכה, פורים,
+ * חול המועד וכל תאריך שנרשמו בו עליות */
+const READ_FLAGS = H ? H.flags.CHAG | H.flags.MINOR_FAST | H.flags.MAJOR_FAST | H.flags.ROSH_CHODESH | H.flags.CHOL_HAMOED : 0;
+const evCache = new Map();
+/** שם היום (צום, ראש חודש, חנוכה…) לפי תאריך, לימים שיש להם אירוע */
+function readingEvents(start, end){
+  const ck = dkey(start) + '|' + dkey(end) + '|' + il();
+  if (evCache.has(ck)) return evCache.get(ck);
+  const by = {};
+  for (const e of H.HebrewCalendar.calendar({ start, end, il: il(), noModern: true })){
+    if (!(e.getFlags() & READ_FLAGS) && !/^(Chanukah|Purim$)/.test(e.getDesc())) continue;
+    (by[dkey(e.getDate().greg())] ||= []).push(e.render('he-x-NoNikud').replace(/\s*\d{4}$/, ''));
+  }
+  evCache.set(ck, by);
+  return by;
+}
+/** היום הבא (dir=1) או הקודם (dir=-1) לתאריך, לפי המצב הנבחר */
+function stepKey(d, dir){
+  if (!S.all) return dir > 0 ? nextSlotKey(d) : prevSlotKey(d);
+  const from = dir > 0 ? addDays(d, 1) : addDays(d, -60), to = dir > 0 ? addDays(d, 60) : addDays(d, -1), ev = readingEvents(from, to);
+  const keys = new Set((S.data?.aliyotDates || []).filter(k => dir > 0 ? k > dkey(d) : k < dkey(d)));
+  for (let x = new Date(from); x <= to; x.setDate(x.getDate() + 1)){ const k = dkey(x); if (ev[k] || [1, 4, 6].includes(x.getDay())) keys.add(k); }
+  const sorted = [...keys].sort();
+  return (dir > 0 ? sorted[0] : sorted[sorted.length - 1]) || dkey(addDays(d, dir));
+}
+/** סדר העליות לפי סוג היום: שבת 7 ומפטיר, יום טוב 5 ומפטיר, יום כיפור 6 ומפטיר, חול המועד וראש חודש 4, שאר הימים 3 */
+function seqFor(d, sl){
+  if (d.getDay() === 6) return SEQ_SHABBAT;
+  if (sl.isChag) return SEQ_CHAG;
+  const evs = H.HebrewCalendar.calendar({ start: d, end: d, il: il(), noModern: true });
+  if (evs.some(e => e.getDesc() === 'Yom Kippur')) return SEQ_YK;
+  if (evs.some(e => e.getFlags() & (H.flags.CHOL_HAMOED | H.flags.ROSH_CHODESH))) return SEQ_FOUR;
+  return SEQ_WEEKDAY;
+}
 function dayInfo(k){
   const sl = slotFor(k, il()), d = pkey(k);
-  const seq = d.getDay() === 6 ? SEQ_SHABBAT : sl.isChag ? SEQ_CHAG : SEQ_WEEKDAY;
-  return { sl, d, seq, title: sl.kind ? slotTitle(sl) : gFull(d).replace(/ \d{4}$/, '') + ', יום ' + 'אבגדהוש'[d.getDay()] + '׳' };
+  const seq = seqFor(d, sl);
+  const label = sl.kind ? '' : (readingEvents(d, d)[k] || [])[0];
+  const wd = 'יום ' + 'אבגדהוש'[d.getDay()] + '׳';
+  return { sl, d, seq, title: sl.kind ? slotTitle(sl) : label ? label + ', ' + wd : gFull(d).replace(/ \d{4}$/, '') + ', ' + wd };
 }
 function ago(k){
   if (!k) return 'לא עלה עדיין';
@@ -147,11 +188,12 @@ function headerHTML(){
 function dateBarHTML(){
   const { title, sl } = dayInfo(S.dateKey);
   return `<div class="monthbar">
-    <button class="nav" type="button" data-act="prev" aria-label="השבת הקודמת">${ICON.right}</button>
+    <button class="nav" type="button" data-act="prev" aria-label="${S.all ? 'היום הקודם' : 'השבת הקודמת'}">${ICON.right}</button>
     <div class="title"><h2>${esc(title)}</h2><div class="alt">${esc(heFull(sl.hd) + ' | ' + gFull(pkey(S.dateKey)))}</div></div>
-    <button class="nav" type="button" data-act="next" aria-label="השבת הבאה">${ICON.left}</button>
+    <button class="nav" type="button" data-act="next" aria-label="${S.all ? 'היום הבא' : 'השבת הבאה'}">${ICON.left}</button>
   </div>
-  <div class="al-date"><button class="link" type="button" data-act="upcoming">השבת הקרובה</button>
+  <div class="al-date"><button class="btn ${S.all ? '' : 'sec'}" type="button" data-act="toggleAll" aria-pressed="${S.all}">ימי חול, צומות וכל תאריך עם עליות: ${S.all ? 'מוצג' : 'מוסתר'}</button></div>
+  <div class="al-date"><button class="link" type="button" data-act="upcoming">${S.all ? 'היום הקרוב' : 'השבת הקרובה'}</button>
     <label class="small muted" for="pickDate">או יום אחר:</label><input type="date" id="pickDate" value="${S.dateKey}"></div>`;
 }
 
@@ -285,9 +327,10 @@ function readPerson(){
 /* ---------- Actions ---------- */
 const A = {
   signIn: () => Auth.signInWithGoogle(location.href).catch(() => {}),
-  prev: () => setDate(prevSlotKey(pkey(S.dateKey))),
-  next: () => setDate(nextSlotKey(pkey(S.dateKey))),
-  upcoming: () => setDate(nextSlotKey(addDays(today0(), -1))),
+  prev: () => setDate(stepKey(pkey(S.dateKey), -1)),
+  next: () => setDate(stepKey(pkey(S.dateKey), 1)),
+  upcoming: () => setDate(stepKey(addDays(today0(), -1), 1)),
+  toggleAll: () => { S.all = !S.all; try { localStorage.setItem(ALL_KEY, S.all ? '1' : '0'); } catch(e){} render(); },
   goto: d => { S.view = 'day'; setDate(d.k); render(); },
   view: d => { S.view = d.v; render(); },
   close: closeSheet,
