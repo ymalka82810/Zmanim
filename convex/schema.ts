@@ -180,6 +180,8 @@ export default defineSchema({
     .index("by_synagogue", ["synagogueId"])
     .index("by_synagogue_donor", ["synagogueId", "donorId"])
     .index("by_synagogue_hebrewYear", ["synagogueId", "hebrewYear"])
+    // תזכורות התשלום היומיות קוראות רק את הלא-משולמים
+    .index("by_paid", ["paid"])
     .index("by_campaign", ["campaignId"])
     .index("by_special", ["specialId"]),
 

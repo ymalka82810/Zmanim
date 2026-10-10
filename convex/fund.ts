@@ -258,9 +258,12 @@ export const sendDueReminders = internalMutation({
     try {
       const today = new Date().toISOString().slice(0, 10);
       const isTenth = today.slice(8, 10) === "10";
-      const txs = await ctx.db.query("fundTransactions").collect();
+      const txs = await ctx.db
+        .query("fundTransactions")
+        .withIndex("by_paid", (q) => q.eq("paid", false))
+        .collect();
       for (const t of txs) {
-        if (t.paid || !t.donorId || !DONOR_TYPES.has(t.type)) {
+        if (!t.donorId || !DONOR_TYPES.has(t.type)) {
           continue;
         }
         const since = t.lastReminderDate ?? new Date(t.createdAt).toISOString().slice(0, 10);

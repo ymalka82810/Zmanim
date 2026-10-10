@@ -1,4 +1,5 @@
 import { ConvexError, v } from "convex/values";
+import { internal } from "./_generated/api";
 import { internalMutation, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
@@ -141,16 +142,29 @@ export const sendReminders = internalMutation({
   args: {},
   handler: async (ctx) => {
     try {
+      // רק קהילות שהפיצ'ר week מופעל בהן, וכל קהילה במוטציה נפרדת כדי לא לחרוג ממגבלות הקריאות
+      for (const synagogue of await ctx.db.query("synagogues").collect()) {
+        if (enabledFeatures(synagogue).includes("week")) {
+          await ctx.scheduler.runAfter(0, internal.yahrzeits.sendForSynagogue, { synagogueId: synagogue._id });
+        }
+      }
+    } catch (err) {
+      console.error("שליחת תזכורות אזכרה נכשלה", err);
+      await logError(ctx, "yahrzeit-reminders", "שליחת תזכורות אזכרה נכשלה", err instanceof Error ? err.message : String(err));
+    }
+  },
+});
+
+export const sendForSynagogue = internalMutation({
+  args: { synagogueId: v.id("synagogues") },
+  handler: async (ctx, { synagogueId }) => {
+    try {
       const today = todayKey();
-      const docs = await ctx.db.query("yahrzeits").collect();
-      const active = new Map<Id<"synagogues">, boolean>();
+      const docs = await ctx.db
+        .query("yahrzeits")
+        .withIndex("by_synagogue", (q) => q.eq("synagogueId", synagogueId))
+        .collect();
       for (const y of docs) {
-        if (!active.has(y.synagogueId)) {
-          active.set(y.synagogueId, enabledFeatures(await ctx.db.get(y.synagogueId)).includes("week"));
-        }
-        if (!active.get(y.synagogueId)) {
-          continue;
-        }
         const next = nextYahrzeit(y, addDays(today, 1));
         const days = next === null ? Infinity : daysBetween(today, next);
         if (next === null || next === y.remindedFor || days > REMIND_DAYS) {
