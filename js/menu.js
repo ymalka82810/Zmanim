@@ -304,6 +304,8 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 
 /* בחירת תאריך עברי ליד כל שדה תאריך בכל דף (js/heb-date.js) */
 { const s = document.createElement('script'); s.src = new URL('js/heb-date.js', ROOT).href; document.head.appendChild(s); }
+/* חלונות בחירה בעיצוב האתר לרשימות ולתאריכים (js/pickers.js) */
+{ const s = document.createElement('script'); s.src = new URL('js/pickers.js', ROOT).href; document.head.appendChild(s); }
 
 function build(){
   const style = document.createElement('style');
