@@ -214,6 +214,15 @@ async function saveSynagogue(form, id){
   } catch(e){ toast(errMsg(e)); }
 }
 
+/* פרטי התשלום שמוצגים לאורח אחרי שהתחייב לתרום מעמוד האורחים (convex/guest.ts) */
+async function savePayInfo(form, id){
+  try {
+    await client.mutation('guest:setPayInfo', { synagogueId: id, payText: form.payText.value.trim(), payLink: form.payLink.value.trim() });
+    await refreshSynagogues(); refreshDetail(id);
+    toast('פרטי התשלום נשמרו'); render();
+  } catch(e){ toast(errMsg(e)); }
+}
+
 async function refreshFeatures(synagogueId){
   S.features = await client.query('features:status', { synagogueId }).catch(() => S.features);
   await refreshSynagogues(); refreshDetail(synagogueId);
@@ -588,7 +597,15 @@ function renderDetailSheet(){
       <button class="btn ghost" type="button" id="btnRotateGuest">החלפת קישור</button>
       <button class="btn ghost" type="button" id="btnGuestOff">כיבוי</button>
     </div>
-    ${s.address ? '' : '<p class="muted small">כדאי להוסיף כתובת למטה, ב"פרטי הקהילה", כדי שאורחים יוכלו לנווט.</p>'}`
+    ${s.address ? '' : '<p class="muted small">כדאי להוסיף כתובת למטה, ב"פרטי הקהילה", כדי שאורחים יוכלו לנווט.</p>'}
+    <h4 style="margin:14px 0 4px">תרומות מאורחים</h4>
+    <p class="muted small">אורחים יכולים להתחייב לתרום מעמוד האורחים: תרומה כללית, וכל תרומה לזמן מיוחד או מגבית שסימנתם בקופה "פתוחה גם לאורחים". ההתחייבות מגיעה לקופה לאישור שלכם, ולאורח מוצגים פרטי התשלום שכאן.</p>
+    <form id="payForm">
+      <label class="f">איך משלמים</label><textarea name="payText" rows="3" maxlength="500" placeholder="לדוגמה: ביט או פייבוקס למספר 050-0000000 (שם הגבאי), או העברה לחשבון ...">${esc(s.payText || '')}</textarea>
+      <label class="f">קישור לתשלום (לא חובה)</label><input type="url" name="payLink" dir="ltr" maxlength="300" placeholder="https://..." value="${esc(s.payLink || '')}">
+      <button class="btn sec" type="submit" style="margin-top:10px">שמירת פרטי התשלום</button>
+    </form>
+    <p class="muted small" style="margin-top:12px">את מה שמוצג במסך הטלוויזיה עורכים בדף <a href="../screen/">מסך בית הכנסת</a>.</p>`
     : `<button class="btn sec" type="button" id="btnGuestOn">הפעלת עמוד לאורחים</button>`}
 
     <h3 style="margin-top:18px">פיצ'רים בקהילה</h3>
@@ -632,6 +649,7 @@ function renderDetailSheet(){
       $('#btnCopyTv').addEventListener('click', () => copyTv(s.publicCode));
       $('#btnRotateGuest').addEventListener('click', () => setGuestPage(s._id, true, true));
       $('#btnGuestOff').addEventListener('click', () => setGuestPage(s._id, false));
+      $('#payForm').addEventListener('submit', e => { e.preventDefault(); savePayInfo(e.target, s._id); });
     } else $('#btnGuestOn').addEventListener('click', () => setGuestPage(s._id, true));
     $('#editSynForm').addEventListener('submit', e => { e.preventDefault(); saveSynagogue(e.target, s._id); });
     $('#sheet').querySelectorAll('[data-cancel-invite]').forEach(b => b.addEventListener('click', () => cancelInvitation(s._id, b.dataset.cancelInvite)));

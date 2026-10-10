@@ -5,6 +5,8 @@ import { getMembership, isManager } from "./roles";
 import * as Notifications from "./notifications";
 import { todayKey } from "./hebrewDate";
 import { countAwaiting, enabledFeatures } from "./features";
+import { countPledges } from "./guest";
+import { countAwaitingTv } from "./tv";
 
 /**
  * מספר הדברים שלא טופלו בכל דף, למגירת התפריט. המפתח הוא נתיב הדף (כמו ב-js/menu.js). null – אין משתמש או חברות.
@@ -36,6 +38,8 @@ export const counts = query({
     let kiddush = unread(kiddushNotes);
     let schedule = 0;
     let account = 0;
+    let pledges = 0;
+    let screen = 0;
     if (manager) {
       // בקשת קידוש שממתינה לאישור נספרת פעם אחת, גם אם ההתראה עליה עוד לא נקראה
       const pending = (
@@ -54,6 +58,9 @@ export const counts = query({
         .take(100);
       schedule = files.filter((f) => f.status === "pending" && f.deletedAt === undefined).length;
       account = await countAwaiting(ctx, args.synagogueId, userId);
+      // התחייבויות של אורחים מעמוד האורחים שממתינות לאישור, ושינוי במסך הטלוויזיה שממתין לאישור של המשתמש
+      pledges = await countPledges(ctx, args.synagogueId);
+      screen = await countAwaitingTv(ctx, args.synagogueId, userId);
     }
     const features = enabledFeatures(await ctx.db.get(args.synagogueId));
     // מכרזים פתוחים עכשיו, כדי שחברי הקהילה ישימו לב שאפשר להציע
@@ -72,9 +79,10 @@ export const counts = query({
       "": schedule,
       "week/": features.includes("week") ? unread(yahrzeitNotes) + unread(minyanNotes) : 0,
       "kiddush/": kiddush,
-      "gabbai/": unread(fundNotes),
+      "gabbai/": unread(fundNotes) + pledges,
       "account/": account,
       "aliyot/": openAuctions,
+      "screen/": screen,
     };
   },
 });

@@ -60,6 +60,8 @@ export const mine = query({
           inviteCode: isManager(membership.role) ? synagogue.inviteCode : null,
           address: synagogue.address ?? "",
           publicCode: synagogue.publicCode ?? null,
+          payText: isManager(membership.role) ? (synagogue.payText ?? "") : "",
+          payLink: isManager(membership.role) ? (synagogue.payLink ?? "") : "",
           role: membership.role,
           isFounder: synagogue.createdBy === userId,
           features: enabledFeatures(synagogue),
@@ -132,6 +134,8 @@ export const purgeData = internalMutation({
       ...(await ctx.db.query("minyanRsvps").withIndex("by_synagogue_date", (q) => q.eq("synagogueId", id)).take(PURGE_BATCH)),
       ...(await ctx.db.query("zmanimSettings").withIndex("by_synagogue", (q) => q.eq("synagogueId", id)).take(PURGE_BATCH)),
       ...(await ctx.db.query("featureRequests").withIndex("by_synagogue", (q) => q.eq("synagogueId", id)).take(PURGE_BATCH)),
+      ...(await ctx.db.query("guestPledges").withIndex("by_synagogue_at", (q) => q.eq("synagogueId", id)).take(PURGE_BATCH)),
+      ...(await ctx.db.query("tvScreens").withIndex("by_synagogue", (q) => q.eq("synagogueId", id)).take(PURGE_BATCH)),
       ...(await ctx.db.query("zmanimProfiles").withIndex("by_synagogue_name", (q) => q.eq("synagogueId", id)).take(PURGE_BATCH)),
     ];
     const files = [

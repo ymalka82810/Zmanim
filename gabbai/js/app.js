@@ -426,7 +426,7 @@ function setCampPreview(src){
 function openCampaign(c){
   cform.reset();campEditId=c?c.id:null;campFile=null;campRemove=false;
   $("#campTitle").textContent=c?"עריכת מגבית":"מגבית חדשה";
-  if(c){cform.title.value=c.title;cform.goal.value=c.goal;cform.desc.value=c.desc||""}
+  if(c){cform.title.value=c.title;cform.goal.value=c.goal;cform.desc.value=c.desc||"";cform.guests.checked=!!c.guests}
   setCampPreview(c&&c.imageUrl);
   cdlg.showModal();
 }
@@ -459,7 +459,7 @@ cform.addEventListener("submit",async e=>{
   if(prev&&goal+0.001<prev.pledged){cform.goal.focus();toast(`כבר נתרמו ${money0(prev.pledged)}, ולכן העלות לא יכולה להיות נמוכה מזה`);return}
   const btn=$("#campSaveBtn");btn.disabled=true;
   try{
-    const args={title,goal,desc:cform.desc.value.trim()};
+    const args={title,goal,desc:cform.desc.value.trim(),guests:cform.guests.checked};
     if(campEditId)args.id=campEditId;
     if(campFile){
       const url=await call("campaigns:generateUploadUrl",{});

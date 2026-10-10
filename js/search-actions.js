@@ -80,6 +80,14 @@ export const ACTIONS = [
   { page: 'gabbai/', title: 'משכורת', words: 'שכר', go: '[data-tab=salary]|#view table', who: 'manager' },
   { page: 'gabbai/', title: 'רישום תרומה שלי', words: 'התחייבות נדר', go: '#pledgeBtn' },
 
+  { page: 'gabbai/', title: 'תרומות מאורחים שממתינות לאישור', words: 'אורח התחייבות עמוד אורחים', go: '.gp', who: 'manager' },
+
+  /* ---------- מסך בית הכנסת ---------- */
+  { page: 'screen/', title: 'הוספת שקופית למסך', words: 'טלוויזיה הודעה מזל טוב עילוי נשמת', go: '[data-act=add]', who: 'manager' },
+  { page: 'screen/', title: 'פס רץ במסך', words: 'טלוויזיה הודעה רצה', go: '#scrTicker', who: 'manager' },
+  { page: 'screen/', title: 'QR לתרומה במסך', words: 'טלוויזיה קוד סריקה תרומה', go: 'input[name=qr][value=donate]', who: 'manager' },
+  { page: 'screen/', title: 'אישור שינוי במסך', words: 'טלוויזיה טיוטה ממתין', go: '.scr-pending', who: 'manager' },
+
   /* ---------- השבוע שלי ---------- */
   { page: 'week/', title: 'הוספת אזכרה', words: 'יארצייט חדשה', go: '[data-act=addYahrzeit]' },
   { page: 'week/', title: 'אני מגיע למניין', words: 'הרשמה תפילה', go: '[data-act=rsvp]' },

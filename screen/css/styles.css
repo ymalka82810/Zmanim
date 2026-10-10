@@ -1,0 +1,25 @@
+/* עריכת מסך הטלוויזיה מהטלפון. המשתנים והכפתורים מ-kiddush/css/styles.css */
+.scr-sec{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;margin-bottom:12px;box-shadow:var(--sh-sm)}
+.scr-sec h2{font-family:var(--serif);font-size:1.25rem;margin:0 0 6px}
+.scr-sec .check{margin:10px 0}
+.scr-sec input[type=number]{width:110px;border:1px solid var(--line);background:var(--surface2);border-radius:10px;padding:10px 12px;box-sizing:border-box}
+.scr-sec input[type=text],.scr-sec input[type=date],.scr-sec textarea{box-sizing:border-box}
+.scr-sec textarea{min-height:70px}
+.scr-radio{display:flex;flex-direction:column;gap:6px;margin:8px 0}
+.scr-radio label{display:flex;gap:8px;align-items:center;font-weight:600}
+.scr-radio input{width:20px;height:20px;accent-color:var(--wine)}
+.scr-slide{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:10px 0;background:var(--surface2)}
+.scr-slide input[type=text],.scr-slide input[type=date],.scr-slide textarea{background:var(--surface)}
+.scr-slide-h{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:700}
+.scr-slide-h .acts{display:flex;gap:2px}
+.scr-slide-h button{border:0;background:none;box-shadow:none;color:var(--wine);font-weight:600;padding:4px 8px}
+.scr-slide-h button.del{color:var(--danger)}
+.scr-dates{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.scr-dates label.f{margin-top:8px}
+.scr-pending{border:2px solid var(--gold);background:var(--gold-soft)}
+.scr-pending ul{margin:6px 0;padding-inline-start:20px}
+.scr-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.scr-submit{position:sticky;bottom:calc(10px + env(safe-area-inset-bottom,0px));display:flex;gap:8px;margin-top:6px}
+.scr-submit .btn{flex:1}
+.scr-tv{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px}
+.scr-tv a.btn{text-decoration:none}

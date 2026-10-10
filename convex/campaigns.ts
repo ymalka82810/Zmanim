@@ -79,6 +79,7 @@ export async function listForClient(ctx: QueryCtx, synagogueId: Id<"synagogues">
         title: c.title,
         desc: c.desc,
         goal: c.goal,
+        guests: !!c.guests,
         status: c.status,
         createdAt: c.createdAt,
         closedAt: c.closedAt ?? null,
@@ -135,6 +136,7 @@ export const save = mutation({
     goal: v.number(),
     imageId: v.optional(v.id("_storage")),
     removeImage: v.optional(v.boolean()),
+    guests: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const { userId } = await requireManager(ctx, args.synagogueId);
@@ -170,7 +172,7 @@ export const save = mutation({
       await ctx.storage.delete(existing.imageId);
     }
 
-    const fields = { title, desc: clip(args.desc, 1000), goal, ...image };
+    const fields = { title, desc: clip(args.desc, 1000), goal, ...image, guests: !!args.guests };
     if (existing) {
       await ctx.db.patch(existing._id, fields);
       return { id: existing._id };

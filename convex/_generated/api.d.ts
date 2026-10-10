@@ -37,6 +37,7 @@ import type * as silverPrice from "../silverPrice.js";
 import type * as specialDonations from "../specialDonations.js";
 import type * as storage from "../storage.js";
 import type * as synagogues from "../synagogues.js";
+import type * as tv from "../tv.js";
 import type * as users from "../users.js";
 import type * as week from "../week.js";
 import type * as yahrzeits from "../yahrzeits.js";
@@ -79,6 +80,7 @@ declare const fullApi: ApiFromModules<{
   specialDonations: typeof specialDonations;
   storage: typeof storage;
   synagogues: typeof synagogues;
+  tv: typeof tv;
   users: typeof users;
   week: typeof week;
   yahrzeits: typeof yahrzeits;

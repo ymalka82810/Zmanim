@@ -12,7 +12,8 @@ const FILES = [
   'aliyot/index.html', 'aliyot/js',
   'community-calendar/index.html', 'community-calendar/js',
   'week/index.html', 'week/js',
-  'guest/index.html', 'guest/css', 'guest/js'
+  'guest/index.html', 'guest/css', 'guest/js',
+  'screen/index.html', 'screen/css', 'screen/js'
 ];
 
 await rm(OUT, { recursive: true, force: true });

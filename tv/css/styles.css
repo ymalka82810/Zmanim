@@ -26,3 +26,16 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family
 .tv-qr svg{width:15vh;height:15vh;flex:none}
 .tv-note+.tv-qr{margin-top:1vh}
 .tv-zm>.tv-qr:first-child{margin-top:0}
+/* בלי זמני היום ובלי QR – הלוח על כל הרוחב. פס רץ – שורה בתחתית */
+.tv.no-aside{grid-template-columns:1fr}
+.tv.with-ticker{grid-template-rows:auto 1fr auto}
+.tv-ticker{grid-column:1/-1;position:relative;overflow:hidden;height:6vh;border-radius:1vh;background:var(--gold);color:#0c1120}
+.tv-ticker span{position:absolute;top:0;right:100%;line-height:6vh;white-space:nowrap;font-size:3.4vh;font-weight:700;padding:0 2vw}
+.tv-slide{background:linear-gradient(160deg,#1e3a63,#0c1120);border:2px solid var(--gold);color:var(--ink);text-align:center;padding:4vh 4vw}
+.tv-slide h2{font-family:"Frank Ruhl Libre",serif;font-weight:900;font-size:7vh;line-height:1.2;margin:0 0 3vh;color:var(--gold)}
+.tv-slide p{font-size:4.2vh;line-height:1.5;margin:0;white-space:pre-line}
+.tv-qr.donate{background:var(--gold)}
+@media (max-aspect-ratio:1/1){.tv.with-ticker{grid-template-rows:auto 1fr auto auto}}
+.tv-zm{overflow:hidden}
+.tv.with-ticker .tv-row{padding:.4vh .6vw;font-size:2.7vh}
+.tv.with-ticker .tv-qr svg{width:12vh;height:12vh}

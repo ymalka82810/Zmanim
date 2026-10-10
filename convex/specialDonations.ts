@@ -25,9 +25,17 @@ const fields = {
   desc: v.optional(v.string()),
   amount: v.optional(v.union(v.number(), v.null())),
   texts: v.optional(v.record(v.string(), v.string())),
+  guests: v.optional(v.boolean()),
 };
 
-function cleanSpecial(args: { kind: string; title?: string; desc?: string; amount?: number | null; texts?: Record<string, string> }) {
+function cleanSpecial(args: {
+  kind: string;
+  title?: string;
+  desc?: string;
+  amount?: number | null;
+  texts?: Record<string, string>;
+  guests?: boolean;
+}) {
   if (!isKind(args.kind)) {
     throw new ConvexError("סוג התרומה לא מוכר");
   }
@@ -52,6 +60,7 @@ function cleanSpecial(args: { kind: string; title?: string; desc?: string; amoun
     desc: clip(args.desc, 500),
     amount: amount > 0 ? Math.round(amount * 100) / 100 : undefined,
     texts: Object.keys(texts).length ? texts : undefined,
+    guests: !!args.guests,
   };
 }
 
@@ -70,6 +79,7 @@ const forClient = (s: Doc<"specialDonations">) => ({
   desc: s.desc,
   amount: s.amount ?? null,
   texts: s.texts ?? {},
+  guests: !!s.guests,
   status: s.status,
   createdAt: s.createdAt,
   closedAt: s.closedAt ?? null,

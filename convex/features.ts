@@ -30,7 +30,7 @@ export async function requireFeature(ctx: QueryCtx, synagogueId: Id<"synagogues"
   }
 }
 
-async function managerIds(ctx: QueryCtx, synagogueId: Id<"synagogues">) {
+export async function managerIds(ctx: QueryCtx, synagogueId: Id<"synagogues">) {
   const memberships = await ctx.db
     .query("memberships")
     .withIndex("by_synagogue", (q) => q.eq("synagogueId", synagogueId))

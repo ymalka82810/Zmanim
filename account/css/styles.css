@@ -23,7 +23,7 @@
 html{scroll-padding-top:var(--sm-top,env(safe-area-inset-top,0px))}
 *,*::before,*::after{box-sizing:inherit}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased}
-button,input,select{font:inherit;color:inherit}
+button,input,select,textarea{font:inherit;color:inherit}
 button{cursor:pointer;border-radius:10px;box-shadow:var(--sh-sm);transition:transform .12s ease,box-shadow .12s ease}
 button:hover:not(:disabled){box-shadow:var(--sh-md);transform:translateY(-1px)}
 button:active:not(:disabled){transform:translateY(0);box-shadow:var(--sh-sm)}
@@ -55,7 +55,7 @@ button:disabled{box-shadow:none;transform:none;opacity:.55}
 .muted{color:var(--muted)}
 .small{font-size:.87rem}
 label.f{display:block;margin:12px 0 4px;font-weight:600;font-size:.92rem}
-input[type=text],input[type=email],input[type=search],select{width:100%;border:1px solid var(--line);background:var(--surface2);border-radius:10px;padding:10px 12px}
+input[type=text],input[type=email],input[type=search],input[type=url],select,textarea{box-sizing:border-box;width:100%;border:1px solid var(--line);background:var(--surface2);border-radius:10px;padding:10px 12px}
 .meta{font-size:.82rem;color:var(--muted)}
 .sheet-wrap{position:fixed;inset:0;background:rgba(10,14,20,.5);z-index:50;display:flex;align-items:flex-end;justify-content:center}
 .sheet-wrap2{z-index:55}

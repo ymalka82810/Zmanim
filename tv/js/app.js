@@ -1,5 +1,7 @@
 /* מסך טלוויזיה לבית הכנסת (tv/?c=קוד): שעון, תאריך עברי, זמני היום והלוח המאושר, במסך מלא.
- * משתמש באותו קוד ציבורי של עמוד האורחים (convex/guest.ts), בלי התחברות. הדף מתעדכן לבד. */
+ * משתמש באותו קוד ציבורי של עמוד האורחים (convex/guest.ts), בלי התחברות. הדף מתעדכן לבד.
+ * מה שהגבאים ערכו מהטלפון ואישרו (screen/, convex/tv.ts): שקופיות הודעה שמתחלפות עם הלוחות, פס רץ, אילו חלקים
+ * מוצגים, ולאן מוביל ה-QR – לעמוד האורחים, או ישר לתרומה בזמנים מיוחדים */
 import { CITIES } from '../../js/config.js';
 import { zmanim, roundZman } from '../../js/zmanim.js';
 import { todayIn, dow, hm } from '../../js/dates.js';
@@ -9,24 +11,25 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const code = new URLSearchParams(location.search).get('c') || '';
 const TZ = 'Asia/Jerusalem';
-const ROTATE_MS = 20000;
 const MIN = 60000;
 const DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+const DEFAULT_SCREEN = { slides: [], ticker: '', show: { zmanim: true, board: true, qr: true }, rotateSec: 20, qr: 'guest', qrText: '' };
+const isoToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());
 
-/** QR לעמוד האורחים באותו אתר שהמסך נפתח ממנו */
-function qrSvg(){
+/** QR לעמוד האורחים באותו אתר שהמסך נפתח ממנו. donate – ישר לתרומה */
+function qrSvg(donate){
   if (!window.qrcode) return '';
   const url = new URL('../guest/', location.href);
   url.searchParams.set('c', code);
+  if (donate) url.searchParams.set('donate', '1');
   const q = window.qrcode(0, 'M');
   q.addData(url.toString());
   q.make();
   return q.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
 }
-const QR = qrSvg();
-const drawQr = () => QR ? `<div class="tv-qr">${QR}<div>סרקו לזמני בית הכנסת בטלפון</div></div>` : '';
+const QR = { guest: qrSvg(false), donate: qrSvg(true) };
 
-let board = null, slide = 0, shown = '';
+let board = null, screen = DEFAULT_SCREEN, slide = 0, built = '', shownHead = '', shownZm = '', rotateTimer = null;
 
 /** הקהילה שומרת עיר בטקסט חופשי; מתאימים לפי שם. בלי התאמה לא מציגים זמני יום, כדי לא להציג זמנים של עיר אחרת */
 const cityOf = name => {
@@ -34,7 +37,7 @@ const cityOf = name => {
   return n ? CITIES.find(c => n.includes(c[1]) || c[1].includes(n)) : undefined;
 };
 
-function message(text){ $('app').innerHTML = `<div class="tv-msg">${esc(text)}</div>`; }
+function message(text){ built = ''; $('app').className = 'tv'; $('app').innerHTML = `<div class="tv-msg">${esc(text)}</div>`; }
 
 function dayInfo(b){
   const dn = todayIn(TZ), il = b.il !== false;
@@ -72,33 +75,89 @@ function drawZmanim(b, info){
     + `<div class="tv-note">${esc(b.city)}</div>`;
 }
 
-function drawBoard(){
-  const files = (board.files || []).filter(f => f.url);
-  if (!files.length) return '<div class="tv-empty">עדיין אין לוח זמנים מפורסם</div>';
-  const f = files[slide % files.length];
-  return `<img src="${esc(f.url)}" alt="${esc(f.title)}">${files.length > 1 ? `<div class="tv-title">${esc(f.title)}</div>` : ''}`;
+function drawQr(){
+  if (!screen.show.qr) return '';
+  const svg = QR[screen.qr] || QR.guest;
+  if (!svg) return '';
+  const text = screen.qrText || (screen.qr === 'donate' ? 'סרקו לתרומה לבית הכנסת' : 'סרקו לזמני בית הכנסת בטלפון');
+  return `<div class="tv-qr${screen.qr === 'donate' ? ' donate' : ''}">${svg}<div>${esc(text)}</div></div>`;
+}
+
+/** מה שמתחלף באזור המרכזי: הלוחות המאושרים (אם מוצגים) ושקופיות ההודעה שבתוקף היום */
+function items(){
+  const today = isoToday();
+  const files = screen.show.board ? (board.files || []).filter(f => f.url).map(f => ({ file: f })) : [];
+  const slides = screen.slides.filter(s => (!s.from || s.from <= today) && (!s.to || s.to >= today)).map(s => ({ slide: s }));
+  return files.concat(slides);
+}
+
+function drawMain(){
+  const list = items(), el = $('tvBoard');
+  if (!el) return;
+  if (!list.length) {
+    el.className = 'tv-board';
+    el.innerHTML = '<div class="tv-empty">עדיין אין לוח זמנים מפורסם</div>';
+    return;
+  }
+  const it = list[slide % list.length];
+  if (it.file) {
+    el.className = 'tv-board';
+    el.innerHTML = `<img src="${esc(it.file.url)}" alt="${esc(it.file.title)}">${list.length > 1 ? `<div class="tv-title">${esc(it.file.title)}</div>` : ''}`;
+  } else {
+    el.className = 'tv-board tv-slide';
+    el.innerHTML = `<div>${it.slide.title ? `<h2>${esc(it.slide.title)}</h2>` : ''}${it.slide.text ? `<p>${esc(it.slide.text)}</p>` : ''}</div>`;
+  }
+}
+
+function startTicker(){
+  const box = $('tvTicker');
+  if (!box) return;
+  const span = box.firstElementChild;
+  // מתחיל מחוץ למסך משמאל ונע ימינה, כך שתחילת המשפט (בצד ימין שלו) נכנסת ראשונה
+  const travel = box.clientWidth + span.offsetWidth;
+  span.animate([{ transform: 'translateX(0)' }, { transform: `translateX(${travel}px)` }],
+    { duration: travel / 0.12, iterations: Infinity });
+}
+
+/** בונה את המסך מחדש כשהלוח או הגדרות המסך משתנים */
+function build(){
+  const aside = screen.show.zmanim || screen.show.qr;
+  const sig = JSON.stringify([screen, board.name, board.city, board.il, board.files]);
+  if (sig === built) return;
+  built = sig;
+  shownHead = shownZm = '';
+  const app = $('app');
+  app.className = 'tv' + (aside ? '' : ' no-aside') + (screen.ticker ? ' with-ticker' : '');
+  app.innerHTML = `<header class="tv-head" id="tvHead"></header>
+    <main class="tv-board" id="tvBoard"></main>
+    ${aside ? '<aside class="tv-zm" id="tvZm"></aside>' : ''}
+    ${screen.ticker ? `<footer class="tv-ticker" id="tvTicker"><span>${esc(screen.ticker)}</span></footer>` : ''}`;
+  slide = 0;
+  drawMain();
+  tick();
+  startTicker();
+  clearInterval(rotateTimer);
+  rotateTimer = setInterval(rotate, screen.rotateSec * 1000);
 }
 
 function tick(){
-  if (!board) return;
+  if (!board || !built) return;
   const info = dayInfo(board);
   const head = `<div><h1 class="tv-name">${esc(board.name)}</h1>
       <div class="tv-dates">${esc(info.dayName)} · <b>${esc(info.heb)}</b>${info.tags.map(t => ' · ' + esc(t)).join('')}</div></div>
       <div class="tv-clock">${hm(Date.now(), TZ)}</div>`;
-  const zm = drawZmanim(board, info);
-  const sig = head + zm;
-  if (sig === shown) return;
-  shown = sig;
-  $('app').innerHTML = `<header class="tv-head">${head}</header>
-    <main class="tv-board" id="tvBoard">${drawBoard()}</main>
-    <aside class="tv-zm">${zm}${drawQr()}</aside>`;
+  if (head !== shownHead) { shownHead = head; $('tvHead').innerHTML = head; }
+  const zmEl = $('tvZm');
+  if (zmEl) {
+    const zm = (screen.show.zmanim ? drawZmanim(board, info) : '') + drawQr();
+    if (zm !== shownZm) { shownZm = zm; zmEl.innerHTML = zm; }
+  }
 }
 
 function rotate(){
-  const el = $('tvBoard');
-  if (!board || !el || (board.files || []).filter(f => f.url).length < 2) return;
+  if (!board || items().length < 2) return;
   slide++;
-  el.innerHTML = drawBoard();
+  drawMain();
 }
 
 async function keepAwake(){
@@ -112,8 +171,13 @@ else {
   const client = new window.convex.ConvexClient(window.CONVEX_URL);
   client.onUpdate('guest:board', { code }, b => {
     if (b === null) { board = null; return message('הקישור לא תקף, או שהקהילה כיבתה את עמוד האורחים.'); }
-    board = b; shown = ''; tick();
+    board = b; build();
   }, () => { if (!board) message('לא ניתן לטעון את הנתונים כרגע. נסו לרענן את העמוד.'); });
+  client.onUpdate('tv:live', { code }, s => {
+    screen = s || DEFAULT_SCREEN;
+    if (board) build();
+  }, () => { /* נשארים עם ההגדרות האחרונות */ });
   setInterval(tick, 1000);
-  setInterval(rotate, ROTATE_MS);
+  // שקופית שתוקפה התחיל או נגמר בחצות
+  setInterval(() => { if (board) drawMain(); }, 10 * MIN);
 }

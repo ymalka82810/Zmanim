@@ -46,6 +46,9 @@ export default defineSchema({
     publicCode: v.optional(v.string()),
     // פיצ'רים נוספים שכל הגבאים והרב אישרו (convex/features.ts). בלי – רק הפיצ'רים הבסיסיים
     features: v.optional(v.array(v.string())),
+    // פרטי תשלום שמוצגים לאורח שתרם מעמוד האורחים: טקסט חופשי (מספר ל-Bit/PayBox, חשבון בנק) וקישור תשלום
+    payText: v.optional(v.string()),
+    payLink: v.optional(v.string()),
   })
     .index("by_invite", ["inviteCode"])
     .index("by_public", ["publicCode"]),
@@ -188,6 +191,8 @@ export default defineSchema({
     goal: v.number(),
     imageId: v.optional(v.id("_storage")),
     imageSize: v.optional(v.number()),
+    // מוצגת גם בעמוד האורחים (convex/guest.ts), ואורחים יכולים להתחייב לתרום לה
+    guests: v.optional(v.boolean()),
     status: v.union(v.literal("open"), v.literal("closed")),
     createdBy: v.id("users"),
     createdAt: v.number(),
@@ -204,10 +209,39 @@ export default defineSchema({
     desc: v.string(),
     amount: v.optional(v.number()),
     texts: v.optional(v.record(v.string(), v.string())),
+    // מוצגת גם בעמוד האורחים (convex/guest.ts), ואורחים יכולים להתחייב לתרום לה
+    guests: v.optional(v.boolean()),
     status: v.union(v.literal("open"), v.literal("closed")),
     createdBy: v.id("users"),
     createdAt: v.number(),
     closedAt: v.optional(v.number()),
+  }).index("by_synagogue", ["synagogueId"]),
+
+  // התחייבות לתרומה של אורח מעמוד האורחים (convex/guest.ts), בלי חשבון. ממתינה לגבאי או לרב: באישור היא נרשמת
+  // בקופה כתרומה (לא שולמה או שולמה) ונמחקת מכאן; בדחייה – נמחקת. בלי specialId/campaignId – תרומה כללית
+  guestPledges: defineTable({
+    synagogueId: v.id("synagogues"),
+    specialId: v.optional(v.id("specialDonations")),
+    campaignId: v.optional(v.id("fundCampaigns")),
+    // שם התרומה בזמן ההתחייבות, למקרה שהתרומה או המגבית נמחקו בינתיים
+    title: v.string(),
+    amount: v.number(),
+    name: v.string(),
+    phone: v.string(),
+    forWhom: v.string(),
+    at: v.number(),
+  }).index("by_synagogue_at", ["synagogueId", "at"]),
+
+  // מסך הטלוויזיה (tv/, convex/tv.ts): live – מה שמוצג עכשיו; draft – שינוי שגבאי או רב הציעו, שעולה למסך כשכל
+  // הגבאים והרב אישרו (approvals). שניהם JSON באותו מבנה (שקופיות, פס רץ, מה מוצג, QR)
+  tvScreens: defineTable({
+    synagogueId: v.id("synagogues"),
+    live: v.optional(v.string()),
+    liveAt: v.optional(v.number()),
+    draft: v.optional(v.string()),
+    draftBy: v.optional(v.id("users")),
+    draftAt: v.optional(v.number()),
+    approvals: v.array(v.id("users")),
   }).index("by_synagogue", ["synagogueId"]),
 
   // מחיר גרם כסף טהור בשקלים, לחישוב מחצית השקל (convex/silverPrice.ts). רשומה אחת, שמתעדכנת פעם ביום

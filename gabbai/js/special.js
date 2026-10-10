@@ -127,7 +127,7 @@ function managerCard(s) {
   return `<article class="sp-card${s.status === 'closed' ? ' closed' : ''}">
     <div class="sp-top"><h3>${esc(s.title)}</h3><span class="pill ${s.status === 'open' ? 'ok' : 'no'}">${s.status === 'open' ? 'פתוחה' : 'סגורה'}</span></div>
     ${s.desc ? `<p>${esc(s.desc)}</p>` : ''}
-    <div class="sub">${[amountLine(s), nus.length ? 'נוסח: ' + nus.map((n) => NUSACHIM[n]).join(', ') : 'בלי נוסח'].filter(Boolean).join(' · ')}</div>
+    <div class="sub">${[amountLine(s), nus.length ? 'נוסח: ' + nus.map((n) => NUSACHIM[n]).join(', ') : 'בלי נוסח', s.guests ? 'פתוחה גם לאורחים' : ''].filter(Boolean).join(' · ')}</div>
     <div class="sp-sum"><span>${s.entries.length} תורמים</span><span>נרשם ${money(s.total)}</span><span>שולם ${money(s.paidTotal)}</span></div>
     <div class="rowact">
       <button class="lnk" data-give="${esc(s.id)}">רישום תרומה${nus.length ? ' / הנוסח' : ''}</button>
@@ -193,6 +193,7 @@ edlg.innerHTML = `<form method="dialog" class="sp-form">
       <div class="sp-nus">${Object.entries(NUSACHIM).map(([k, label]) => `<label class="check"><input type="checkbox" name="nus" value="${k}"> ${esc(label)}</label>`).join('')}</div>
       <div class="hint" id="spNusHint"></div></div>
     <div id="spTexts"></div>
+    <label class="check"><input type="checkbox" name="guests"> פתוחה גם לאורחים (בעמוד האורחים ובקישור שלו)</label>
   </div>
   <div class="dlg-f"><button class="btn" type="submit" id="spEdSave">פתיחה</button><button class="btn ghost" type="button" data-close>ביטול</button></div>
 </form>`;
@@ -254,6 +255,7 @@ function openEditor(s) {
     ef.title.value = s.title;
     ef.desc.value = s.desc;
     ef.amount.value = s.amount || '';
+    ef.guests.checked = !!s.guests;
     amountField(s.kind);
     ef.querySelectorAll('input[name=nus]').forEach((i) => { i.checked = !!s.texts[i.value]; });
     $('#spTexts', edlg).innerHTML = '';
@@ -280,6 +282,7 @@ ef.addEventListener('submit', async (e) => {
     desc: ef.desc.value.trim(),
     amount: parseFloat(ef.amount.value) || null,
     texts,
+    guests: ef.guests.checked,
   };
   const btn = $('#spEdSave', edlg);
   btn.disabled = true;
@@ -393,20 +396,78 @@ gf.addEventListener('submit', async (e) => {
   btn.disabled = false;
 });
 
+// ---------- התחייבויות של אורחים (convex/guest.ts) ----------
+// אורח שתרם מעמוד האורחים לא נרשם בקופה עד שגבאי או רב מאשרים. הרשימה מוצגת בראש הדף בכל הלשוניות, כל עוד יש בה משהו
+const pledgeBox = document.createElement('section');
+pledgeBox.className = 'wrap gp';
+pledgeBox.hidden = true;
+view.before(pledgeBox);
+let pledges = [], unwatchPledges = null;
+const pledgeDate = new Intl.DateTimeFormat('he-IL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+function renderPledges() {
+  pledgeBox.hidden = !pledges.length;
+  if (!pledges.length) { pledgeBox.innerHTML = ''; return; }
+  pledgeBox.innerHTML = `<h2>תרומות מאורחים שממתינות לאישור (${pledges.length})</h2>
+    <p class="sp-intro">אורחים התחייבו לתרום דרך עמוד האורחים. באישור התרומה נרשמת בקופה על שם האורח. כדאי לוודא מול האורח לפני האישור.</p>
+    ${pledges.map((p) => `<article class="sp-card gp-card">
+      <div class="sp-top"><h3>${esc(p.name)} · ${money(p.amount)}</h3><span class="sub">${esc(pledgeDate.format(p.at))}</span></div>
+      <div>${esc(p.title)}${p.forWhom ? ` – ${esc(p.forWhom)}` : ''}</div>
+      <div class="sub"><a href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}" dir="ltr">${esc(p.phone)}</a></div>
+      <div class="rowact">
+        <button class="lnk pay" data-gp-accept="${esc(p.id)}">אישור (לא שולם)</button>
+        <button class="lnk pay" data-gp-paid="${esc(p.id)}">אישור כשולם</button>
+        <button class="lnk del" data-gp-reject="${esc(p.id)}">דחייה</button>
+      </div>
+    </article>`).join('')}`;
+}
+
+pledgeBox.addEventListener('click', async (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  const p = pledges.find((x) => x.id === (b.dataset.gpAccept || b.dataset.gpPaid || b.dataset.gpReject));
+  if (!p) return;
+  if (b.dataset.gpReject) {
+    if (!await SiteDialog.confirm(`לדחות את ההתחייבות של ${p.name} (${money(p.amount)})? היא לא תירשם בקופה.`, { ok: 'דחייה', danger: true })) return;
+    try { await call('guest:rejectPledge', { id: p.id }); toast('נדחתה'); } catch (err) { toast(errText(err, 'העדכון נכשל')); }
+    return;
+  }
+  const paid = !!b.dataset.gpPaid;
+  b.disabled = true;
+  try { await call('guest:acceptPledge', { id: p.id, paid, method: paid ? 'העברה בנקאית' : '' }); toast(paid ? 'נרשם בקופה כשולם' : 'נרשם בקופה כחוב פתוח'); }
+  catch (err) { toast(errText(err, 'האישור נכשל')); b.disabled = false; }
+});
+
+function watchPledges() {
+  const want = !!(data && data.manager) && sid;
+  if (want && !unwatchPledges) {
+    unwatchPledges = Auth.watch('guest:pledges', { synagogueId: sid }, (list) => { pledges = list || []; renderPledges(); },
+      (e) => { console.warn(e); pledges = []; renderPledges(); });
+  } else if (!want && unwatchPledges) {
+    unwatchPledges(); unwatchPledges = null;
+    pledges = []; renderPledges();
+  }
+}
+
 // ---------- טעינה ----------
 function subscribe() {
   const id = Auth.isAuthenticated() ? Auth.activeSynagogueId() : null;
   if (id === sid && (unsubscribe || !id)) return;
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+  if (unwatchPledges) { unwatchPledges(); unwatchPledges = null; }
   sid = id;
   data = null;
+  pledges = [];
   render();
+  renderPledges();
+  watchPledges();
   if (!id) return;
-  unsubscribe = Auth.watch('specialDonations:list', { synagogueId: id }, (d) => { data = d; render(); },
-    (e) => { console.warn(e); data = null; render(); });
+  unsubscribe = Auth.watch('specialDonations:list', { synagogueId: id }, (d) => { data = d; render(); watchPledges(); },
+    (e) => { console.warn(e); data = null; render(); watchPledges(); });
 }
 Auth.onChange(() => {
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+  if (unwatchPledges) { unwatchPledges(); unwatchPledges = null; }
   sid = undefined;
   subscribe();
 });

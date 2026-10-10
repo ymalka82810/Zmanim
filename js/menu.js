@@ -12,13 +12,14 @@ const ROOT = new URL('..', document.currentScript.src);
 /* "לוח זמנים" ו"יומן קהילה" מוצגים לסירוגין לפי תפקיד המשתמש בקהילה הפעילה (menu:counts, שדה manager):
  * חבר קהילה רגיל רואה את יומן הקהילה במקום לשונית עריכת לוח הזמנים, שנטו לגבאי/רב. אורח או גבאי/רב
  * רואים את לוח הזמנים כרגיל, ויומן הקהילה נשאר מחוץ למגירה (ברירת המחדל עד שידוע תפקיד המשתמש).
- * דף עם feature שייך לפיצ'ר שהקהילה צריכה להפעיל (convex/features.ts), ומוצג רק כשהוא ברשימת features של menu:counts */
+ * דף עם managerOnly מוצג רק לגבאי ולרב. דף עם feature שייך לפיצ'ר שהקהילה צריכה להפעיל (convex/features.ts), ומוצג רק כשהוא ברשימת features של menu:counts */
 const PAGES = [
   { path: '',                   title: 'לוח זמנים', hideForMember: true },
   { path: 'week/',              title: 'השבוע שלי', feature: 'week' },
   { path: 'kiddush/',          title: 'לוח קידושים' },
   { path: 'gabbai/',            title: 'קופת בית הכנסת' },
   { path: 'aliyot/',            title: 'חלוקת עליות', feature: 'aliyot' },
+  { path: 'screen/',            title: 'מסך בית הכנסת', managerOnly: true },
   { path: 'account/',           title: 'החשבון שלי' },
   { path: 'community-calendar/', title: 'יומן קהילה', showForMember: true }
 ];
@@ -165,6 +166,7 @@ const badges = { links: [], btn: null, total: null, data: null, sid: null, stop:
 function hiddenPage(p, d){
   if (p.feature && !(d && Array.isArray(d.features) && d.features.includes(p.feature))) return true;
   const member = !!d && d.manager === false;
+  if (p.managerOnly) return !(d && d.manager === true);
   if (p.hideForMember) return member;
   if (p.showForMember) return !member;
   return false;

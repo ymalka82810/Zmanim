@@ -15,6 +15,7 @@ import {
   roleValidator,
 } from "./roles";
 import { settleFeatureRequests } from "./features";
+import { settleTv } from "./tv";
 
 export const list = query({
   args: { synagogueId: v.id("synagogues") },
@@ -76,6 +77,7 @@ export const setRole = mutation({
       await ctx.db.patch(membership._id, { role: "rabbi" });
       await ctx.db.patch(callerMembership._id, { role: "gabbai" });
       await settleFeatureRequests(ctx, args.synagogueId);
+      await settleTv(ctx, args.synagogueId);
       return;
     }
     // גבאי לא יכול לשנות את תפקידו של גבאי אחר או של הרב - זה מותר לרב בלבד.
@@ -98,6 +100,7 @@ export const setRole = mutation({
     }
     await ctx.db.patch(membership._id, { role: args.role });
     await settleFeatureRequests(ctx, args.synagogueId);
+    await settleTv(ctx, args.synagogueId);
   },
 });
 
@@ -121,6 +124,7 @@ export const remove = mutation({
     }
     await ctx.db.delete(membership._id);
     await settleFeatureRequests(ctx, args.synagogueId);
+    await settleTv(ctx, args.synagogueId);
   },
 });
 
@@ -135,5 +139,6 @@ export const leave = mutation({
     await assertNotSoleInRole(ctx, args.synagogueId, membership.role, "עזיבת הקהילה");
     await ctx.db.delete(membership._id);
     await settleFeatureRequests(ctx, args.synagogueId);
+    await settleTv(ctx, args.synagogueId);
   },
 });

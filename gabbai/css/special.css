@@ -18,3 +18,6 @@
 .sp-note{color:var(--muted);font-size:.88rem;font-weight:600;margin:4px 0}
 #spGNus{flex-wrap:wrap}
 .sp-form [hidden],.wrap.special[hidden],nav.tabs button[hidden]{display:none!important}
+/* התחייבויות של אורחים שממתינות לאישור */
+.gp{padding-bottom:0}
+.gp-card{border-inline-start:4px solid var(--gold,#ab7f2e)}
