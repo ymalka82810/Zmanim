@@ -27,14 +27,22 @@ async function communityFiles(ctx: QueryCtx, synagogueId: Id<"synagogues">) {
     .query("zmanimDesigns")
     .withIndex("by_synagogue_hash", (q) => q.eq("synagogueId", synagogueId))
     .collect();
-  return { schedules, designs };
+  // תמונות המגביות בקופה (convex/campaigns.ts)
+  const campaigns = (
+    await ctx.db
+      .query("fundCampaigns")
+      .withIndex("by_synagogue", (q) => q.eq("synagogueId", synagogueId))
+      .collect()
+  ).filter((c) => c.imageId !== undefined);
+  return { schedules, designs, campaigns };
 }
 
 /** קבצים בסל המחזור נספרים, כי הם עדיין שמורים */
 export async function usedBytes(ctx: QueryCtx, synagogueId: Id<"synagogues">) {
-  const { schedules, designs } = await communityFiles(ctx, synagogueId);
+  const { schedules, designs, campaigns } = await communityFiles(ctx, synagogueId);
   let total = 0;
   for (const f of [...schedules, ...designs]) total += await sizeOf(ctx, f);
+  for (const c of campaigns) total += await sizeOf(ctx, { size: c.imageSize, storageId: c.imageId! });
   return total;
 }
 
@@ -110,7 +118,7 @@ export const overview = query({
   args: { synagogueId: v.id("synagogues") },
   handler: async (ctx, args) => {
     await requireManager(ctx, args.synagogueId);
-    const { schedules, designs } = await communityFiles(ctx, args.synagogueId);
+    const { schedules, designs, campaigns } = await communityFiles(ctx, args.synagogueId);
     const users = await designUsers(ctx, args.synagogueId);
     const names = new Map<string, string>();
     const nameOf = async (userId: Id<"users"> | undefined) => {
@@ -153,6 +161,22 @@ export const overview = query({
         deletedBy: null,
         usedBy: users.get(d.hash) ?? [],
         url: await ctx.storage.getUrl(d.storageId),
+      });
+    }
+    for (const c of campaigns) {
+      files.push({
+        _id: c._id as string,
+        type: "campaign" as const,
+        title: "תמונת המגבית " + c.title,
+        firstDate: null,
+        status: null,
+        size: await sizeOf(ctx, { size: c.imageSize, storageId: c.imageId! }),
+        uploadedAt: c.createdAt,
+        uploadedBy: await nameOf(c.createdBy),
+        deletedAt: null,
+        deletedBy: null,
+        usedBy: [] as string[],
+        url: await ctx.storage.getUrl(c.imageId!),
       });
     }
     files.sort((a, b) => b.uploadedAt - a.uploadedAt);

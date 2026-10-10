@@ -138,6 +138,9 @@ function fileRow(f){
   if (f.type === 'design'){
     desc = `עיצוב · ${fmtSize(f.size)} · ${fmtDay(f.uploadedAt)} · ${f.usedBy.length ? 'בשימוש בתבנית ' + esc(f.usedBy.join(', ')) : 'לא בשימוש'}`;
     actions = f.usedBy.length ? '' : `<button type="button" class="danger" data-purge-design="${f._id}">מחיקה לצמיתות</button>`;
+  } else if (f.type === 'campaign'){
+    desc = `מגבית בקופה · ${fmtSize(f.size)} · ${fmtDay(f.uploadedAt)} · אפשר להחליף או להסיר בעריכת המגבית בדף הקופה`;
+    actions = '';
   } else if (f.deletedAt){
     desc = `${fmtSize(f.size)} · נמחק ${fmtDay(f.deletedAt)}${f.deletedBy ? ' על ידי ' + esc(f.deletedBy) : ''}`;
     actions = `<button type="button" data-restore="${f._id}">שחזור</button><button type="button" class="danger" data-purge="${f._id}">מחיקה לצמיתות</button>`;

@@ -169,10 +169,27 @@ export default defineSchema({
     lastReminderDate: v.optional(v.string()),
     // שנה עברית של date, להכנה לטעינה עתידית של רישומים לפי תקופה
     hebrewYear: v.optional(v.number()),
+    // תרומה למגבית (fundCampaigns). רק לרישום מסוג donation
+    campaignId: v.optional(v.id("fundCampaigns")),
   })
     .index("by_synagogue", ["synagogueId"])
     .index("by_synagogue_donor", ["synagogueId", "donorId"])
-    .index("by_synagogue_hebrewYear", ["synagogueId", "hebrewYear"]),
+    .index("by_synagogue_hebrewYear", ["synagogueId", "hebrewYear"])
+    .index("by_campaign", ["campaignId"]),
+
+  // מגבית בקופה (convex/campaigns.ts): מטרה שהגבאי או הרב פתחו, עם עלות (goal) שסך התרומות אליה לא יעבור, ותמונת תיאור
+  fundCampaigns: defineTable({
+    synagogueId: v.id("synagogues"),
+    title: v.string(),
+    desc: v.string(),
+    goal: v.number(),
+    imageId: v.optional(v.id("_storage")),
+    imageSize: v.optional(v.number()),
+    status: v.union(v.literal("open"), v.literal("closed")),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+    closedAt: v.optional(v.number()),
+  }).index("by_synagogue", ["synagogueId"]),
 
   // התראות קידוש וקופה משותפות. dateKey/by רלוונטיים לקידוש בלבד, transactionId לקופה בלבד
   notifications: defineTable({

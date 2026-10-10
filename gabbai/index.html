@@ -25,6 +25,7 @@
   <button role="tab" data-tab="home" aria-selected="true">סקירה</button>
   <button role="tab" data-tab="ledger" aria-selected="false">דף חשבון ודוחות</button>
   <button role="tab" data-tab="donations" aria-selected="false">תרומות ומצוות</button>
+  <button role="tab" data-tab="campaigns" aria-selected="false">מגביות</button>
   <button role="tab" data-tab="petty" aria-selected="false">קופה קטנה</button>
   <button role="tab" data-tab="salary" aria-selected="false">משכורת</button>
 </div></nav>
@@ -75,6 +76,7 @@
           <option>פתיחת הארון</option><option>הגבהה</option><option>גלילה</option><option>הוצאה והכנסה</option>
           <option>חתן תורה</option><option>חתן בראשית</option><option>אתה הראית</option><option>אחר</option>
         </select></div>
+      <div class="f" data-for="donation"><span>מגבית</span><select name="campaign" id="campaignSel"></select><div class="hint" id="campaignHint"></div></div>
       <div class="f" data-for="donation mitzvah"><span>חבר קהילה</span><select name="donor" id="donor"></select><div class="hint">חבר קהילה שנבחר יראה את הרישום באפליקציה שלו.</div></div>
       <div class="f" data-for="donation mitzvah"><span id="nameLbl">שם התורם</span><input name="name" list="donorList" autocomplete="off"><datalist id="donorList"></datalist></div>
       <div class="f" data-for="salary"><span>משכורת עבור חודש</span><input name="month" placeholder="לדוגמה: תשרי תשפ״ז"></div>
@@ -94,6 +96,41 @@
       <div class="f" data-for="donation mitzvah salary" id="paidDateWrap"><span>תאריך תשלום</span><input name="paidDate" type="date" lang="he"><div class="hint" id="paidHint"></div></div>
     </div>
     <div class="dlg-f"><button class="btn" type="submit" id="saveBtn">שמור</button><button class="btn ghost" type="button" data-close>ביטול</button></div>
+  </form>
+</dialog>
+
+<dialog id="campDlg">
+  <form method="dialog" id="campForm">
+    <div class="dlg-h"><h3 id="campTitle">מגבית חדשה</h3><button type="button" class="lnk" data-close>סגור</button></div>
+    <div class="dlg-b">
+      <div class="f"><span>למה אוספים</span><input name="title" maxlength="80" required placeholder="לדוגמה: 15 ספסלים חדשים"></div>
+      <div class="f"><span>עלות (₪)</span><input name="goal" type="number" inputmode="decimal" min="0" step="0.01" required><div class="hint">סך התרומות למגבית לא יעבור את הסכום הזה.</div></div>
+      <div class="f"><span>תיאור</span><textarea name="desc" rows="3" maxlength="1000" placeholder="מה קונים, ולמה זה חשוב לקהילה"></textarea></div>
+      <div class="f"><span>תמונת תיאור</span>
+        <div class="camp-pick">
+          <img id="campPreview" alt="" hidden>
+          <div class="rowact">
+            <label class="lnk" for="campImage" id="campImageLbl">בחירת תמונה</label>
+            <input type="file" id="campImage" accept="image/*" hidden>
+            <button type="button" class="lnk del" id="campImageRemove" hidden>הסרת התמונה</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="dlg-f"><button class="btn" type="submit" id="campSaveBtn">שמור</button><button class="btn ghost" type="button" data-close>ביטול</button></div>
+  </form>
+</dialog>
+
+<dialog id="donateDlg">
+  <form method="dialog" id="donateForm">
+    <div class="dlg-h"><h3>תרומה למגבית</h3><button type="button" class="lnk" data-close>סגור</button></div>
+    <div class="dlg-b">
+      <div id="donateWhat"></div>
+      <div class="f"><span>סכום (₪)</span><input name="amount" type="number" inputmode="decimal" min="0" step="0.01" required><div class="hint" id="donateHint"></div></div>
+      <div class="f"><span>הערה</span><textarea name="desc" rows="2" placeholder="לדוגמה: לעילוי נשמת…"></textarea></div>
+      <div class="hint">התרומה תופיע כחוב פתוח על שמך עד שהגבאי יסמן אותה כשולמה. תישלח לך תזכורת כל 5 ימים וגם בעשירי לכל חודש.</div>
+    </div>
+    <div class="dlg-f"><button class="btn" type="submit" id="donateSaveBtn">תרומה</button><button class="btn ghost" type="button" data-close>ביטול</button></div>
   </form>
 </dialog>
 

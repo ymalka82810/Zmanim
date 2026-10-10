@@ -5,6 +5,8 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const nf=new Intl.NumberFormat("he-IL",{minimumFractionDigits:2,maximumFractionDigits:2});
 const money=n=>"₪"+nf.format(Number(n)||0);
+const nf0=new Intl.NumberFormat("he-IL",{maximumFractionDigits:2});
+const money0=n=>"₪"+nf0.format(Number(n)||0);
 const pad=n=>String(n).padStart(2,"0");
 const iso=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
 const todayIso=()=>iso(new Date());
@@ -43,7 +45,7 @@ function dateCell(s){const h=heb(s);return `${esc(gFmt.format(parseIso(s)))}<spa
 // ---------- state & storage (Convex: convex/fund.ts) ----------
 const Auth=window.SiteAuth;
 let txs=[]; let settings={synName:"קופת בית הכנסת",openMain:0,openPetty:0,israel:1};
-let members=[], role=null, sid=null, stage="loading", ledgerError="", notifications=[];
+let members=[], campaigns=[], role=null, sid=null, stage="loading", ledgerError="", notifications=[];
 const isManager=()=>role==="gabbai"||role==="rabbi";
 const LS="gabbai-fallback-v1";
 function errText(e,fallback){return (e&&typeof e.data==="string")?e.data:fallback}
@@ -52,6 +54,7 @@ const TX_KEYS=["type","amount","date","name","desc","method","mitzvah","month","
 async function putTx(obj){
   const body={};for(const k of TX_KEYS) if(obj[k]!==undefined) body[k]=obj[k];
   body.donorId=obj.donorId||null;
+  body.campaignId=obj.campaignId||null;
   if(obj.id) body.id=obj.id;
   await call("fund:save",body);
 }
@@ -60,6 +63,7 @@ async function markPaid(id){await call("fund:markPaid",{id,paidDate:todayIso()})
 async function putSettings(s){await call("fund:saveSettings",{openMain:s.openMain,openPetty:s.openPetty})}
 async function pledgeMine(o){await call("fund:pledgeMine",o)}
 async function markFundRead(){await call("fund:markNotificationsRead",{})}
+const campById=id=>campaigns.find(c=>c.id===id);
 
 function localData(){try{const j=JSON.parse(localStorage.getItem(LS)||"null");return j&&Array.isArray(j.txs)&&j.txs.length?j:null}catch(e){return null}}
 async function importLocal(){
@@ -77,6 +81,7 @@ async function importLocal(){
 const isIncome=t=>t.type==="donation"||t.type==="mitzvah"||t.type==="salary";
 function label(t){
   if(t.type==="mitzvah") return "מכירת מצווה: "+(t.mitzvah||"");
+  if(t.type==="donation"&&t.campaignId) return txWhat(t);
   if(t.type==="salary") return "משכורת"+(t.month?" – "+t.month:"");
   return TYPE[t.type]||"";
 }
@@ -101,10 +106,16 @@ function balance(account,upto){
   for(const m of moves(account)){if(upto&&m.date>upto)break;b+=m.cr-m.dr}
   return b;
 }
+// "מה" ברשימות התרומות: המצווה, תרומה למגבית, או תרומה כללית
+function txWhat(t){
+  if(t.type==="mitzvah") return t.mitzvah||"מכירת מצווה";
+  if(t.campaignId){const c=campById(t.campaignId);return "תרומה למגבית"+(c?": "+c.title:"")}
+  return "תרומה";
+}
 function sum(arr,f){return arr.reduce((s,x)=>s+(Number(f(x))||0),0)}
 
 // ---------- views ----------
-let tab="home"; const ui={from:"",to:"",acct:"main",donView:"list",donFilter:"all"};
+let tab="home"; const ui={from:"",to:"",acct:"main",donView:"list",donFilter:"all",openCamps:new Set()};
 function descOf(t){
   const bits=[];
   if(t.name) bits.push(t.name);
@@ -125,7 +136,7 @@ function viewHome(){
   const recent=[...moves("main").map(m=>({...m,acc:"עו״ש"})),...moves("petty").map(m=>({...m,acc:"קופה קטנה"}))]
     .sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:(b.t.createdAt||0)-(a.t.createdAt||0)).slice(0,8);
   const pending=[...owed,...sal].sort((a,b)=>a.date<b.date?-1:1);
-  return `
+  return `${notices()}
   <div class="balances">
     <div class="bal main"><div class="k">יתרה בעו״ש</div><div class="v">${money(balance("main"))}</div></div>
     <div class="bal petty"><div class="k">יתרה בקופה קטנה</div><div class="v">${money(balance("petty"))}</div></div>
@@ -188,7 +199,7 @@ function viewDonations(){
   }
   const list=items.filter(t=>ui.donFilter==="all"||(ui.donFilter==="paid"?t.paid:!t.paid));
   return head+`<div class="panel scroll"><table><thead><tr><th>תאריך</th><th>מי</th><th>מה</th><th class="num">סכום</th><th>סטטוס</th><th></th></tr></thead><tbody>
-    ${list.map(t=>`<tr><td>${dateCell(t.date)}</td><td><b>${esc(t.name||"")}</b>${t.donorId?`<span class="sub">חבר קהילה</span>`:""}</td><td>${esc(t.type==="mitzvah"?t.mitzvah:"תרומה")}<span class="sub">${esc(t.desc||"")}</span></td><td class="num">${money(t.amount)}</td>
+    ${list.map(t=>`<tr><td>${dateCell(t.date)}</td><td><b>${esc(t.name||"")}</b>${t.donorId?`<span class="sub">חבר קהילה</span>`:""}</td><td>${esc(txWhat(t))}<span class="sub">${esc(t.desc||"")}</span></td><td class="num">${money(t.amount)}</td>
     <td>${t.paid?`<span class="pill ok">שולם</span><span class="sub">${t.paidDate?esc(gFmt.format(parseIso(t.paidDate))):""} ${esc(t.method||"")}</span>`:`<span class="pill no">לא שולם</span>`}</td><td>${actions(t)}</td></tr>`).join("")}
     ${list.length?"":`<tr><td colspan="6" class="empty">אין רשומות להצגה.</td></tr>`}
   </tbody></table></div>`;
@@ -218,23 +229,73 @@ function viewSalary(){
   </tbody></table></div>`;
 }
 
-function viewMine(){
-  const list=[...txs].sort((a,b)=>a.date<b.date?1:-1);
-  const paid=list.filter(t=>t.paid), open=list.filter(t=>!t.paid);
+// תזכורות תשלום והודעות על מגביות חדשות
+function notices(){
   const unread=notifications.filter(n=>!n.read);
-  const reminders=unread.length?`<div class="panel" style="padding:12px;margin-bottom:14px;border-inline-start:4px solid var(--out)">
-    <b>תזכורות תשלום</b>
+  return unread.length?`<div class="panel" style="padding:12px;margin:14px 0;border-inline-start:4px solid var(--out)">
+    <b>הודעות הקופה</b>
     ${unread.map(n=>`<div class="sub" style="margin-top:6px">${esc(n.text)}</div>`).join("")}
     <div style="margin-top:8px"><button class="btn ghost" id="markFundRead">סימון כנקרא</button></div>
   </div>`:"";
-  return `${reminders}<h2>התרומות שלי</h2>
+}
+
+// ---------- מגביות (convex/campaigns.ts) ----------
+function progress(c){
+  const pct=x=>c.goal>0?Math.min(100,Math.max(0,x)/c.goal*100):0;
+  return `<div class="prog" role="meter" aria-valuemin="0" aria-valuemax="${c.goal}" aria-valuenow="${c.pledged}" aria-label="נאסף למגבית">
+    <div class="prog-bar"><span class="paid" style="width:${pct(c.paid).toFixed(1)}%"></span><span class="pledged" style="width:${pct(c.pledged-c.paid).toFixed(1)}%"></span></div>
+    <div class="prog-txt"><b>${money0(c.pledged)}</b> נתרמו מתוך ${money0(c.goal)} <span class="pct">${Math.floor(pct(c.pledged))}%</span></div>
+    <div class="sub">${c.left>0?"נותרו "+money0(c.left):"היעד הושג"} · שולם ${money0(c.paid)} · ${c.donors===1?"תורם אחד":c.donors+" תורמים"}</div>
+  </div>`;
+}
+function campStatus(c){return c.status==="closed"?`<span class="pill no">נסגרה</span>`:c.left<=0?`<span class="pill ok">היעד הושג</span>`:""}
+function campCard(c,manager){
+  const img=c.imageUrl?`<img class="camp-img" src="${esc(c.imageUrl)}" alt="${esc(c.title)}" loading="lazy">`:"";
+  const head=`${img}<div class="camp-b"><div class="camp-t"><h3>${esc(c.title)}</h3>${campStatus(c)}</div>
+    ${c.desc?`<p class="camp-d">${esc(c.desc)}</p>`:""}${progress(c)}`;
+  if(!manager){
+    const mine=sum(txs.filter(t=>t.campaignId===c.id),t=>t.amount);
+    return `<article class="camp">${head}
+      ${mine?`<div class="sub">תרמת למגבית ${money0(mine)}</div>`:""}
+      ${c.status==="open"&&c.left>0?`<div class="camp-a"><button class="btn" data-camp-donate="${esc(c.id)}">תרומה למגבית</button></div>`:""}
+    </div></article>`;
+  }
+  const list=txs.filter(t=>t.campaignId===c.id).sort((a,b)=>a.date<b.date?1:-1);
+  const open=ui.openCamps.has(c.id);
+  return `<article class="camp">${head}
+    <div class="camp-a rowact">
+      ${c.status==="open"&&c.left>0?`<button class="lnk pay" data-camp-give="${esc(c.id)}">רישום תרומה</button>`:""}
+      <button class="lnk" data-camp-edit="${esc(c.id)}">עריכה</button>
+      <button class="lnk" data-camp-status="${esc(c.id)}">${c.status==="open"?"סגירת המגבית":"פתיחה מחדש"}</button>
+      ${c.count?"":`<button class="lnk del" data-camp-del="${esc(c.id)}">מחיקה</button>`}
+    </div>
+    ${list.length?`<details class="camp-donors" data-camp="${esc(c.id)}"${open?" open":""}><summary>התרומות (${list.length})</summary>
+      <div class="scroll"><table><thead><tr><th>תאריך</th><th>מי</th><th class="num">סכום</th><th>סטטוס</th><th></th></tr></thead><tbody>
+      ${list.map(t=>`<tr><td>${dateCell(t.date)}</td><td><b>${esc(t.name||"")}</b><span class="sub">${esc(t.desc||"")}</span></td><td class="num">${money(t.amount)}</td>
+        <td>${t.paid?'<span class="pill ok">שולם</span>':'<span class="pill no">לא שולם</span>'}</td><td>${actions(t)}</td></tr>`).join("")}
+      </tbody></table></div></details>`:""}
+  </div></article>`;
+}
+function viewCampaigns(){
+  const open=campaigns.filter(c=>c.status==="open"), closed=campaigns.filter(c=>c.status!=="open");
+  return `<h2>מגביות</h2>
+  <div class="bar"><button class="btn" id="newCamp">מגבית חדשה</button></div>
+  ${open.length?`<div class="camps">${open.map(c=>campCard(c,true)).join("")}</div>`:`<div class="panel"><div class="empty" style="padding:28px 16px">אין מגביות פתוחות. פתחו מגבית למטרה מסוימת, למשל קניית ספסלים חדשים, והמתפללים יוכלו לתרום לה עד שהעלות תתמלא.</div></div>`}
+  ${closed.length?`<h2>מגביות שנסגרו</h2><div class="camps">${closed.map(c=>campCard(c,true)).join("")}</div>`:""}`;
+}
+
+function viewMine(){
+  const list=[...txs].sort((a,b)=>a.date<b.date?1:-1);
+  const paid=list.filter(t=>t.paid), open=list.filter(t=>!t.paid);
+  const camps=campaigns.filter(c=>c.status==="open");
+  return `${notices()}${camps.length?`<h2>מגביות</h2><div class="camps">${camps.map(c=>campCard(c,false)).join("")}</div>`:""}<h2>התרומות שלי</h2>
   <div class="balances">
     <div class="bal main"><div class="k">סה״כ שולם</div><div class="v">${money(sum(paid,t=>t.amount))}</div></div>
     <div class="bal owed"><div class="k">נדרים שטרם שולמו (${open.length})</div><div class="v">${money(sum(open,t=>t.amount))}</div></div>
   </div>
   <div class="bar" style="margin-top:14px"><button class="btn" id="pledgeBtn">רישום חיוב חדש</button></div>
   <div class="panel scroll" style="margin-top:14px"><table><thead><tr><th>תאריך</th><th>מה</th><th class="num">סכום</th><th>סטטוס</th></tr></thead><tbody>
-    ${list.map(t=>`<tr data-tx="${esc(t.id)}"><td>${dateCell(t.date)}</td><td>${esc(t.type==="mitzvah"?"מכירת מצווה: "+t.mitzvah:"תרומה")}<span class="sub">${esc(t.desc||"")}</span></td><td class="num">${money(t.amount)}</td>
+    ${list.map(t=>`<tr data-tx="${esc(t.id)}"><td>${dateCell(t.date)}</td><td>${esc(t.type==="mitzvah"?"מכירת מצווה: "+t.mitzvah:txWhat(t))}<span class="sub">${esc(t.desc||"")}</span></td><td class="num">${money(t.amount)}</td>
     <td>${t.paid?`<span class="pill ok">שולם</span><span class="sub">${t.paidDate?esc(gFmt.format(parseIso(t.paidDate))):""} ${esc(t.method||"")}</span>`:`<span class="pill no">לא שולם</span>`}</td></tr>`).join("")}
     ${list.length?"":`<tr><td colspan="4" class="empty">עדיין לא נרשמו תרומות על שמך.</td></tr>`}
   </tbody></table></div>
@@ -247,6 +308,7 @@ function render(){
   if(ready&&window.SiteMenu)SiteMenu.setCommunity({_id:sid,name:settings.synName,il:settings.israel});
   document.querySelector("nav.tabs").hidden=!manager;
   $("#addBtn").hidden=!manager;
+  $("#addBtn").textContent=tab==="campaigns"?"+ מגבית חדשה":"+ רישום חדש";
   $("#openSettings").hidden=!manager;
   if(stage==="loading"){$("#view").innerHTML=viewMessage("טוען…");return}
   if(stage==="signedOut"){$("#view").innerHTML=viewMessage("כדי לראות את הקופה יש להתחבר עם חשבון Google.",`<button class="btn btn-google" id="signIn">כניסה עם Google</button>`);return}
@@ -254,7 +316,7 @@ function render(){
   if(stage==="error"){$("#view").innerHTML=viewMessage(esc(ledgerError),`<a class="btn" href="../account/">לחשבון שלי</a>`);return}
   if(!manager){$("#view").innerHTML=viewMine();return}
   document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===tab));
-  const v={home:viewHome,ledger:viewLedger,donations:viewDonations,petty:viewPetty,salary:viewSalary}[tab]();
+  const v={home:viewHome,ledger:viewLedger,donations:viewDonations,campaigns:viewCampaigns,petty:viewPetty,salary:viewSalary}[tab]();
   const local=localData();
   $("#view").innerHTML=(local?`<div class="panel" style="padding:12px;margin-top:14px">נמצאו בדפדפן הזה ${local.txs.length} רישומי קופה מהגרסה הקודמת. <button class="btn" id="importLocal">העברה לקופת הקהילה</button></div>`:"")+v;
   const names=[...new Set(txs.filter(x=>x.name).map(x=>x.name))];
@@ -274,22 +336,40 @@ function setType(t){
   $("#paidLbl").textContent=t==="salary"?"המשכורת התקבלה":"שולם";
   syncPaid();
 }
+// המגביות שאפשר לשייך אליהן תרומה: הפתוחות, וגם המגבית של הרישום הנערך אם היא כבר נסגרה
+function fillCampaigns(t){
+  const list=campaigns.filter(c=>c.status==="open"||(t&&c.id===t.campaignId));
+  $("#campaignSel").innerHTML=`<option value="">ללא מגבית (תרומה כללית)</option>`+list.map(c=>`<option value="${esc(c.id)}">${esc(c.title)}</option>`).join("");
+}
+// כמה עוד אפשר לתרום למגבית שנבחרה. ברישום נערך הסכום שלו עצמו לא נספר
+function campaignRoom(id){
+  const c=campById(id);if(!c)return Infinity;
+  const prev=editId?txs.find(x=>x.id===editId):null;
+  return c.left+(prev&&prev.campaignId===id?Number(prev.amount)||0:0);
+}
+function campaignHint(){
+  const id=form.campaign.value;
+  $("#campaignHint").textContent=id?`אפשר לרשום למגבית עד ${money0(campaignRoom(id))}`:"";
+}
 function syncPaid(){const on=form.paid.checked&&["donation","mitzvah","salary"].includes(curType);$("#paidDateWrap").hidden=!on;if(on&&!form.paidDate.value)form.paidDate.value=form.date.value||todayIso();hint()}
 function hint(){
   const a=heb(form.date.value);$("#dateHint").textContent=form.date.value?`${a.heb} · ${a.parsha}`:"";
   const b=heb(form.paidDate.value);$("#paidHint").textContent=form.paidDate.value?`${b.heb} · ${b.parsha}`:"";
 }
-function openForm(type,t){
+function openForm(type,t,campaignId){
   form.reset();editId=t?t.id:null;
   $("#dlgTitle").textContent=t?"עריכת רישום":"רישום חדש";
   $("#typePick").hidden=!!t;
-  if(t){for(const k of ["amount","date","name","desc","method","mitzvah","month","category","vendor","paidDate"]) if(form[k]&&t[k]!=null&&t[k]!=="") form[k].value=t[k]; form.paid.checked=!!t.paid; form.donor.value=t.donorId||""}
-  else form.date.value=todayIso();
+  fillCampaigns(t);
+  if(t){for(const k of ["amount","date","name","desc","method","mitzvah","month","category","vendor","paidDate"]) if(form[k]&&t[k]!=null&&t[k]!=="") form[k].value=t[k]; form.paid.checked=!!t.paid; form.donor.value=t.donorId||""; form.campaign.value=t.campaignId||""}
+  else{form.date.value=todayIso();form.campaign.value=campaignId||""}
   setType(t?t.type:(type||"donation"));
+  campaignHint();
   dlg.showModal();
 }
 form.addEventListener("click",e=>{const b=e.target.closest("#typePick button");if(b)setType(b.dataset.t);if(e.target.closest("[data-close]"))dlg.close()});
 form.paid.addEventListener("change",syncPaid);
+form.campaign.addEventListener("change",campaignHint);
 form.donor.addEventListener("change",()=>{const m=members.find(x=>x.userId===form.donor.value);if(m)form.name.value=m.name});
 form.date.addEventListener("input",hint);form.paidDate.addEventListener("input",hint);
 form.addEventListener("submit",async e=>{
@@ -297,10 +377,14 @@ form.addEventListener("submit",async e=>{
   const amount=parseFloat(form.amount.value);
   if(!(amount>0)){form.amount.focus();toast("יש להזין סכום גדול מאפס");return}
   if(!form.date.value){form.date.focus();return}
+  if(curType==="donation"&&form.campaign.value){
+    const room=campaignRoom(form.campaign.value);
+    if(amount>room+0.001){form.amount.focus();toast(room>0?`אפשר לרשום למגבית עד ${money0(room)}`:"המגבית כבר הגיעה ליעד");return}
+  }
   const prev=editId?txs.find(x=>x.id===editId):null;
   const o={type:curType,amount,date:form.date.value,desc:form.desc.value.trim(),createdAt:prev?prev.createdAt:Date.now()};
   if(editId)o.id=editId;
-  if(curType==="donation"||curType==="mitzvah"){o.name=form.name.value.trim();o.donorId=form.donor.value||null;o.method=form.method.value;if(curType==="mitzvah")o.mitzvah=form.mitzvah.value}
+  if(curType==="donation"||curType==="mitzvah"){o.name=form.name.value.trim();o.donorId=form.donor.value||null;o.method=form.method.value;if(curType==="donation")o.campaignId=form.campaign.value||null;if(curType==="mitzvah")o.mitzvah=form.mitzvah.value}
   if(curType==="salary")o.month=form.month.value.trim();
   if(curType==="expense"||curType==="petty"){o.category=form.category.value;o.vendor=form.vendor.value.trim()}
   if(isIncome(o)){o.paid=form.paid.checked;o.paidDate=o.paid?(form.paidDate.value||o.date):""}
@@ -331,6 +415,87 @@ pform.addEventListener("submit",async e=>{
   btn.disabled=false;
 });
 
+// ---------- מגבית: פתיחה ועריכה ----------
+const cdlg=$("#campDlg"), cform=$("#campForm"); let campEditId=null, campFile=null, campRemove=false, campPreviewUrl=null;
+function setCampPreview(src){
+  if(campPreviewUrl){URL.revokeObjectURL(campPreviewUrl);campPreviewUrl=null}
+  const img=$("#campPreview");img.hidden=!src;if(src)img.src=src;else img.removeAttribute("src");
+  $("#campImageRemove").hidden=!src;
+  $("#campImageLbl").textContent=src?"החלפת התמונה":"בחירת תמונה";
+}
+function openCampaign(c){
+  cform.reset();campEditId=c?c.id:null;campFile=null;campRemove=false;
+  $("#campTitle").textContent=c?"עריכת מגבית":"מגבית חדשה";
+  if(c){cform.title.value=c.title;cform.goal.value=c.goal;cform.desc.value=c.desc||""}
+  setCampPreview(c&&c.imageUrl);
+  cdlg.showModal();
+}
+// התמונה מוקטנת בדפדפן לפני ההעלאה, כדי שלא תתפוס מקום מיותר באחסון הקהילה ותיטען מהר אצל המתפללים
+async function shrinkImage(file){
+  const MAX=1600, url=URL.createObjectURL(file);
+  try{
+    const img=await new Promise((ok,bad)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=bad;i.src=url});
+    const k=Math.min(1,MAX/Math.max(img.naturalWidth,img.naturalHeight));
+    const cv=document.createElement("canvas");cv.width=Math.round(img.naturalWidth*k);cv.height=Math.round(img.naturalHeight*k);
+    const g=cv.getContext("2d");g.fillStyle="#fff";g.fillRect(0,0,cv.width,cv.height);g.drawImage(img,0,0,cv.width,cv.height);
+    return await new Promise((ok,bad)=>cv.toBlob(b=>b?ok(b):bad(new Error("encode")),"image/jpeg",.85));
+  }finally{URL.revokeObjectURL(url)}
+}
+$("#campImage").addEventListener("change",async e=>{
+  const f=e.target.files&&e.target.files[0];e.target.value="";if(!f)return;
+  try{campFile=await shrinkImage(f)}catch(err){toast("לא ניתן לקרוא את התמונה. נסו קובץ JPG או PNG.");return}
+  campRemove=false;setCampPreview(null);campPreviewUrl=URL.createObjectURL(campFile);
+  const img=$("#campPreview");img.src=campPreviewUrl;img.hidden=false;$("#campImageRemove").hidden=false;$("#campImageLbl").textContent="החלפת התמונה";
+});
+$("#campImageRemove").onclick=()=>{campFile=null;campRemove=true;setCampPreview(null)};
+cform.addEventListener("click",e=>{if(e.target.closest("[data-close]"))cdlg.close()});
+cdlg.addEventListener("close",()=>setCampPreview(null));
+cform.addEventListener("submit",async e=>{
+  e.preventDefault();
+  const title=cform.title.value.trim(), goal=parseFloat(cform.goal.value);
+  if(!title){cform.title.focus();return}
+  if(!(goal>0)){cform.goal.focus();toast("יש להזין עלות גדולה מאפס");return}
+  const prev=campEditId?campById(campEditId):null;
+  if(prev&&goal+0.001<prev.pledged){cform.goal.focus();toast(`כבר נתרמו ${money0(prev.pledged)}, ולכן העלות לא יכולה להיות נמוכה מזה`);return}
+  const btn=$("#campSaveBtn");btn.disabled=true;
+  try{
+    const args={title,goal,desc:cform.desc.value.trim()};
+    if(campEditId)args.id=campEditId;
+    if(campFile){
+      const url=await call("campaigns:generateUploadUrl",{});
+      const res=await fetch(url,{method:"POST",headers:{"Content-Type":campFile.type},body:campFile});
+      if(!res.ok)throw new Error("upload");
+      args.imageId=(await res.json()).storageId;
+    }else if(campRemove)args.removeImage=true;
+    const r=await call("campaigns:save",args);
+    if(r&&r.error)toast(r.error);
+    else{cdlg.close();toast(campEditId?"המגבית עודכנה":"המגבית נפתחה");if(!campEditId){tab="campaigns";render()}}
+  }catch(err){toast(errText(err,"השמירה נכשלה. נסו שוב."))}
+  btn.disabled=false;
+});
+
+// ---------- תרומה של מתפלל למגבית ----------
+const ddlg=$("#donateDlg"), dform=$("#donateForm"); let donateId=null;
+function openDonate(c){
+  dform.reset();donateId=c.id;
+  $("#donateWhat").innerHTML=`<b>${esc(c.title)}</b>${progress(c)}`;
+  dform.amount.max=c.left;
+  $("#donateHint").textContent=`אפשר לתרום עד ${money0(c.left)}, הסכום שנותר עד השלמת העלות`;
+  ddlg.showModal();
+}
+dform.addEventListener("click",e=>{if(e.target.closest("[data-close]"))ddlg.close()});
+dform.addEventListener("submit",async e=>{
+  e.preventDefault();
+  const c=campById(donateId), amount=parseFloat(dform.amount.value);
+  if(!c)return ddlg.close();
+  if(!(amount>0)){dform.amount.focus();toast("יש להזין סכום גדול מאפס");return}
+  if(amount>c.left+0.001){dform.amount.focus();toast(c.left>0?`אפשר לתרום עד ${money0(c.left)}`:"המגבית כבר הגיעה ליעד");return}
+  const btn=$("#donateSaveBtn");btn.disabled=true;
+  try{await call("fund:donateCampaign",{campaignId:c.id,amount,date:todayIso(),desc:dform.desc.value.trim()});ddlg.close();toast("תודה! התרומה נרשמה")}
+  catch(err){toast(errText(err,"השמירה נכשלה. נסו שוב."))}
+  btn.disabled=false;
+});
+
 // ---------- settings ----------
 const sdlg=$("#setDlg"), sform=$("#setForm");
 $("#openSettings").onclick=()=>{sform.openMain.value=settings.openMain||0;sform.openPetty.value=settings.openPetty||0;sdlg.showModal()};
@@ -339,7 +504,7 @@ sform.addEventListener("submit",async e=>{e.preventDefault();try{await putSettin
 
 // ---------- events ----------
 document.querySelector("nav.tabs").addEventListener("click",e=>{const b=e.target.closest("button[data-tab]");if(b){tab=b.dataset.tab;render();window.scrollTo(0,0)}});
-$("#addBtn").onclick=()=>openForm(tab==="petty"?"petty":tab==="salary"?"salary":"donation");
+$("#addBtn").onclick=()=>tab==="campaigns"?openCampaign(null):openForm(tab==="petty"?"petty":tab==="salary"?"salary":"donation");
 $("#view").addEventListener("click",async e=>{
   const b=e.target.closest("button");if(!b)return;
   if(b.dataset.new) return openForm(b.dataset.new);
@@ -355,7 +520,21 @@ $("#view").addEventListener("click",async e=>{
   if(b.id==="signIn") return Auth.signInWithGoogle(location.href).catch(()=>toast("ההתחברות נכשלה"));
   if(b.id==="pledgeBtn") return openPledge();
   if(b.id==="markFundRead"){try{await markFundRead()}catch(err){}return}
+  if(b.id==="newCamp") return openCampaign(null);
+  if(b.dataset.campDonate){const c=campById(b.dataset.campDonate);if(c)openDonate(c);return}
+  if(b.dataset.campGive) return openForm("donation",null,b.dataset.campGive);
+  if(b.dataset.campEdit){const c=campById(b.dataset.campEdit);if(c)openCampaign(c);return}
+  if(b.dataset.campStatus){const c=campById(b.dataset.campStatus);if(!c)return;
+    const open=c.status!=="open";
+    if(!open&&!await SiteDialog.confirm(`לסגור את המגבית "${c.title}"? היא תוסתר מהמתפללים ולא תקבל עוד תרומות. אפשר לפתוח אותה מחדש.`,{ok:"סגירה"}))return;
+    try{await call("campaigns:setStatus",{id:c.id,open});toast(open?"המגבית נפתחה מחדש":"המגבית נסגרה")}catch(err){toast(errText(err,"העדכון נכשל"))}
+    return}
+  if(b.dataset.campDel){const c=campById(b.dataset.campDel);
+    if(c&&await SiteDialog.confirm(`למחוק את המגבית "${c.title}"?`,{ok:"מחיקה",danger:true})){try{await call("campaigns:remove",{id:c.id});toast("המגבית נמחקה")}catch(err){toast(errText(err,"המחיקה נכשלה"))}}
+    return}
 });
+// רשימת התרומות של מגבית נשארת פתוחה גם כשהנתונים מתעדכנים והדף מצויר מחדש
+$("#view").addEventListener("toggle",e=>{const d=e.target;if(d.matches&&d.matches("details[data-camp]")){if(d.open)ui.openCamps.add(d.dataset.camp);else ui.openCamps.delete(d.dataset.camp)}},true);
 $("#view").addEventListener("change",e=>{if(e.target.id==="lf"){ui.from=e.target.value;render()}if(e.target.id==="lt"){ui.to=e.target.value;render()}});
 
 async function exportCsv(){
@@ -385,7 +564,7 @@ function subscribe(id){
   if(!id){stage="noCommunity";return render()}
   stage="loading";render();
   unsubscribe=Auth.watch("fund:ledger",{synagogueId:id},d=>{
-    role=d.role;txs=d.txs;members=d.members;notifications=d.notifications||[];
+    role=d.role;txs=d.txs;members=d.members;campaigns=d.campaigns||[];notifications=d.notifications||[];
     settings=Object.assign({},settings,d.settings||{},{synName:d.synagogue.name,israel:d.synagogue.il?1:0});
     hcache.clear();stage="ready";render();
   },e=>{console.warn(e);ledgerError=errText(e,"לא ניתן לטעון את הקופה.");stage="error";render()});

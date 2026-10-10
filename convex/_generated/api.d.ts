@@ -12,6 +12,7 @@ import type * as aliyot from "../aliyot.js";
 import type * as appUpdate from "../appUpdate.js";
 import type * as auctions from "../auctions.js";
 import type * as auth from "../auth.js";
+import type * as campaigns from "../campaigns.js";
 import type * as crons from "../crons.js";
 import type * as email from "../email.js";
 import type * as errorLog from "../errorLog.js";
@@ -51,6 +52,7 @@ declare const fullApi: ApiFromModules<{
   appUpdate: typeof appUpdate;
   auctions: typeof auctions;
   auth: typeof auth;
+  campaigns: typeof campaigns;
   crons: typeof crons;
   email: typeof email;
   errorLog: typeof errorLog;

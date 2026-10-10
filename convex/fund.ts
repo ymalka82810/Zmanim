@@ -7,6 +7,7 @@ import { fundTypeValidator } from "./schema";
 import { logError } from "./errorLog";
 import * as Notifications from "./notifications";
 import { hebrewYearOf } from "./hebrewDate";
+import * as Campaigns from "./campaigns";
 
 const PLEDGE_TYPES = v.union(v.literal("donation"), v.literal("mitzvah"));
 const REMINDER_DAYS = 5;
@@ -30,6 +31,7 @@ const txFields = {
   paid: v.optional(v.boolean()),
   paidDate: v.optional(v.string()),
   createdAt: v.optional(v.number()),
+  campaignId: v.optional(v.union(v.id("fundCampaigns"), v.null())),
 };
 type TxInput = {
   type: Doc<"fundTransactions">["type"];
@@ -46,6 +48,7 @@ type TxInput = {
   paid?: boolean;
   paidDate?: string;
   createdAt?: number;
+  campaignId?: Id<"fundCampaigns"> | null;
 };
 
 const clip = (s: string | undefined, max: number) => (s ?? "").trim().slice(0, max);
@@ -85,6 +88,7 @@ async function clean(ctx: MutationCtx, synagogueId: Id<"synagogues">, tx: TxInpu
     vendor: expense ? clip(tx.vendor, 80) : "",
     paid,
     paidDate,
+    campaignId: tx.type === "donation" && tx.campaignId ? tx.campaignId : undefined,
   };
 }
 
@@ -104,6 +108,7 @@ const forClient = (t: Doc<"fundTransactions">) => ({
   paid: t.paid,
   paidDate: t.paidDate,
   createdAt: t.createdAt,
+  campaignId: t.campaignId ?? null,
 });
 
 async function myNotifications(ctx: QueryCtx, synagogueId: Id<"synagogues">, userId: Id<"users">) {
@@ -131,6 +136,7 @@ export const ledger = query({
         txs: mine.filter((t) => DONOR_TYPES.has(t.type)).map(forClient),
         settings: null,
         members: [],
+        campaigns: await Campaigns.listForClient(ctx, args.synagogueId),
         notifications: await myNotifications(ctx, args.synagogueId, userId),
       };
     }
@@ -158,6 +164,7 @@ export const ledger = query({
       txs: txs.map(forClient),
       settings: { openMain: settings?.openMain ?? 0, openPetty: settings?.openPetty ?? 0 },
       members: members.sort((a, b) => a.name.localeCompare(b.name, "he")),
+      campaigns: await Campaigns.listForClient(ctx, args.synagogueId),
       notifications: await myNotifications(ctx, args.synagogueId, userId),
     };
   },
@@ -195,6 +202,38 @@ export const pledgeMine = mutation({
   },
 });
 
+/** חבר קהילה תורם למגבית פתוחה. נרשם כחיוב פתוח על שמו (כמו pledgeMine), עד העלות שנותרה במגבית */
+export const donateCampaign = mutation({
+  args: {
+    synagogueId: v.id("synagogues"),
+    campaignId: v.id("fundCampaigns"),
+    amount: v.number(),
+    date: v.string(),
+    desc: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { userId } = await requireMember(ctx, args.synagogueId);
+    const user = await ctx.db.get(userId);
+    const data = await clean(ctx, args.synagogueId, {
+      type: "donation",
+      amount: args.amount,
+      date: args.date,
+      donorId: userId,
+      name: displayName(user),
+      desc: args.desc,
+      paid: false,
+      campaignId: args.campaignId,
+    });
+    await Campaigns.assertRoom(ctx, args.synagogueId, args.campaignId, data.amount);
+    return await ctx.db.insert("fundTransactions", {
+      synagogueId: args.synagogueId,
+      ...data,
+      createdAt: Date.now(),
+      createdBy: userId,
+    });
+  },
+});
+
 export const markNotificationsRead = mutation({
   args: { synagogueId: v.id("synagogues") },
   handler: async (ctx, args) => {
@@ -203,8 +242,12 @@ export const markNotificationsRead = mutation({
   },
 });
 
-function pledgeText(t: Doc<"fundTransactions">) {
-  const what = t.type === "mitzvah" ? "מכירת מצווה" + (t.mitzvah ? ": " + t.mitzvah : "") : "תרומה";
+async function pledgeText(ctx: QueryCtx, t: Doc<"fundTransactions">) {
+  const campaign = t.campaignId ? await ctx.db.get(t.campaignId) : null;
+  const what =
+    t.type === "mitzvah"
+      ? "מכירת מצווה" + (t.mitzvah ? ": " + t.mitzvah : "")
+      : "תרומה" + (campaign ? " למגבית " + campaign.title : "");
   return `תזכורת: נותר לך לשלם ${what} על סך ₪${t.amount}${t.desc ? " (" + t.desc + ")" : ""}.`;
 }
 
@@ -232,7 +275,7 @@ export const sendDueReminders = internalMutation({
           synagogueId: t.synagogueId,
           type: "fund",
           to: t.donorId,
-          text: pledgeText(t),
+          text: await pledgeText(ctx, t),
           transactionId: t._id,
         });
         await ctx.db.patch(t._id, { lastReminderDate: today });
@@ -254,11 +297,14 @@ export const save = mutation({
   handler: async (ctx, { synagogueId, id, ...tx }) => {
     const { userId } = await requireManager(ctx, synagogueId);
     const data = await clean(ctx, synagogueId, tx);
+    const existing = id ? await ctx.db.get(id) : null;
+    if (id && (existing === null || existing.synagogueId !== synagogueId)) {
+      throw new ConvexError("הרישום לא נמצא");
+    }
+    if (data.campaignId) {
+      await Campaigns.assertRoom(ctx, synagogueId, data.campaignId, data.amount, existing);
+    }
     if (id) {
-      const existing = await ctx.db.get(id);
-      if (existing === null || existing.synagogueId !== synagogueId) {
-        throw new ConvexError("הרישום לא נמצא");
-      }
       await ctx.db.patch(id, data);
       return id;
     }
@@ -321,7 +367,7 @@ export const importLocal = mutation({
       throw new ConvexError("יותר מדי רישומים לייבוא בבת אחת");
     }
     for (const tx of args.txs) {
-      const data = await clean(ctx, args.synagogueId, { ...tx, donorId: null });
+      const data = await clean(ctx, args.synagogueId, { ...tx, donorId: null, campaignId: null });
       await ctx.db.insert("fundTransactions", {
         synagogueId: args.synagogueId,
         ...data,
