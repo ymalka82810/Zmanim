@@ -161,6 +161,8 @@ try { if (sessionStorage.getItem('site.booted') && !/[?&]code=/.test(location.se
       <h2>בית הכנסת</h2>
       <div class="field"><label for="shul">שם בית הכנסת</label><input id="shul" autocomplete="off"></div>
       <div class="field"><label for="address">כתובת</label><input id="address" autocomplete="off" placeholder="למשל: רח׳ הרב קוק 3"></div>
+      <div class="field"><label for="phones">טלפון (אפשר כמה, מופרדים בפסיק)</label><input id="phones" type="text" inputmode="tel" autocomplete="off" placeholder="למשל: 050-1234567, 02-6543210"></div>
+      <div class="field"><label for="email">מייל</label><input id="email" type="email" autocomplete="off" placeholder="name@example.com"></div>
       <div class="row2">
         <div><label for="city">עיר</label><select id="city"></select></div>
         <div><label for="candle">הדלקת נרות (דקות לפני השקיעה)</label><input id="candle" type="number" min="0" max="90" inputmode="numeric"></div>

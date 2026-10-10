@@ -657,7 +657,29 @@ export function detectShulAddress(tokens) {
     if (!name || name.length > 40 || !/[א-ת]{2}/.test(name)) continue;
     if (!best || l.size > best.size) best = { name, size: l.size };
   }
-  return { shul: best ? best.name : null, address: addr ? addr.str.trim() : null };
+  const { phones, email } = detectContacts(tokens);
+  return { shul: best ? best.name : null, address: addr ? addr.str.trim() : null, phones, email };
+}
+
+// טלפון ישראלי: נייד (05X) או קווי (0X), גם עם קידומת בינלאומית. מפרידים: מקף, נקודה או רווח. לא חלק ממספר ארוך יותר
+const PHONE_RE = /(?<![\d-])(?:\+?972[-.\s]?|0)(?:5\d|[23489]|7\d)[-.\s]?\d{3}[-.\s]?\d{4}(?![\d-])/g;
+const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/;
+
+/** טלפונים (כל אחד בפורמט 05X-XXXXXXX או 0X-XXXXXXX, בלי כפילויות) ומייל ראשון שנמצאו בטקסט של הקובץ */
+export function detectContacts(tokens) {
+  const lines = [...tokens.map(t => t.str), ...textLines(tokens).map(l => l.str)];
+  const phones = [];
+  let email = null;
+  for (const s of lines) {
+    for (const m of s.matchAll(PHONE_RE)) {
+      let d = m[0].replace(/\D/g, '');
+      if (d.startsWith('972')) d = '0' + d.slice(3);
+      const norm = d.length === 10 ? d.slice(0, 3) + '-' + d.slice(3) : d.slice(0, 2) + '-' + d.slice(2);
+      if (!phones.includes(norm)) phones.push(norm);
+    }
+    if (!email) { const e = EMAIL_RE.exec(s); if (e) email = e[0].toLowerCase(); }
+  }
+  return { phones, email };
 }
 
 /** תבנית התאריך הלועזי כמו בקובץ הישן (מפריד, ספרות שנה, אפסים מובילים) */

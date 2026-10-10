@@ -617,6 +617,8 @@ const baseOpts = r => {
 function fill() {
   $('shul').value = cfg.shul || '';
   $('address').value = cfg.address || '';
+  $('phones').value = cfg.phones || '';
+  $('email').value = cfg.email || '';
   $('city').value = cfg.city || 'custom';
   $('candle').value = cfg.candle;
   $('lat').value = cfg.lat; $('lng').value = cfg.lng;
@@ -1194,6 +1196,8 @@ $('startWizard').onclick = startWizard;
 const bind = (id, fn) => $(id).addEventListener('input', () => { fn($(id).value); changed(); });
 bind('shul', v => { cfg.shul = v; });
 bind('address', v => { cfg.address = v; });
+bind('phones', v => { cfg.phones = v; });
+bind('email', v => { cfg.email = v; });
 bind('candle', v => { cfg.candle = Number(v) || 0; });
 bind('lat', v => { cfg.lat = Number(v); });
 bind('lng', v => { cfg.lng = Number(v); });
@@ -1259,15 +1263,21 @@ async function templateDone(result, fromBoard) {
 async function offerDetected(d) {
   if (!d) return;
   const wantShul = d.shul && d.shul !== (cfg.shul || '').trim(), wantAddr = d.address && d.address !== (cfg.address || '').trim();
-  if (!wantShul && !wantAddr) return;
+  const phones = (d.phones || []).join(', '), wantPhones = phones && phones !== (cfg.phones || '').trim();
+  const wantEmail = d.email && d.email !== (cfg.email || '').trim();
+  if (!wantShul && !wantAddr && !wantPhones && !wantEmail) return;
   const was = v => v ? ' (במקום "' + v + '")' : '';
   const lines = [];
   if (wantShul) lines.push('שם בית הכנסת: "' + d.shul + '"' + was(cfg.shul));
   if (wantAddr) lines.push('כתובת: "' + d.address + '"' + was(cfg.address));
+  if (wantPhones) lines.push('טלפון: ' + phones + was(cfg.phones));
+  if (wantEmail) lines.push('מייל: ' + d.email + was(cfg.email));
   const msg = 'זוהו בקובץ הישן הפרטים האלה:\n' + lines.join('\n') + '\nלעדכן אותם בהגדרות בית הכנסת?';
   if (!await SiteDialog.confirm(msg, { ok: 'מילוי' })) return;
   if (wantShul) cfg.shul = d.shul;
   if (wantAddr) cfg.address = d.address;
+  if (wantPhones) cfg.phones = phones;
+  if (wantEmail) cfg.email = d.email;
   store();
   fill();
   toast('הפרטים מולאו בהגדרות');
