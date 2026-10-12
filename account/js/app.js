@@ -429,6 +429,8 @@ async function deleteSynagogue(id){
 }
 
 /* ---------- Render ---------- */
+document.addEventListener('siteviewchange', () => { if (S.ready) render(); });
+
 function render(){
   const app = $('#app');
   if (!S.ready){ app.innerHTML = '<div class="empty">טוען…</div>'; return; }
@@ -451,6 +453,21 @@ function renderSignedOut(app){
   html += `<button class="btn btn-google" id="btnSignIn">כניסה עם Google</button>`;
   app.innerHTML = html;
   $('#btnSignIn').addEventListener('click', signIn);
+}
+
+/* מתג תצוגת משתמש רגיל (SiteView ב-js/menu.js): מוצג רק לגבאי או רב. המעבר טוען את הדף מחדש, כך שכל הדפים נבנים לפי התצוגה הנבחרת */
+function renderViewMode(){
+  const V = window.SiteView;
+  if (!V || !V.real()) return '';
+  const on = V.active();
+  return `<div class="card">
+    <h3>מצב תצוגה</h3>
+    <p class="muted small">גבאי ורב יכולים לראות את האתר כמו חבר קהילה רגיל. זה משנה רק את התצוגה; ההרשאות נשארות כמו שהן.</p>
+    <div class="sm-theme" id="viewSeg" role="group" aria-label="מצב תצוגה">
+      <button type="button" data-view="manager" aria-pressed="${!on}">מנהל</button>
+      <button type="button" data-view="member" aria-pressed="${on}">משתמש רגיל</button>
+    </div>
+  </div>`;
 }
 
 function renderHebrewNameCard(){
@@ -495,6 +512,7 @@ function renderSignedIn(app){
     </div>
     <button class="btn sec" id="btnSignOut">יציאה</button>
   </div>
+  ${renderViewMode()}
   ${me.needsHebrewName ? renderHebrewNameCard() : ''}
   ${renderInvitations()}
   <div class="sechead"><h2>הקהילות שלי</h2></div>`;
@@ -512,6 +530,12 @@ function renderSignedIn(app){
   if (me.isOwner) html += renderErrorLogs();
   app.innerHTML = html;
   $('#btnSignOut').addEventListener('click', signOut);
+  app.querySelectorAll('#viewSeg [data-view]').forEach(b => b.addEventListener('click', () => {
+    const toMember = b.dataset.view === 'member';
+    if (toMember === window.SiteView.active()) return;
+    window.SiteView.set(toMember);
+    location.reload();
+  }));
   if (me.needsHebrewName) $('#hebrewNameForm').addEventListener('submit', e => { e.preventDefault(); saveHebrewName(e.target); });
   $('#btnNewSyn').addEventListener('click', sheetCreateSynagogue);
   app.querySelectorAll('[data-accept]').forEach(b => b.addEventListener('click', () => acceptInvitation(b.dataset.accept)));
