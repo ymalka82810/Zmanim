@@ -35,11 +35,14 @@ function notify(isAuthenticated){ listeners.forEach(fn => { try { fn(isAuthentic
 const CACHE_PREFIX = 'site.cache.';
 const CACHE_MAX_CHARS = 500000;   // תשובה גדולה יותר לא נשמרת, כדי לא למלא את האחסון של הדפדפן
 const cacheKey = (name, args) => CACHE_PREFIX + name + ':' + JSON.stringify(args || {});
+/* תצוגת משתמש רגיל למנהל (SiteView ב-js/menu.js): התשובה השמורה נשארת כפי שהשרת ענה, והדפים מקבלים אותה אחרי מיסוך */
+const asViewed = v => window.SiteView ? window.SiteView.mask(v) : v;
+const noteCounts = (name, v) => { if (name === 'menu:counts' && window.SiteView) window.SiteView.noteCounts(v); };
 
 function cached(name, args){
   const raw = read(cacheKey(name, args));
   if (raw == null) return undefined;
-  try { return JSON.parse(raw); } catch(e){ return undefined; }
+  try { return asViewed(JSON.parse(raw)); } catch(e){ return undefined; }
 }
 
 function remember(name, args, value){
@@ -52,6 +55,7 @@ function clearCache(){
     const keys = [];
     for (let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); if (k && k.startsWith(CACHE_PREFIX)) keys.push(k); }
     keys.forEach(k => localStorage.removeItem(k));
+    localStorage.removeItem('site.viewAsMember'); localStorage.removeItem('site.realManager');
     // מסך הפתיחה (index.html) יטען מחדש את הנתונים של המשתמש הנוכחי בכניסה הבאה לדף הראשי
     sessionStorage.removeItem('site.booted');
   } catch(e){ /* אין גישה לאחסון */ }
@@ -61,7 +65,8 @@ function clearCache(){
 async function query(name, args){
   const value = await getClient().query(name, args);
   remember(name, args, value);
-  return value;
+  noteCounts(name, value);
+  return asViewed(value);
 }
 
 /* כמו client.onUpdate: קודם התשובה השמורה (אם יש), ואחר כך כל תשובה מהשרת */
@@ -70,7 +75,8 @@ function watch(name, args, onData, onError){
   const unsub = getClient().onUpdate(name, args, value => {
     live = true;
     remember(name, args, value);
-    onData(value);
+    noteCounts(name, value);
+    onData(asViewed(value));
   }, onError);
   const hit = cached(name, args);
   if (hit !== undefined) Promise.resolve().then(() => { if (!live && !stopped) onData(hit); });

@@ -93,7 +93,15 @@ const css = `
 :root[data-theme="dark"] .sm-toast svg{color:#dfb564}
 :root[data-theme="dark"] .sm-toast button{color:#9ba4b3}
 @media (prefers-reduced-motion:reduce){.sm-toast{transition:none}}
-@media print{.sm-bar,.sm-stripe,.sm-day,.sm-layer,.sm-toasts{display:none!important}}
+.sm-viewbtn{display:block;width:calc(100% - 20px);margin:0 10px;padding:10px 12px;border:1px solid #d6dce8;border-radius:10px;background:none;color:inherit;font:inherit;font-weight:600;cursor:pointer}
+.sm-viewbtn:hover{background:#eef3fa}
+:root[data-theme="dark"] .sm-viewbtn{border-color:#2d3440}
+:root[data-theme="dark"] .sm-viewbtn:hover{background:#232a36}
+.sm-viewbar{position:fixed;z-index:940;bottom:calc(12px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:12px;box-sizing:border-box;max-width:calc(100% - 24px);padding:8px 8px 8px 14px;border-radius:999px;background:#1d2b45;color:#fff;box-shadow:0 6px 20px rgba(10,20,40,.35);font-family:"Assistant",Arial,sans-serif;font-weight:600;direction:rtl}
+.sm-viewbar button{flex:none;padding:7px 14px;border:0;border-radius:999px;background:#dfb564;color:#1d2b45;font:inherit;font-weight:700;cursor:pointer}
+:root[data-theme="dark"] .sm-viewbar{background:#e8ecf2;color:#1a1f28}
+:root[data-theme="dark"] .sm-viewbar button{background:#2c4a7c;color:#fff}
+@media print{.sm-viewbar,.sm-bar,.sm-stripe,.sm-day,.sm-layer,.sm-toasts{display:none!important}}
 `;
 
 /* ---------- שורת היום ---------- */
@@ -102,6 +110,40 @@ const HEBCAL_SRC = new URL('vendor/hebcal/hebcal-core-6.9.3.min.js', ROOT).href;
 function read(key){ try { return JSON.parse(localStorage.getItem(key)); } catch (e) { return null; } }
 function readRaw(key){ try { return localStorage.getItem(key); } catch (e) { return null; } }
 function write(key, v){ try { v == null ? localStorage.removeItem(key) : localStorage.setItem(key, JSON.stringify(v)); } catch (e) { /* אין גישה לאחסון */ } }
+
+/* ---------- תצוגת משתמש רגיל (למנהל) ----------
+ * גבאי או רב יכולים לעבור לראות את האתר כחבר קהילה רגיל. זה משנה רק את התצוגה: תשובות השרת ש-js/auth.js מחזיר לדפים
+ * עוברות כאן מיסוך (תפקיד גבאי/רב -> חבר קהילה, manager -> false), וההרשאות האמיתיות נבדקות בשרת כמו תמיד.
+ * המתג נשמר במכשיר (VIEW_KEY), והמיסוג פעיל רק למי שידוע שהוא מנהל בקהילה הפעילה (REAL_KEY, מתוך menu:counts). */
+const VIEW_KEY = 'site.viewAsMember', REAL_KEY = 'site.realManager';
+const isMgrRole = r => r === 'gabbai' || r === 'rabbi';
+const SiteView = {
+  real(){ return readRaw(REAL_KEY) === '1'; },
+  active(){ return readRaw(VIEW_KEY) === '1' && SiteView.real(); },
+  set(on){ try { on ? localStorage.setItem(VIEW_KEY, '1') : localStorage.removeItem(VIEW_KEY); } catch (e) { /* אין גישה לאחסון */ } },
+  /* d: התשובה הגולמית של menu:counts. זה מה שקובע אם המשתמש מנהל באמת */
+  noteCounts(d){
+    if (!d || typeof d.manager !== 'boolean') return;
+    try { d.manager ? localStorage.setItem(REAL_KEY, '1') : (localStorage.removeItem(REAL_KEY), localStorage.removeItem(VIEW_KEY)); } catch (e) { /* אין גישה לאחסון */ }
+  },
+  mask(v){
+    if (!SiteView.active()) return v;
+    const walk = x => {
+      if (Array.isArray(x)) return x.map(walk);
+      if (x && typeof x === 'object'){
+        const o = {};
+        for (const k of Object.keys(x)){
+          const val = x[k];
+          o[k] = k === 'role' && isMgrRole(val) ? 'member' : k === 'manager' && val === true ? false : walk(val);
+        }
+        return o;
+      }
+      return x;
+    };
+    return walk(v);
+  }
+};
+window.SiteView = SiteView;
 
 /* התשובה האחרונה השמורה של menu:counts לקהילה הפעילה (ראו js/auth.js: cached/remember) – תפקיד המשתמש
  * והפיצ'רים, לפני שיש חיבור ל-Convex ולפני ש-js/auth.js אפילו נטען (menu.js רץ לפניו). כשאין תשובה שמורה: null.
@@ -113,7 +155,9 @@ function cachedCounts(){
     const raw = localStorage.getItem('site.cache.menu:counts:' + JSON.stringify({ synagogueId: sid }));
     if (raw == null) return null;
     const d = JSON.parse(raw);
-    return d && typeof d.manager === 'boolean' ? d : null;
+    if (!d || typeof d.manager !== 'boolean') return null;
+    SiteView.noteCounts(d);
+    return SiteView.mask(d);
   } catch (e) { return null; }
 }
 
@@ -173,7 +217,9 @@ function hiddenPage(p, d){
   return false;
 }
 
+let refreshView = () => {};
 function renderCounts(){
+  refreshView();
   const d = badges.data || {};
   let total = 0;
   for (const l of badges.links){
@@ -366,6 +412,27 @@ function build(){
     main.append(h, seg);
   }
 
+  /* מתג תצוגת משתמש רגיל: מוצג רק למנהל אמיתי. המעבר טוען את הדף מחדש, כך שכל הדפים נבנים מחדש לפי התצוגה הנבחרת */
+  {
+    const box = document.createElement('div');
+    box.className = 'sm-view';
+    box.hidden = true;
+    const h = document.createElement('h2');
+    h.textContent = 'מצב ניהול';
+    h.style.marginTop = '22px';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'sm-viewbtn';
+    b.addEventListener('click', () => { SiteView.set(!SiteView.active()); location.reload(); });
+    box.append(h, b);
+    main.appendChild(box);
+    refreshView = () => {
+      box.hidden = !SiteView.real();
+      b.textContent = SiteView.active() ? 'חזרה לתצוגת מנהל' : 'עבור לתצוגת משתמש רגיל';
+    };
+    refreshView();
+  }
+
   const btn = bar.querySelector('.sm-btn');
   badges.btn = btn;
   badges.total = document.createElement('span');
@@ -412,6 +479,19 @@ function build(){
 
   document.body.prepend(bar, stripe, dayBox);
   document.body.appendChild(layer);
+  if (SiteView.active()){
+    const vb = document.createElement('div');
+    vb.className = 'sm-viewbar';
+    vb.setAttribute('role', 'status');
+    const t = document.createElement('span');
+    t.textContent = 'אתה צופה באתר כמשתמש רגיל';
+    const back = document.createElement('button');
+    back.type = 'button';
+    back.textContent = 'חזרה למצב מנהל';
+    back.addEventListener('click', () => { SiteView.set(false); location.reload(); });
+    vb.append(t, back);
+    document.body.appendChild(vb);
+  }
   pinTop(bar);
   checkGo();
 }
