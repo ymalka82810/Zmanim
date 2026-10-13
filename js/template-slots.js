@@ -11,6 +11,7 @@ import { slotRanks, renderBoxes, readTextArea, fitKiddush, fitErase, focusSlot }
 import { slotFields, paraFields, sizeFields, wrapLines } from './template-fields.js';
 import { lineEdit, editLine, saveLine, resetWeek, slotLabel, slotSum, setLineEdit } from './template-lines.js';
 import { lookOf, refreshWrapLines, schedulePreviewRefresh } from './template-build.js';
+import { spacingConflicts } from './template-spacing.js';
 
 export function renderSlots() {
   // אזור שנוסף או הוסר משנה את הגופנים שכותבים בהם
@@ -22,7 +23,8 @@ export function renderSlots() {
   const ranks = slotRanks();
   // מוצגים לפי המספור בעמוד; data-i שומר את האינדקס המקורי ב-st.slots
   const order = st.slots.map((s, i) => i).sort((a, b) => ranks[a] - ranks[b]);
-  $('tplSlots').innerHTML = order.map(i => [st.slots[i], i]).map(([s, i]) =>
+  // ההודעה על רווח קבוע שגובר על מחיקה – בראש הרשימה, כדי שתיראה
+  $('tplSlots').innerHTML = spaceHint() + order.map(i => [st.slots[i], i]).map(([s, i]) =>
     '<details class="rule slot-ed" data-i="' + i + '"' + (openSlots.has(s) ? ' open' : '') + '>' +
     '<summary><span class="num">' + ranks[i] + '</span><b class="rule-name">' + esc(slotLabel(s)) + '</b>' +
     '<span class="rule-sum">' + esc(slotSum(s)) + '</span></summary>' +
@@ -31,6 +33,33 @@ export function renderSlots() {
     (s.kind === 'erase' ? '' : sizeFields(s) + paraFields(s, i, order, ranks)) + '</details>'
   ).join('') + specialHint();
 }
+
+/**
+ * הודעה כשרווח קבוע שהגבאי קבע צמוד לשורה שנמחקה מהלוח: הרווח הקבוע גובר על הריווח האוטומטי של המחיקה
+ * ופותח מחדש את המקום שלה. לכל מקרה – כפתור שמחזיר את הרווח לאוטומטי
+ */
+const SPACE_NAME = { spaceAfter: 'רווח אחרי הפסקה', spaceBefore: 'רווח לפני הפסקה' };
+function spaceHint() {
+  const found = spacingConflicts(st.slots, st.candidates || []);
+  if (!found.length) return '<div class="space-hint"></div>';
+  const ranks = slotRanks();
+  return '<div class="space-hint hint-panel">' + found.map(({ slot, key }) => {
+    const i = st.slots.indexOf(slot);
+    return '<p class="hint">באזור ' + ranks[i] + ' (' + esc(slotLabel(slot)) + ') נקבע ' + SPACE_NAME[key] + ' קבוע. הוא גובר על הריווח האוטומטי של השורה שנמחקה ' +
+      (key === 'spaceAfter' ? 'מתחתיו' : 'מעליו') + ', ולכן המקום שלה נשאר ריק. ' +
+      '<button type="button" class="chip" data-auto-space="' + i + '|' + key + '">החזרה לאוטומטי</button></p>';
+  }).join('') + '</div>';
+}
+const refreshSpaceHint = () => { const el = $('tplSlots').querySelector('.space-hint'); if (el) el.outerHTML = spaceHint(); };
+
+$('tplSlots').addEventListener('click', e => {
+  const b = e.target.closest('[data-auto-space]');
+  if (!b) return;
+  const [i, key] = b.dataset.autoSpace.split('|'), s = st.slots[+i];
+  if (!s) return;
+  delete s[key];
+  renderSlots(); schedulePreviewRefresh();
+});
 
 /** הודעה כשאין בקובץ אזור לשם של שבת מיוחדת (זכור, נחמו…) */
 function specialHint() {
@@ -79,7 +108,7 @@ $('tplSlots').addEventListener('input', e => {
   // גופן אחר מהקובץ: גם הודעת האותיות החסרות מתעדכנת לפיו
   if (k === 'font') { s.box = { ...s.box, font: v }; renderFontFill(); schedulePreviewRefresh(); return; }
   if (k === 'sizePct' || k === 'lineHeightPct') { s[k] = Number(v); schedulePreviewRefresh(); return; }
-  if (k === 'spaceBefore' || k === 'spaceAfter') { if (v === '') delete s[k]; else s[k] = Number(v); schedulePreviewRefresh(); return; }
+  if (k === 'spaceBefore' || k === 'spaceAfter') { if (v === '') delete s[k]; else s[k] = Number(v); refreshSpaceHint(); schedulePreviewRefresh(); return; }
   if (k === 'joinPrev') { if (e.target.checked) s.joinPrev = true; else delete s.joinPrev; renderSlots(); schedulePreviewRefresh(); return; }
   if (k === 'lineCount') { s.lineCount = Number(v); ed.querySelector('.wrap-lines').innerHTML = wrapLines(s); schedulePreviewRefresh(); return; }
   if (k === 'wrap') { s.wrap = e.target.checked; renderSlots(); schedulePreviewRefresh(); return; }
