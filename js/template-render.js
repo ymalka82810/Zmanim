@@ -195,8 +195,8 @@ export function slotValue(slot, v) {
 }
 
 /** מפתח קבוע לאזור, לטקסט שהגבאי שינה בו. אזורים עם אותו תוכן (למשל הכותרת פעמיים) משתנים יחד */
-export const slotKey = s => s.kind === 'text' ? 'text|' + Math.round(s.box.x) + ',' + Math.round(s.box.y)
-  : [s.kind, s.when, s.name, s.zman].filter(x => x != null && x !== '').join('|');
+export const slotKey = s => s.renderKey ?? (s.kind === 'text' ? 'text|' + Math.round(s.box.x) + ',' + Math.round(s.box.y)
+  : [s.kind, s.when, s.name, s.zman].filter(x => x != null && x !== '').join('|'));
 
 /**
  * כשאין בתבנית אזור לשבת מיוחדת: סוג האזור שאליו מוסיפים את שם השבת ("שבת זכור") –
@@ -483,8 +483,20 @@ function blankRows(canvas) {
     blank[y] = n <= 2;
     rule[y] = all > W * 0.6;
   }
-  return { W, H, c2, blank, rule };
+  // הטווח האופקי של הדיו בשורות y0..y1 (בלי קווים אנכיים של מסגרת): { l, r }, או null כשאין דיו
+  const span = (y0, y1) => {
+    let l = W, r = -1;
+    for (let y = Math.max(0, y0); y < Math.min(H, y1); y++) {
+      for (let x = 0; x < W; x++) if (col[x] < H * 0.5 && ink((y * W + x) * 4)) { if (x < l) l = x; break; }
+      for (let x = W - 1; x >= 0; x--) if (col[x] < H * 0.5 && ink((y * W + x) * 4)) { if (x > r) r = x; break; }
+    }
+    return r >= l ? { l, r: r + 1 } : null;
+  };
+  return { W, H, c2, blank, rule, span };
 }
+
+/** התקרה להגדלת הכתב כשנמחקת שורה: פי כמה מהגודל המקורי */
+const MAX_ERASE_SCALE = 1.35;
 
 /**
  * מחיקת טקסט מהתמונה (אזורים מסוג "מחיקה"), וריווח מחדש של השורות סביבו: בקטע שבין הקווים האופקיים
@@ -500,7 +512,7 @@ function respace(src, erased, shift) {
     sctx.fillStyle = (s.style || {}).bg || '#ffffff';
     sctx.fillRect(b.x - pad, b.y - (b.up || 0) - pad, b.w + 2 * pad, b.h + (b.up || 0) + (b.down || 0) + 2 * pad);
   }
-  const { W, H, c2, blank, rule } = blankRows(src);
+  const { W, H, c2, blank, rule, span } = blankRows(src);
   // שורות הטקסט (פסים של שורות עם דיו), לפני המחיקה ואחריה
   const bands = (bl, from, to) => {
     const out = [];
@@ -546,14 +558,31 @@ function respace(src, erased, shift) {
     // השוליים בראש הקטע ובתחתיתו נשארים כמו לפני המחיקה, גם כשנמחקה השורה הראשונה או האחרונה בו
     const head = Math.min(lines[0].s, old[0].s) - top, tail = bottom - Math.max(lines[n - 1].e, old[old.length - 1].e);
     const inked = lines.reduce((t, r) => t + r.e - r.s, 0), total = gaps.reduce((t, g) => t + g, 0);
-    const room = bottom - top - head - tail - inked;
-    if (total < 1 || room - total < 1) continue;
+    const avail = bottom - top - head - tail;
+    if (total < 1 || avail - inked - total < 1) continue;
+    // המקום שהתפנה מתחלק באופן יחסי: גם השורות עצמן (הכתב) גדלות, באותו יחס שגדלים הרווחים, ורק מה שנשאר מתווסף לרווחים.
+    // הגדלה מוגבלת לרוחב העמוד (הכתב לא יוצא מהשוליים) ולתקרה, כדי שמחיקת שורה אחת לא תנפח את הכל
+    const spans = lines.map(r => span(r.s, r.e));
+    const seen = spans.filter(Boolean);
+    let f = 1, pivot = W / 2;
+    if (seen.length) {
+      const centers = seen.map(x => (x.l + x.r) / 2).sort((a, b) => a - b);
+      pivot = centers[centers.length >> 1];
+      const minL = Math.min(...seen.map(x => x.l)), maxR = Math.max(...seen.map(x => x.r));
+      const m = Math.max(2, 0.5 * Math.min(minL, W - maxR));
+      const half = Math.max(pivot - minL, maxR - pivot, 1);
+      f = Math.min(MAX_ERASE_SCALE, avail / (inked + total), Math.min(pivot - m, W - m - pivot) / half);
+    }
+    if (!(f > 1.01)) f = 1;
+    const hs = lines.map((r, i) => f === 1 || !spans[i] ? r.e - r.s : Math.round((r.e - r.s) * f));
+    const room = avail - hs.reduce((t, h) => t + h, 0);
+    if (room - total < 1) continue;
     // כל רווח גדל לפי הגודל שלו
     const k = room / total, to = [];
     let acc = top + head;
     lines.forEach((r, i) => {
-      to.push(i === n - 1 ? bottom - tail - (r.e - r.s) : Math.round(acc));
-      acc += r.e - r.s + (i < n - 1 ? gaps[i] * k : 0);
+      to.push(i === n - 1 ? bottom - tail - hs[i] : Math.round(acc));
+      acc += hs[i] + (i < n - 1 ? gaps[i] * k : 0);
     });
     // התמונה החדשה של הקטע: כל שורה מועתקת למקומה החדש, והרווחים ממולאים בשורה ריקה מתוכם (כדי שקווי מסגרת אנכיים יימשכו)
     const tmp = document.createElement('canvas');
@@ -566,13 +595,26 @@ function respace(src, erased, shift) {
     for (let i = 0; i <= n; i++) {
       const at = i < n ? to[i] : bottom;
       if (at > y) t2.drawImage(src, 0, blankAt(i), W, 1, 0, y - top, W, at - y);
-      if (i < n) { const r = lines[i]; t2.drawImage(src, 0, r.s, W, r.e - r.s, 0, at - top, W, r.e - r.s); y = at + r.e - r.s; }
+      if (i < n) {
+        const r = lines[i], h = r.e - r.s, sp = spans[i];
+        if (f === 1 || !sp) t2.drawImage(src, 0, r.s, W, h, 0, at - top, W, h);
+        else {
+          // שורה מוגדלת: הרקע (עם קווי המסגרת) משורה ריקה, והכתב עצמו מוגדל סביב מרכז הקטע
+          t2.imageSmoothingEnabled = false;
+          t2.drawImage(src, 0, blankAt(i), W, 1, 0, at - top, W, hs[i]);
+          t2.imageSmoothingEnabled = true;
+          t2.imageSmoothingQuality = 'high';
+          t2.drawImage(src, sp.l, r.s, sp.r - sp.l, h, pivot - (pivot - sp.l) * f, at - top, (sp.r - sp.l) * f, hs[i]);
+          t2.imageSmoothingEnabled = false;
+        }
+        y = at + hs[i];
+      }
     }
     c2.drawImage(tmp, 0, top);
-    // התיבות זזות עם השורות: קודם השורות שיורדות, מהתחתונה, ואחר כך שעולות, מהעליונה – כדי שאף שורה לא תוזז פעמיים
-    const shifts = lines.map((r, i) => ({ s: r.s, e: r.e, k: to[i] - r.s })).filter(m => m.k);
-    for (const m of shifts.filter(m => m.k > 0).reverse()) shift(m.s, m.e, m.k);
-    for (const m of shifts.filter(m => m.k < 0)) shift(m.s, m.e, m.k);
+    // התיבות זזות (ומוגדלות) עם השורות: קודם השורות שיורדות, מהתחתונה, ואחר כך שעולות, מהעליונה – כדי שאף שורה לא תוזז פעמיים
+    const shifts = lines.map((r, i) => ({ s: r.s, e: r.e, k: to[i] - r.s, f: f === 1 || !spans[i] ? 1 : hs[i] / (r.e - r.s) })).filter(m => m.k || m.f !== 1);
+    for (const m of shifts.filter(m => m.k > 0 || (m.k === 0 && m.f !== 1)).reverse()) shift(m.s, m.e, m.k, m.f, pivot);
+    for (const m of shifts.filter(m => m.k < 0)) shift(m.s, m.e, m.k, m.f, pivot);
   }
 }
 
@@ -669,22 +711,53 @@ export async function templateCanvas(tpl, values) {
   tpl = { ...tpl, slots: tpl.slots.map(s => ({ ...s, box: copy(s.box), labelBox: copy(s.labelBox),
     ...(s.origin ? { origin: { box: s.origin.box, labelBox: copy(s.origin.labelBox) } } : {}) })),
     candidates: (tpl.candidates || []).map(c => ({ ...c, box: copy(c.box) })) };
+  // המפתח של אזור טקסט נקבע לפי מקומו בקובץ – נשמר לפני שהאזורים זזים בריווח מחדש, כדי שעריכות לשבוע ימשיכו להתאים
+  for (const s of tpl.slots) if (s.box) s.renderKey = slotKey(s);
   // ניקוד מופרד שמעל האזור או מתחתיו נמחק יחד איתו
   for (const s of tpl.slots) if (s.box) Object.assign(s.box, markMargins(src, s.box));
   // המקום הישן של השם זז יחד עם הטקסט שבקובץ, כדי שיימצא לפיו הטקסט של השם (redrawLabel)
   const allBoxes = [...tpl.slots.flatMap(s => [s.box, s.labelBox, s.origin && s.origin.labelBox]), ...tpl.candidates.map(c => c.box)].filter(Boolean);
   // כל ההזזות לפי הסדר: מהן יודעים איפה נקודה מהקובץ נמצאת בתמונה החדשה, ולהפך
   const moves = [];
-  const shiftBoxes = (cut, end, k) => {
-    moves.push([cut, end, k]);
+  // f ≠ 1 – השורה גם מוגדלת (סביב pivot אופקית, ומראשיתה אנכית): התיבות שבתוכה מוגדלות איתה, וגם גודל הכתב
+  const shiftBoxes = (cut, end, k, f = 1, pivot = 0) => {
+    moves.push([cut, end, k, f]);
     for (const b of allBoxes) {
       const mid = b.y + b.h / 2;
-      if (mid >= cut && mid < end) { b.y += k; if (b.baseline != null) b.baseline += k; }
+      if (!(mid >= cut && mid < end)) continue;
+      if (f === 1) { b.y += k; if (b.baseline != null) b.baseline += k; continue; }
+      const at = v => cut + k + (v - cut) * f;
+      if (b.baseline != null) b.baseline = at(b.baseline);
+      b.y = at(b.y); b.h *= f;
+      b.x = pivot + (b.x - pivot) * f; b.w *= f;
+      for (const key of ['size', 'up', 'down']) if (b[key] != null) b[key] *= f;
     }
   };
   // טקסט שנמחק מהקובץ: נמחק מהתמונה, והמקום שהתפנה מתחלק בין הרווחים שבין השורות סביבו
-  const erased = tpl.slots.filter(s => s.kind === 'erase' && s.box).sort((a, b) => a.box.y - b.box.y);
+  const erased = tpl.slots.filter(s => s.kind === 'erase' && s.box);
+  // שורה שנמחקה מטקסט רב-שורתי בשבוע הזה בלבד (עריכת הנוסח לשבוע): השורות שנשארו נשארות למעלה, והשורות שפונו
+  // נמחקות מהתמונה ומתרווחות כמו מחיקה מהלוח – אבל רק בציור של השבוע הזה, בלי לשנות את התבנית
+  const hostRows = specialHost(tpl.slots);
+  for (const s of tpl.slots) {
+    const b = s.box, was = s.srcLines;
+    if (!b || !s.wrap || !(was > 1) || !values || !values.edits || !(slotKey(s) in values.edits)) continue;
+    const raw = slotText(s, values, hostRows);
+    const now = raw == null ? 0 : raw.split('\n').filter(ln => ln.trim()).length;
+    if (now < 1 || now >= was) continue;
+    // השורות שבתמונה: רק כשזוהו בדיוק כמספר השורות שבקובץ אפשר לדעת איזה מקום להשאיר ואיזה למחוק
+    const rows = inkLines(src, b);
+    if (rows.length !== was) continue;
+    const gone = { top: rows[now].top, bottom: rows[was - 1].bottom };
+    erased.push({ kind: 'erase', box: { x: b.x, y: gone.top, w: b.w, h: gone.bottom - gone.top + 1, size: b.size, up: 0, down: 0 }, style: s.style });
+    // מרכז וגובה של כל שורה שנשארה, כדי שהטקסט החדש ייכתב על השורות כפי שהן אחרי הריווח מחדש
+    s.rowHint = rows.slice(0, now).map(r => [(r.top + r.bottom) / 2, r.bottom - r.top + 1]);
+    const keepTop = rows[0].top, keepBottom = rows[now - 1].bottom;
+    Object.assign(b, { y: keepTop, h: keepBottom - keepTop + 1, baseline: (keepTop + keepBottom) / 2 + (b.size || b.h * 0.72) * 0.3, up: 0, down: 0 });
+  }
+  erased.sort((a, b) => a.box.y - b.box.y);
   if (erased.length) respace(src, erased, shiftBoxes);
+  // איפה נקודה מהקובץ נמצאת בתמונה אחרי כל ההזזות
+  const mapY = y => moves.reduce((y, [cut, end, k, f = 1]) => y >= cut && y < end ? cut + k + (y - cut) * f : y, y);
 
   // שלב 1: השורות והגודל של כל אזור, לפי הרוחב
   const host = specialHost(tpl.slots);
@@ -746,7 +819,12 @@ export async function templateCanvas(tpl, values) {
       return { ink, need, gap, touch, para, minPara: n > 1 ? sz * 0.15 : 0, height: g => (n - 1) * g + ink[0].asc + ink[n - 1].desc };
     };
     // pen – כותב באותו גופן על קנבס אחר (התמונה שעליה מסדרים את הפסקאות)
-    plans.push({ s, text, st, size, minSize, cx, writeAt, lines, w, n, layout, pen: c => textWriter(c, f, slotLook(s, f, st), cx, styled) });
+    // שורות שנשארו אחרי מחיקת שורה בשבוע הזה: המקום והגובה שלהן בתמונה אחרי הריווח מחדש
+    const rowsAt = s.rowHint && s.rowHint.length === lines.length ? s.rowHint.map(([c, h]) => {
+      const slope = mapY(c + 1) - mapY(c);
+      return [mapY(c), h * slope];
+    }) : null;
+    plans.push({ s, text, st, size, minSize, cx, writeAt, lines, w, n, rowsAt, rowHint0: s.rowHint && s.rowHint.map(r => r[1]), layout, pen: c => textWriter(c, f, slotLook(s, f, st), cx, styled) });
   }
 
   // שלב 2: ריווח הפסקאות, מלמעלה למטה. הרווח מעל פסקה ומתחתיה נקבע בשורות הריקות שבתמונה (מה שמתחת עולה או יורד),
@@ -773,6 +851,8 @@ export async function templateCanvas(tpl, values) {
   sctx.textAlign = 'center';
   const done = new Set();
   for (const p of [...plans].sort((a, b) => a.s.box.y - b.s.box.y)) {
+    // שורות שמסודרות לפי הריווח מחדש של המחיקה: נכתבות בשלב 3 על השורות עצמן
+    if (p.rowsAt) continue;
     const b = p.s.box, e = edges.get(p.s), L = p.layout(p.size), pad = Math.max(1, p.size * 0.06);
     let top = want(e.top, p, L);
     const bottom = want(e.bottom, p, L);
@@ -817,8 +897,8 @@ export async function templateCanvas(tpl, values) {
       return [s, { box: o.box, labelBox: o.labelBox, ink: o.ink, labelInk: o.labelInk }];
     })),
     candidates: tpl.candidates.map(c => c.box),
-    toView: y => moves.reduce((y, [cut, end, k]) => y >= cut && y < end ? y + k : y, y),
-    toSrc: y => moves.reduceRight((y, [cut, end, k]) => y >= cut + k && y < end + k ? y - k : y, y)
+    toView: y => moves.reduce((y, [cut, end, k, f = 1]) => y >= cut && y < end ? cut + k + (y - cut) * f : y, y),
+    toSrc: y => moves.reduceRight((y, [cut, end, k, f = 1]) => y >= cut + k && y < cut + k + (end - cut) * f ? cut + (y - cut - k) / f : y, y)
   };
 
   /**
@@ -826,39 +906,51 @@ export async function templateCanvas(tpl, values) {
    * מחזיר את תחתית הדיו של הטקסט
    */
   function paint(p, c, write, top, bottom) {
-    const { s, st, cx, lines, n, minSize } = p, b = s.box;
+    const { s, st, cx, lines, n, minSize, rowsAt } = p, b = s.box;
     let { size, w } = p;
     const baseline = b.baseline ?? (b.y + b.h * 0.78);
-    let L = p.layout(size), lineGap = L.gap;
-    const space = spaceOf(p, size), pad = Math.max(1, size * 0.06);
-    const avail = space.bottom - space.top, room = avail - (top ? L.minPara : 0) - (bottom ? L.minPara : 0);
-    // לא נכנס: קודם מצמצמים את ריווח הפסקה, אחר כך את המרווח בין השורות (עד שהן כמעט נוגעות), ואחר כך מקטינים את הטקסט
-    if (L.height(lineGap) > room && n > 1) lineGap = Math.max(L.need, lineGap - (L.height(lineGap) - room) / (n - 1));
-    if (L.height(lineGap) > room && size > minSize) {
-      const k = Math.max(minSize / size, room / L.height(lineGap));
-      size *= k;
+    let L, lineGap, baselines;
+    if (rowsAt) {
+      // הטקסט נכתב על השורות שבתמונה, באותו גודל יחסי שבו הן גדלו בריווח מחדש, ממורכז על כל שורה
+      const grow = rowsAt.reduce((t, [c, h], i) => t + h / p.rowHint0[i], 0) / rowsAt.length;
+      size *= grow;
       L = p.layout(size);
-      lineGap = Math.max(L.need, lineGap * k);
       w = Math.max(...lines.map(ln => p.writeAt(ln, size, baseline, false)));
+      baselines = rowsAt.map(([c], i) => c + (L.ink[i].asc - L.ink[i].desc) / 2);
+    } else {
+      L = p.layout(size); lineGap = L.gap;
+      const space = spaceOf(p, size), pad = Math.max(1, size * 0.06);
+      const avail = space.bottom - space.top, room = avail - (top ? L.minPara : 0) - (bottom ? L.minPara : 0);
+      // לא נכנס: קודם מצמצמים את ריווח הפסקה, אחר כך את המרווח בין השורות (עד שהן כמעט נוגעות), ואחר כך מקטינים את הטקסט
+      if (L.height(lineGap) > room && n > 1) lineGap = Math.max(L.need, lineGap - (L.height(lineGap) - room) / (n - 1));
+      if (L.height(lineGap) > room && size > minSize) {
+        const k = Math.max(minSize / size, room / L.height(lineGap));
+        size *= k;
+        L = p.layout(size);
+        lineGap = Math.max(L.need, lineGap * k);
+        w = Math.max(...lines.map(ln => p.writeAt(ln, size, baseline, false)));
+      }
+      // השורות ממורכזות סביב קו הבסיס המקורי, ומוזזות למעלה או למטה לפי הרווחים שמעליהן ומתחתיהן.
+      // רווח שהגבאי קבע נמדד מהדיו השכן עצמו; כשאין מספיק מקום, הרווחים קטנים באותו יחס
+      const first = baseline - (n - 1) / 2 * lineGap;
+      const top0 = first - L.ink[0].asc, bottom0 = first + (n - 1) * lineGap + L.ink[n - 1].desc;
+      const lo0 = space.top - (top && top.exact ? pad : 0), hi0 = space.bottom + (bottom && bottom.exact ? pad : 0);
+      const a = top ? top.px : 0, z = bottom ? bottom.px : 0, slack = hi0 - lo0 - (bottom0 - top0);
+      let shift;
+      if (slack < 0) shift = (space.top + space.bottom) / 2 - (top0 + bottom0) / 2;
+      else {
+        const k = a + z > slack ? slack / (a + z) : 1, lo = lo0 + a * k, hi = hi0 - z * k;
+        shift = top && top.exact ? lo - top0 : bottom && bottom.exact ? hi - bottom0
+          : top0 < lo ? lo - top0 : bottom0 > hi ? hi - bottom0 : 0;
+      }
+      baselines = lines.map((ln, i) => first + shift + i * lineGap);
     }
-    // השורות ממורכזות סביב קו הבסיס המקורי, ומוזזות למעלה או למטה לפי הרווחים שמעליהן ומתחתיהן.
-    // רווח שהגבאי קבע נמדד מהדיו השכן עצמו; כשאין מספיק מקום, הרווחים קטנים באותו יחס
-    const first = baseline - (n - 1) / 2 * lineGap;
-    const top0 = first - L.ink[0].asc, bottom0 = first + (n - 1) * lineGap + L.ink[n - 1].desc;
-    const lo0 = space.top - (top && top.exact ? pad : 0), hi0 = space.bottom + (bottom && bottom.exact ? pad : 0);
-    const a = top ? top.px : 0, z = bottom ? bottom.px : 0, slack = hi0 - lo0 - (bottom0 - top0);
-    let shift;
-    if (slack < 0) shift = (space.top + space.bottom) / 2 - (top0 + bottom0) / 2;
-    else {
-      const k = a + z > slack ? slack / (a + z) : 1, lo = lo0 + a * k, hi = hi0 - z * k;
-      shift = top && top.exact ? lo - top0 : bottom && bottom.exact ? hi - bottom0
-        : top0 < lo ? lo - top0 : bottom0 > hi ? hi - bottom0 : 0;
-    }
-    const baselines = lines.map((ln, i) => first + shift + i * lineGap);
     const left = Math.min(b.x, cx - w / 2) - 2, right = Math.max(b.x + b.w, cx + w / 2) + 2;
     // הרקע מכסה את הטקסט המקורי ואת הדיו של החדש, ולא יותר – כדי לא למחוק את השורה השכנה
     const ul = s.underline, ulBottom = ul ? (ul.off + ul.th) * size + 2 : 0;
-    const y0 = Math.min(b.y - (b.up || 0), baselines[0] - L.ink[0].asc - 2) - 1, y1 = Math.max(b.y + b.h + (b.down || 0), baselines[n - 1] + L.ink[n - 1].desc + 2, baselines[n - 1] + ulBottom) + 1;
+    let y0 = Math.min(b.y - (b.up || 0), baselines[0] - L.ink[0].asc - 2) - 1, y1 = Math.max(b.y + b.h + (b.down || 0), baselines[n - 1] + L.ink[n - 1].desc + 2, baselines[n - 1] + ulBottom) + 1;
+    // כשהטקסט נכתב על שורות שבתמונה – מכסים בדיוק את השורות האלה (הכתב המקורי שלהן)
+    if (rowsAt) { y0 = Math.min(y0, rowsAt[0][0] - rowsAt[0][1] / 2 - 2); y1 = Math.max(y1, rowsAt[n - 1][0] + rowsAt[n - 1][1] / 2 + 2); }
     c.fillStyle = st.bg;
     c.fillRect(left, y0, right - left, y1 - y0);
     c.fillStyle = st.fg;
