@@ -103,6 +103,38 @@
     return t.replace(/\s+/g, ' ').trim();
   }
 
+  /* ---------- חיפוש ברשימה ----------
+   * ההשוואה בלי גרש, גרשיים ומרכאות, כך ש"תשפז" מוצא את "תשפ״ז".
+   * Enter (או "חיפוש" במקלדת) בוחר את התוצאה הראשונה; נשארה תוצאה אחת והחיפוש זהה למילה שלמה בה
+   * (למשל שנה "תשפז" או "5787") – היא נבחרת מיד. */
+  function norm(t) { return String(t || '').toLowerCase().replace(/[\u05F3\u05F4'"`׳״]/g, '').replace(/\s+/g, ' ').trim(); }
+  function words(t) { return norm(t).split(/[\s()\[\],\-–·:]+/).filter(Boolean); }
+  function searchList(find, list) {
+    list.querySelectorAll('.pk-opt').forEach(function (b) { b.dataset.t = norm(b.textContent); b.dataset.w = '|' + words(b.textContent).join('|') + '|'; });
+    function shown() { return Array.from(list.querySelectorAll('.pk-opt')).filter(function (b) { return !b.hidden && !b.disabled; }); }
+    find.addEventListener('input', function () {
+      var q = norm(find.value), any = false;
+      list.querySelectorAll('.pk-opt').forEach(function (b) { var ok = !q || b.dataset.t.indexOf(q) >= 0; b.hidden = !ok; any = any || ok; });
+      list.querySelectorAll('.pk-grp').forEach(function (g) {
+        var n = g.nextElementSibling, vis = false;
+        while (n && !n.classList.contains('pk-grp')) { if (!n.hidden) vis = true; n = n.nextElementSibling; }
+        g.hidden = !vis;
+      });
+      var none = list.querySelector('.pk-none');
+      if (!any && !none) list.appendChild(el('div', 'pk-none', 'לא נמצאו תוצאות'));
+      else if (any && none) none.remove();
+      var m = shown();
+      if (q && m.length === 1 && m[0].dataset.w.indexOf('|' + q + '|') >= 0) m[0].click();
+    });
+    find.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      var m = shown(), q = norm(find.value);
+      var exact = q && m.filter(function (b) { return b.dataset.w.indexOf('|' + q + '|') >= 0; })[0];
+      if (exact || m.length) (exact || m[0]).click();
+    });
+  }
+
   /* ---------- רשימה נפתחת ---------- */
   function openSelect(sel) {
     if (sel.disabled) return;
@@ -124,7 +156,6 @@
       b.type = 'button'; b.setAttribute('role', 'option');
       b.setAttribute('aria-selected', String(o.selected));
       b.disabled = o.disabled;
-      b.dataset.t = o.textContent.toLowerCase();
       b.addEventListener('click', function () {
         var changed = sel.value !== o.value;
         sel.value = o.value;
@@ -141,23 +172,13 @@
       } else if (k.tagName === 'OPTION') addOpt(k);
     });
 
-    if (find) find.addEventListener('input', function () {
-      var q = find.value.trim().toLowerCase(), any = false;
-      list.querySelectorAll('.pk-opt').forEach(function (b) { var ok = !q || b.dataset.t.indexOf(q) >= 0; b.hidden = !ok; any = any || ok; });
-      list.querySelectorAll('.pk-grp').forEach(function (g) {
-        var n = g.nextElementSibling, vis = false;
-        while (n && !n.classList.contains('pk-grp')) { if (!n.hidden) vis = true; n = n.nextElementSibling; }
-        g.hidden = !vis;
-      });
-      var none = list.querySelector('.pk-none');
-      if (!any && !none) list.appendChild(el('div', 'pk-none', 'לא נמצאו תוצאות'));
-      else if (any && none) none.remove();
-    });
+    if (find) searchList(find, list);
 
     s.show();
     var cur = list.querySelector('[aria-selected="true"]');
     if (cur) cur.scrollIntoView({ block: 'center' });
-    if (!find) (cur || list.querySelector('.pk-opt:not(:disabled)') || list).focus({ preventScroll: true });
+    if (find) find.focus({ preventScroll: true });
+    else (cur || list.querySelector('.pk-opt:not(:disabled)') || list).focus({ preventScroll: true });
   }
 
   /* ---------- תאריך ----------
@@ -196,30 +217,10 @@
       var b = el('button', 'pk-opt', it.label);
       b.type = 'button'; b.setAttribute('role', 'option');
       b.setAttribute('aria-selected', String(it.value === cur));
-      b.dataset.t = it.label.replace(/[׳״'"]/g, '');
       b.addEventListener('click', function () { s.close(); done(it.value); });
       list.appendChild(b);
     });
-    if (find) {
-      var shown = function () { return Array.from(list.querySelectorAll('.pk-opt')).filter(function (b) { return !b.hidden; }); };
-      find.addEventListener('input', function () {
-        var q = find.value.replace(/[׳״'"\s]/g, ''), any = false;
-        list.querySelectorAll('.pk-opt').forEach(function (b) { var ok = !q || b.dataset.t.indexOf(q) >= 0; b.hidden = !ok; any = any || ok; });
-        var none = list.querySelector('.pk-none');
-        if (!any && !none) list.appendChild(el('div', 'pk-none', 'לא נמצאו תוצאות'));
-        else if (any && none) none.remove();
-        // נשארה תוצאה אחת מתאימה: בוחרים אותה (הקלדת שנה שלמה, כמו תשפ״ז או 5787)
-        var m = shown();
-        if (q.length >= 3 && m.length === 1) m[0].click();
-      });
-      // Enter (או "חיפוש" במקלדת הנייד) בוחר את התוצאה הראשונה
-      find.addEventListener('keydown', function (e) {
-        if (e.key !== 'Enter') return;
-        e.preventDefault();
-        var m = shown();
-        if (m.length) m[0].click();
-      });
-    }
+    if (find) searchList(find, list);
     s.show();
     if (find) find.focus({ preventScroll: true });
     var c = list.querySelector('[aria-selected="true"]');
