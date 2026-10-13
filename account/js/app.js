@@ -276,6 +276,20 @@ async function inviteByEmail(form, synagogueId){
     }, 2000);
   } catch(e){ toast(errMsg(e)); btn.disabled = false; }
 }
+async function addManagedMember(form, synagogueId){
+  const firstName = form.firstName.value.trim(), lastName = form.lastName.value.trim();
+  if (!firstName || !lastName) return toast('נא למלא שם פרטי ושם משפחה');
+  const btn = form.querySelector('button[type=submit]');
+  btn.disabled = true;
+  try {
+    const args = { synagogueId, firstName, lastName };
+    if (form.phone.value.trim()) args.phone = form.phone.value.trim();
+    if (form.tribe.value) args.tribe = form.tribe.value;
+    await client.mutation('members:addManaged', args);
+    await loadManagerData(synagogueId);
+    toast(firstName + ' ' + lastName + ' נרשם בקהילה'); render();
+  } catch(e){ toast(errMsg(e)); btn.disabled = false; }
+}
 async function cancelInvitation(synagogueId, invitationId){
   if (!await SiteDialog.confirm('לבטל את ההזמנה?', { ok: 'ביטול ההזמנה', cancel: 'השארת ההזמנה', danger: true, within: $('#sheet') })) return;
   try {
@@ -600,6 +614,17 @@ function renderDetailSheet(){
     </form>
     <div id="pendingList">${S.pending ? renderPending(S.pending) : ''}</div>
 
+    <h3 style="margin-top:18px">רישום חבר בשמו</h3>
+    <p class="muted small">לחבר שלא נכנס לאתר בעצמו. הוא יופיע ברשימת החברים, בתרומות ובעליות, אבל אין לו כניסה והוא לא יכול להיות גבאי או רב.</p>
+    <form id="managedForm">
+      <label class="f">שם פרטי</label><input type="text" name="firstName" required autocomplete="off">
+      <label class="f">שם משפחה</label><input type="text" name="lastName" required autocomplete="off">
+      <label class="f">טלפון (לא חובה)</label><input type="tel" name="phone" dir="ltr" placeholder="050-0000000" autocomplete="off">
+      <label class="f">שבט (לעליות)</label>
+      <select name="tribe"><option value="">ישראל</option><option value="kohen">כהן</option><option value="levi">לוי</option></select>
+      <button class="btn" type="submit" style="margin-top:12px">רישום חבר</button>
+    </form>
+
     <h3 style="margin-top:18px">קישור הזמנה כללי</h3>
     <p class="muted small">מי שנכנס דרך הקישור מצטרף כחבר קהילה.</p>
     <div class="invite-box"><code>${esc(inviteUrl(s.inviteCode))}</code></div>
@@ -663,6 +688,7 @@ function renderDetailSheet(){
   if (!isActive) $('#btnSetActive').addEventListener('click', () => setActive(s._id));
   if (manager){
     $('#inviteForm').addEventListener('submit', e => { e.preventDefault(); inviteByEmail(e.target, s._id); });
+    $('#managedForm').addEventListener('submit', e => { e.preventDefault(); addManagedMember(e.target, s._id); });
     $('#btnCopyInvite').addEventListener('click', () => copyInvite(s.inviteCode));
     $('#btnShareInvite').addEventListener('click', () => shareInvite(s.inviteCode, s.name));
     $('#btnRotateInvite').addEventListener('click', () => rotateInvite(s._id));
@@ -718,7 +744,7 @@ function filteredMembers(){
   const q = S.membersSearch.trim().toLowerCase();
   const members = S.members || [];
   if (!q) return members;
-  return members.filter(m => (m.name || '').toLowerCase().includes(q) || (m.email || '').toLowerCase().includes(q));
+  return members.filter(m => (m.name || '').toLowerCase().includes(q) || (m.email || '').toLowerCase().includes(q) || (m.phone || '').includes(q));
 }
 
 function renderMembersListInner(){
@@ -748,7 +774,7 @@ function openMembersSheet(synagogueId){
 function renderMembersSheet(synagogueId){
   const html = `
     <div class="sh"><h2>חברי הקהילה</h2><button class="x" data-close>✕</button></div>
-    <input type="search" id="memberSearch" placeholder="חיפוש לפי שם או מייל" value="${esc(S.membersSearch)}">
+    <input type="search" id="memberSearch" placeholder="חיפוש לפי שם, מייל או טלפון" value="${esc(S.membersSearch)}">
     <div id="membersListInner" style="margin-top:8px">${renderMembersListInner()}</div>`;
   openSheet2(html);
   $('#sheet2 [data-close]').addEventListener('click', closeSheet2);
@@ -784,8 +810,8 @@ function renderMembers(members){
     return `
     <div class="member-row">
       ${m.image ? `<img src="${esc(m.image)}" alt="">` : ''}
-      <div class="info"><div class="n">${esc(m.name || m.email || 'משתמש')}</div><div class="e">${esc(m.email || '')}</div></div>
-      <select data-role="${m.userId}" aria-label="תפקיד" ${canManage ? '' : 'disabled'}>${roleOptions(m.role, disableRabbi)}</select>
+      <div class="info"><div class="n">${esc(m.name || m.email || 'משתמש')}</div><div class="e">${m.managed ? 'נרשם על ידי הגבאי' + (m.phone ? ' · ' : '') : esc(m.email || '')}${m.managed && m.phone ? `<span dir="ltr">${esc(m.phone)}</span>` : ''}</div></div>
+      <select data-role="${m.userId}" aria-label="תפקיד" ${canManage && !m.managed ? '' : 'disabled'}>${roleOptions(m.role, disableRabbi)}</select>
       <button class="btn ghost" data-remove="${m.userId}" aria-label="הסרה" title="הסרה" ${canManage ? '' : 'disabled'}>✕</button>
     </div>`;
   }).join('');

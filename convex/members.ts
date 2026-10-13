@@ -8,6 +8,7 @@ import {
   countRole,
   displayName,
   getMembership,
+  hasHebrewLetters,
   isManager,
   requireManager,
   type Role,
@@ -35,6 +36,8 @@ export const list = query({
           name: displayName(user),
           email: user?.email ?? null,
           image: user?.image ?? null,
+          phone: membership.phone ?? null,
+          managed: user?.managedSynagogueId !== undefined,
         };
       }),
     );
@@ -71,6 +74,9 @@ export const setRole = mutation({
     if (membership.role === args.role) {
       return;
     }
+    if ((await ctx.db.get(args.userId))?.managedSynagogueId !== undefined) {
+      throw new ConvexError("חבר שנרשם על ידי הגבאי לא יכול להיות גבאי או רב, כי אין לו כניסה לאתר");
+    }
     const isSelf = args.userId === callerId;
     // הרב ממנה רב אחר במקומו: התפקיד עובר, והרב הקודם נשאר גבאי.
     if (args.role === "rabbi" && !isSelf && callerMembership.role === "rabbi") {
@@ -101,6 +107,61 @@ export const setRole = mutation({
     await ctx.db.patch(membership._id, { role: args.role });
     await settleFeatureRequests(ctx, args.synagogueId);
     await settleTv(ctx, args.synagogueId);
+  },
+});
+
+const PHONE_RE = /^\+?[0-9][0-9\-\s]{5,18}[0-9]$/;
+
+/**
+ * הגבאי או הרב רושמים חבר בשמו, בלי חשבון Google. נוצר משתמש בלי כניסה (בלי מייל ובלי חשבון התחברות)
+ * וחברות בקהילה בתפקיד חבר, כך שהוא מופיע ברשימות החברים, בתרומות ובעליות כמו כל חבר אחר.
+ */
+export const addManaged = mutation({
+  args: {
+    synagogueId: v.id("synagogues"),
+    firstName: v.string(),
+    lastName: v.string(),
+    phone: v.optional(v.string()),
+    tribe: v.optional(v.union(v.literal("kohen"), v.literal("levi"))),
+  },
+  handler: async (ctx, args) => {
+    await requireManager(ctx, args.synagogueId);
+    const firstName = args.firstName.trim();
+    const lastName = args.lastName.trim();
+    if (!firstName || !lastName) {
+      throw new ConvexError("נא למלא שם פרטי ושם משפחה");
+    }
+    if (!hasHebrewLetters(firstName) || !hasHebrewLetters(lastName)) {
+      throw new ConvexError("נא למלא את השם בעברית");
+    }
+    const fullName = `${firstName} ${lastName}`;
+    const phone = args.phone?.trim() || undefined;
+    if (phone !== undefined && !PHONE_RE.test(phone)) {
+      throw new ConvexError("מספר הטלפון לא תקין");
+    }
+    const memberships = await ctx.db
+      .query("memberships")
+      .withIndex("by_synagogue", (q) => q.eq("synagogueId", args.synagogueId))
+      .collect();
+    for (const membership of memberships) {
+      if (displayName(await ctx.db.get(membership.userId)) === fullName) {
+        throw new ConvexError("כבר יש חבר בשם הזה בקהילה");
+      }
+    }
+    const userId = await ctx.db.insert("users", {
+      name: fullName,
+      hebrewName: fullName,
+      managedSynagogueId: args.synagogueId,
+    });
+    await ctx.db.insert("memberships", {
+      userId,
+      synagogueId: args.synagogueId,
+      role: "member",
+      joinedAt: Date.now(),
+      phone,
+      tribe: args.tribe,
+    });
+    return userId;
   },
 });
 

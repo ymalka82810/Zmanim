@@ -26,6 +26,8 @@ export default defineSchema({
     phoneVerificationTime: v.optional(v.number()),
     isAnonymous: v.optional(v.boolean()),
     hebrewName: v.optional(v.string()),
+    // חבר שהגבאי רשם בשמו, בלי חשבון Google ובלי כניסה לאתר. הערך הוא הקהילה שבה נרשם
+    managedSynagogueId: v.optional(v.id("synagogues")),
   })
     .index("email", ["email"])
     .index("phone", ["phone"]),
