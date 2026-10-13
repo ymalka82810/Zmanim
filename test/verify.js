@@ -4,7 +4,7 @@
  */
 
 import { HDate, Sedra, Zmanim, GeoLocation, HebrewCalendar, flags } from '@hebcal/core';
-import { toHebrew, yomTov, parashaIndices } from '../js/hebrew.js';
+import { toHebrew, fromHebrew, yomTov, parashaIndices } from '../js/hebrew.js';
 import { zmanim } from '../js/zmanim.js';
 import { toDayNum, toYmd, dow } from '../js/dates.js';
 import { isMoed } from '../js/moadim.js';
@@ -22,6 +22,18 @@ for (let dn = FROM; dn <= TO; dn++) {
   // ב-hebcal: 1=ניסן ... 12=אדר/אדר א׳, 13=אדר ב׳ — כמו אצלנו
   if (h.y !== r.getFullYear() || h.m !== r.getMonth() || h.d !== r.getDate())
     fail(toYmd(dn) + ': ' + JSON.stringify(h) + ' ≠ ' + r.toString());
+}
+
+// 1ב. המרת תאריכים בטווח הרחב של בורר התאריכים (שנים תר״ל–תתק״ס בערך), והמרה חזרה
+{
+  const WFROM = toDayNum('1870-01-01'), WTO = toDayNum('2300-12-31');
+  console.log('המרת תאריכים 1870–2300 (בורר התאריכים)');
+  for (let dn = WFROM; dn <= WTO; dn++) {
+    const h = toHebrew(dn), r = new HDate(refDate(dn));
+    if (h.y !== r.getFullYear() || h.m !== r.getMonth() || h.d !== r.getDate())
+      fail(toYmd(dn) + ': ' + JSON.stringify(h) + ' ≠ ' + r.toString());
+    if (fromHebrew(h.y, h.m, h.d) !== dn) fail(toYmd(dn) + ': המרה חזרה נכשלה');
+  }
 }
 
 // 2. ימים טובים

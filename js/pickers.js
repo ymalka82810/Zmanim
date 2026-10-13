@@ -182,6 +182,12 @@
   /* רשימה קצרה לבחירת חודש או שנה עבריים */
   function chooseFrom(title, items, cur, done) {
     var s = sheet(title);
+    var find = null;
+    if (items.length > 10) {
+      find = el('input', 'pk-find');
+      find.type = 'search'; find.placeholder = 'חיפוש'; find.setAttribute('data-native', '');
+      s.dlg.appendChild(find);
+    }
     var list = el('div', 'pk-list');
     list.setAttribute('role', 'listbox');
     s.dlg.appendChild(list);
@@ -189,8 +195,16 @@
       var b = el('button', 'pk-opt', it.label);
       b.type = 'button'; b.setAttribute('role', 'option');
       b.setAttribute('aria-selected', String(it.value === cur));
+      b.dataset.t = it.label.replace(/[׳״'"]/g, '');
       b.addEventListener('click', function () { s.close(); done(it.value); });
       list.appendChild(b);
+    });
+    if (find) find.addEventListener('input', function () {
+      var q = find.value.replace(/[׳״'"]/g, '').trim(), any = false;
+      list.querySelectorAll('.pk-opt').forEach(function (b) { var ok = !q || b.dataset.t.indexOf(q) >= 0; b.hidden = !ok; any = any || ok; });
+      var none = list.querySelector('.pk-none');
+      if (!any && !none) list.appendChild(el('div', 'pk-none', 'לא נמצאו תוצאות'));
+      else if (any && none) none.remove();
     });
     s.show();
     var c = list.querySelector('[aria-selected="true"]');
@@ -315,7 +329,7 @@
             function (m) { hv = { y: hv.y, m: m }; render(); });
         });
         yb.addEventListener('click', function () {
-          var cy = H.toHebrew(D.toDayNum(todayStr)).y, from = Math.min(cy - 130, hv.y), to = Math.max(cy + 15, hv.y), items = [];
+          var cy = H.toHebrew(D.toDayNum(todayStr)).y, from = Math.min(cy - 130, hv.y), to = Math.max(cy + 100, hv.y), items = [];
           for (var y = to; y >= from; y--) items.push({ label: H.gematria(y) + ' (' + y + ')', value: y });
           chooseFrom('שנה עברית', items, hv.y, function (y) { hv = hFix(y, hv.m); render(); });
         });
