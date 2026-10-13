@@ -5,7 +5,7 @@
 
 import { CITIES, BASES, WHEN, WHEN_LABELS, APPLIES, ROUND, FONTS, THEMES, LAYOUTS, LAYOUTS_SHOWN, SIZE_PARTS, SIZES, PAPERS, ORIENTS, COLUMNS, pageOf, DEFAULT_CONFIG, DAY_APPLIES, BUILTIN, isBuiltin, newTemplate, designOf, activeDesign,
   prayerBases, fontFamilies, fontsHref, themeColors, normalize, loadConfig, saveConfig, clearConfig, TEXT_BASES } from './config.js';
-import { findOccasion, templateFor, periodFor, adjacentPeriod, joinedTemplates, occasionParts, buildLuach, buildDaysLuach, dayPages, buildPoster } from './luach.js';
+import { findOccasion, templateFor, periodFor, adjacentPeriod, adjacentToDate, joinedTemplates, occasionParts, buildLuach, buildDaysLuach, dayPages, buildPoster } from './luach.js';
 import { MOADIM } from './moadim.js';
 import { luachHtml, withEdits, esc, multiline } from './render.js';
 import { todayIn, toYmd, toDayNum } from './dates.js';
@@ -23,6 +23,7 @@ const BASE_LABELS = Object.keys(BASES);
 
 let { cfg, saved } = loadConfig();
 let cursor = null;       // היום שממנו מחפשים את האירוע המוצג
+let fromToday = false;   // הלוח המוצג נבחר לפי היום (לשונית, פתיחה, "היום") ולא בניווט הבא/הקודם
 let exact = false;       // cursor הוא היום הראשון של הלוח המוצג (ולא היום של היום, שיכול להיות באמצע לוח)
 let period = null;       // השבת/החג או ימי החול של הלוח המוצג
 let current = null;      // הלוח המוצג כרגע
@@ -305,6 +306,7 @@ function renderLuach() {
   $('luach').classList.remove('poster');
   const t = boardTpl();
   board = t.id;
+  const anchored = cursor == null || !exact;
   if (cursor == null) { cursor = todayIn(cfg.tz); exact = false; }
   // מהיום הראשון של לוח – רק לוח שמתחיל בו או אחריו, כדי שבחלק השני של חג ושבת לא נחזור לחלק הראשון
   const p = isFinite(cfg.lat) && isFinite(cfg.lng) ? periodFor(cfg, t, cursor, 1, exact) : null;
@@ -321,7 +323,7 @@ function renderLuach() {
     $('todayOcc').disabled = true;
     return;
   }
-  cursor = p.first; exact = true; period = p;
+  cursor = p.first; exact = true; period = p; fromToday = anchored;
   current = build(p);
   applyDesign($('luach'), current.tpl);
   applyPage(current.tpl);
@@ -411,7 +413,8 @@ $('luach').addEventListener('click', e => {
 function stepLuach(dir) {
   if (board === EVENTS_BOARD) return stepPoster(dir);
   if (!period) return;
-  const o = adjacentPeriod(cfg, period, dir);
+  // לוח שנבחר לפי לשונית יכול להיות רחוק מהיום, ולכן מתחילים מהתאריך של היום ולא ממנו
+  const o = fromToday ? adjacentToDate(cfg, todayIn(cfg.tz), dir, period) : adjacentPeriod(cfg, period, dir);
   if (o) setBoard(templateFor(cfg, o).id, o.first);
 }
 $('luach').addEventListener('click', e => {

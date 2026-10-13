@@ -170,6 +170,26 @@ export function adjacentPeriod(cfg, p, dir = 1) {
 }
 
 /**
+ * הלוח הבא (dir=1) או הקודם (dir=-1) ביחס לתאריך today עצמו, מכל הסוגים יחד, בלי הלוח skip שכבר מוצג.
+ * משמש כשהלוח המוצג נבחר לפי לשונית (למשל "חגים" שמראה את פסח בעוד חצי שנה), ולא לפי ניווט:
+ * אז "הבא" ו"הקודם" צריכים להתחיל מהיום ולא מהלוח הרחוק של הלשונית.
+ * הבא – הלוח הראשון שמתחיל אחרי היום; הקודם – הלוח האחרון שהתחיל עד היום (כולל הלוח שהיום בתוכו).
+ */
+export function adjacentToDate(cfg, today, dir = 1, skip = null) {
+  const same = x => skip && x.mode === skip.mode && x.first === skip.first && x.last === skip.last;
+  const near = kind => {
+    for (const x of periods(cfg, kind, dir > 0 ? today + 1 : today, dir)) {
+      if (dir > 0 ? x.first <= today : x.first > today) continue;
+      if (!same(x)) return x;
+    }
+    return null;
+  };
+  const list = [near('holy'), near('days')].filter(Boolean);
+  if (!list.length) return null;
+  return list.reduce((a, b) => (dir > 0 ? b.first < a.first : b.first > a.first) ? b : a);
+}
+
+/**
  * התבניות שהלוח p שייך לכולן, ומוצגות לכן כלשונית אחת ("שבתות וחגים"): שבת שחלה בחג או בחול המועד
  * (בלי פרשה) היא גם שבת וגם חג, וכך גם חג ושבת עם פרשה שהגבאי שילב ללוח אחד. הלוח נבנה בתבנית הראשונה.
  * בכל לוח אחר – null.
