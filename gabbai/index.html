@@ -31,6 +31,7 @@
   <button role="tab" data-tab="salary" aria-selected="false">משכורת</button>
 </div></nav>
 <main class="wrap" id="view"></main>
+<button class="fab fab2" id="quickBtn">⚡ תרומה מהירה</button>
 <button class="fab" id="addBtn">+ רישום חדש</button>
 <div class="toast" id="toast" role="status"></div>
 
@@ -148,6 +149,21 @@
       <div class="f"><div class="hint">שם הקהילה ולוח הפרשיות נערכים בדף <a href="../account/">החשבון שלי</a>.</div></div>
     </div>
     <div class="dlg-f"><button class="btn" type="submit">שמור הגדרות</button></div>
+  </form>
+</dialog>
+
+<dialog id="quickDlg">
+  <form method="dialog" id="quickForm">
+    <div class="dlg-h"><h3>תרומה מהירה</h3><button type="button" class="lnk" data-close>סגור</button></div>
+    <div class="dlg-b">
+      <div class="f"><span>סכום (₪)</span><input name="amount" type="number" inputmode="decimal" min="0" step="0.01" required></div>
+      <div class="f"><span>שם התורם</span><input name="name" list="donorList" autocomplete="off"></div>
+      <div class="f"><span>אמצעי תשלום</span>
+        <select name="method"><option>מזומן</option><option>העברה בנקאית</option><option>צ׳ק</option><option>אשראי</option><option>הוראת קבע</option></select></div>
+      <div class="f"><label class="check"><input type="checkbox" name="paid" checked> <span>התקבל עכשיו (שולם)</span></label></div>
+      <div class="hint">נרשם כתרומה כללית בתאריך של היום. תורם שהשם שלו זהה לחבר קהילה יקושר אליו.</div>
+    </div>
+    <div class="dlg-f"><button class="btn" type="submit" id="quickSaveBtn">שמור</button><button class="btn ghost" type="button" id="quickMoreBtn">שמור והוסף עוד</button></div>
   </form>
 </dialog>
 

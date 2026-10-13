@@ -311,6 +311,7 @@ function render(){
   if(ready&&window.SiteMenu)SiteMenu.setCommunity({_id:sid,name:settings.synName,il:settings.israel});
   document.querySelector("nav.tabs").hidden=!manager;
   $("#addBtn").hidden=!manager;
+  $("#quickBtn").hidden=!manager||!["home","donations"].includes(tab);
   $("#addBtn").textContent=tab==="campaigns"?"+ מגבית חדשה":"+ רישום חדש";
   $("#openSettings").hidden=!manager;
   if(stage==="loading"){$("#view").innerHTML=viewMessage("טוען…");return}
@@ -505,6 +506,28 @@ const sdlg=$("#setDlg"), sform=$("#setForm");
 $("#openSettings").onclick=()=>{sform.openMain.value=settings.openMain||0;sform.openPetty.value=settings.openPetty||0;sdlg.showModal()};
 sform.addEventListener("click",e=>{if(e.target.closest("[data-close]"))sdlg.close()});
 sform.addEventListener("submit",async e=>{e.preventDefault();try{await putSettings({openMain:parseFloat(sform.openMain.value)||0,openPetty:parseFloat(sform.openPetty.value)||0});sdlg.close();toast("ההגדרות נשמרו")}catch(err){toast(errText(err,"השמירה נכשלה"))}});
+
+// ---------- quick donation (cashier) ----------
+const qdlg=$("#quickDlg"), qform=$("#quickForm"); let quickLastMethod="מזומן";
+function openQuick(){qform.reset();qform.method.value=quickLastMethod;qdlg.showModal();qform.amount.focus()}
+async function saveQuick(again){
+  const amount=parseFloat(qform.amount.value);
+  if(!(amount>0)){qform.amount.focus();toast("יש להזין סכום גדול מאפס");return}
+  const name=qform.name.value.trim();
+  const m=name?members.find(x=>x.name===name):null;
+  const o={type:"donation",amount,date:todayIso(),desc:"",name,donorId:m?m.userId:null,method:qform.method.value,campaignId:null,createdAt:Date.now(),paid:qform.paid.checked};
+  o.paidDate=o.paid?o.date:"";
+  const btns=[$("#quickSaveBtn"),$("#quickMoreBtn")];btns.forEach(b=>b.disabled=true);
+  try{
+    await putTx(o);quickLastMethod=o.method;
+    toast(`נשמר: ${money0(amount)}${name?" · "+name:""}`);
+    if(again){qform.amount.value="";qform.name.value="";qform.paid.checked=true;qform.amount.focus()}else qdlg.close();
+  }catch(err){toast(errText(err,"השמירה נכשלה. נסו שוב."))}
+  btns.forEach(b=>b.disabled=false);
+}
+qform.addEventListener("click",e=>{if(e.target.closest("[data-close]"))qdlg.close();if(e.target.closest("#quickMoreBtn"))saveQuick(true)});
+qform.addEventListener("submit",e=>{e.preventDefault();saveQuick(false)});
+$("#quickBtn").onclick=openQuick;
 
 // ---------- deleted records (soft delete, fund:remove / fund:restore) ----------
 const tdlg=$("#trashDlg"), tlist=$("#trashList");

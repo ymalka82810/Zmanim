@@ -156,3 +156,4 @@ label.lnk{display:inline-block}
   table{width:100%;border-collapse:collapse}
   th,td{border-bottom:1px solid #ccc;color:#000}
 }
+.fab.fab2{bottom:calc(78px + env(safe-area-inset-bottom,0px));background:var(--tchelet-soft);color:var(--tchelet);border:1px solid var(--tchelet)}
