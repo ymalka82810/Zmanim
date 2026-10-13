@@ -3,7 +3,9 @@
  * (SiteAuth.watch/cached), וממשיך להתעדכן בזמן אמת מהשרת, בלי לחכות לטעינה משלו.
  * הארגומנטים של כל שאילתה חייבים להיות זהים לאלה שהדף שולח, כולל סדר המפתחות, כי הם חלק ממפתח המטמון.
  * run(onProgress) קוראת ל-onProgress(0..1) בכל פעם ששאילתה או קובץ מסתיימים (גם בשגיאה), וכך פס הטעינה
- * מראה את ההתקדמות האמיתית: 30% לפרטי המשתמש והקהילות, ו-70% לנתוני הקהילה הפעילה, שמספרם ידוע רק אחרי השלב הראשון.
+ * מראה את ההתקדמות האמיתית: 30% לפרטי המשתמש והקהילות, ו-70% למה שדף הבית עצמו מציג (לוח, קידוש, אירועים, תגיות התפריט).
+ * ה-Promise מסתיים רק אחרי השלבים האלה, ומסך הפתיחה נסגר. נתוני שאר הדפים (קופה, אזכרות, עליות, מניינים וכו') נטענים אחר כך
+ * ברקע ומחממים את המטמון, בלי לעכב את מי שבא רק לראות זמני תפילה.
  * דורש: js/auth.js נטען לפני קובץ זה.
  */
 (function(){
@@ -79,30 +81,36 @@ async function run(onProgress, options){
   // לוח הזמנים עצמו מאזין לאלה בלי מטמון (js/settings-sync.js, js/app.js); הבאתם כאן רק מקדימה את התשובה שהדף מחכה לה
   const live = name => () => Auth.client().query(name, { synagogueId: sid });
 
+  // מה שדף הבית מציג ומאזין לו (js/community.js, js/menu.js): רק זה מעכב את מסך הפתיחה
   const jobs = [
     cached('menu:counts'),
     cached('schedules:list'),
     cached('kiddush:board'),
     cached('events:list'),
-    cached('fund:ledger'),
-    cached('yahrzeits:list', { today }),
     loadHebcal,   // שורת התאריך העברי וכל הדפים שמציגים לוח שנה
   ];
-  if (isManager(syn.role)) jobs.push(
+  if (isManager(syn.role)) jobs.push(live('zmanimSettings:get'));   // הלוח עצמו מחכה לה (js/settings-sync.js)
+  await stage(0.7, jobs);
+
+  // שאר הדפים: ברקע, אחרי שמסך הפתיחה כבר נסגר. כשלון כאן לא משפיע על כלום
+  const background = [
+    cached('fund:ledger'),
+    cached('yahrzeits:list', { today }),
+  ];
+  if (isManager(syn.role)) background.push(
     cached('storage:overview'),
-    live('zmanimSettings:get'),
     live('zmanimSettings:designList'),
     live('zmanimProfiles:list'),
   );
-  if (features.includes('week')) jobs.push(
+  if (features.includes('week')) background.push(
     cached('minyan:list', { from: today }),
     cached('week:notifications'),
   );
-  if (features.includes('aliyot')) jobs.push(
+  if (features.includes('aliyot')) background.push(
     () => loadCalendar().then(() => Auth.query('aliyot:board', { synagogueId: sid, dateKey: aliyotDateKey() })),
     cached('auctions:list'),
   );
-  await stage(0.7, jobs);
+  setTimeout(() => { Promise.all(background.map(fn => Promise.resolve().then(fn).catch(() => null))); }, 0);
 }
 
 window.SitePreload = { run };

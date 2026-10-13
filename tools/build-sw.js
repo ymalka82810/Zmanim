@@ -17,6 +17,9 @@ async function listFiles(dir) {
 }
 
 const PAGES = ['kiddush', 'gabbai', 'aliyot', 'account', 'community-calendar', 'guest', 'week', 'catalog', 'tv', 'screen'];
+/* דפים שחבר רגיל לא נכנס אליהם (קופה, מסכי תצוגה, קטלוג, אורחים): לא יורדים מראש בכל גרסה.
+ * הם נכנסים לחישוב ה-hash, ולכן גרסה חדשה מנקה אותם מהמטמון, ומורידים אותם בכניסה הראשונה (sw.js שומר כל קובץ שהגיע מהרשת). */
+const LAZY_PAGES = ['gabbai', 'tv', 'screen', 'catalog', 'guest'];
 
 async function buildShell() {
   const shell = ['./', 'index.html', 'css/app.css', 'manifest.webmanifest'];
@@ -34,6 +37,8 @@ async function buildShell() {
   }
   return shell;
 }
+
+const isLazy = f => LAZY_PAGES.some(page => f.startsWith(page + '/'));
 
 async function hashShell(shell) {
   const hash = createHash('sha256');
@@ -54,12 +59,13 @@ function formatShell(shell) {
     shell.filter(f => f.startsWith('vendor/convex/')),
     shell.filter(f => f.startsWith('vendor/qrcode/')),
     ...PAGES.map(page => shell.filter(f => f.startsWith(page + '/'))),
-  ];
+  ].filter(group => group.length);
   return lines.map(group => '  ' + group.map(f => `'${f}'`).join(', ')).join(',\n');
 }
 
-const shell = await buildShell();
-const version = await hashShell(shell);
+const all = await buildShell();
+const shell = all.filter(f => !isLazy(f));
+const version = await hashShell(all);
 const cache = `luach-${version}`;
 
 const swPath = ROOT + 'sw.js';
@@ -69,4 +75,4 @@ sw = sw.replace(/const CACHE = '[^']*';/, `const CACHE = '${cache}';`);
 sw = sw.replace(/const SHELL = \[[\s\S]*?\];/, `const SHELL = [\n${formatShell(shell)}\n];`);
 await writeFile(swPath, sw);
 
-console.log(`sw.js עודכן: ${shell.length} קבצים ב-SHELL, CACHE ${before} ← ${cache}`);
+console.log(`sw.js עודכן: ${shell.length} קבצים ב-SHELL (${all.length - shell.length} נוספים בהורדה לפי דרישה), CACHE ${before} ← ${cache}`);

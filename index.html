@@ -43,7 +43,7 @@ try { if (sessionStorage.getItem('site.booted') && !/[?&]code=/.test(location.se
 </div>
 <script>
 /* פס הטעינה משקף את מה שבאמת נטען: 10% כשהדף נקרא, 10% כשכל הקבצים שלו נטענו (load),
- * ו-80% לנתוני הקהילה שנטענים מראש לכל הדפים (js/preload.js). ההחלקה רק ממלאת את הפער עד הערך האמיתי */
+ * ו-80% לנתונים שדף הבית עצמו מציג (js/preload.js). שאר נתוני הקהילה נטענים אחר כך ברקע. ההחלקה רק ממלאת את הפער עד הערך האמיתי */
 (function(){
   "use strict";
   var splash = document.getElementById('boot-splash');
@@ -93,7 +93,7 @@ try { if (sessionStorage.getItem('site.booted') && !/[?&]code=/.test(location.se
   if (document.readyState === 'loading') addEventListener('DOMContentLoaded', startData); else startData();
   if (document.readyState === 'complete') loaded = true; else addEventListener('load', function(){ loaded = true; kick(); });
   // רשת איטית: לא נועלים את המשתמש מאחורי מסך הפתיחה. הנתונים ממשיכים להיטען ברקע
-  setTimeout(function(){ gaveUp = true; kick(); }, 10000);
+  setTimeout(function(){ gaveUp = true; kick(); }, 4000);
   kick();
 })();
 </script>
