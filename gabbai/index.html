@@ -144,9 +144,17 @@
         <div class="f"><span>יתרת פתיחה – עו״ש (₪)</span><input name="openMain" type="number" step="0.01"></div>
         <div class="f"><span>יתרת פתיחה – קופה קטנה (₪)</span><input name="openPetty" type="number" step="0.01"></div>
       </div>
+      <div class="f"><button type="button" class="btn ghost" id="openTrash">רישומים שנמחקו</button><div class="hint">רישום שנמחק נשמר 30 יום ואפשר לשחזר אותו.</div></div>
       <div class="f"><div class="hint">שם הקהילה ולוח הפרשיות נערכים בדף <a href="../account/">החשבון שלי</a>.</div></div>
     </div>
     <div class="dlg-f"><button class="btn" type="submit">שמור הגדרות</button></div>
+  </form>
+</dialog>
+
+<dialog id="trashDlg">
+  <form method="dialog" id="trashForm">
+    <div class="dlg-h"><h3>רישומים שנמחקו</h3><button type="button" class="lnk" data-close>סגור</button></div>
+    <div class="dlg-b" id="trashList"></div>
   </form>
 </dialog>
 

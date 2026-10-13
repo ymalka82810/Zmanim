@@ -24,12 +24,12 @@ export async function raised(ctx: QueryCtx, campaignId: Id<"fundCampaigns">, wit
   let paid = 0;
   const donors = new Set<string>();
   for (const t of txs) {
-    if (t._id === without || t.type !== "donation") continue;
+    if (t._id === without || t.type !== "donation" || t.deletedAt !== undefined) continue;
     pledged += t.amount;
     if (t.paid) paid += t.amount;
     donors.add(t.donorId ?? "name:" + t.name);
   }
-  return { pledged: Math.round(pledged * 100) / 100, paid: Math.round(paid * 100) / 100, count: txs.length, donors: donors.size };
+  return { pledged: Math.round(pledged * 100) / 100, paid: Math.round(paid * 100) / 100, count: txs.filter((t) => t.deletedAt === undefined).length, donors: donors.size };
 }
 
 const left = (goal: number, pledged: number) => Math.max(0, Math.round((goal - pledged) * 100) / 100);

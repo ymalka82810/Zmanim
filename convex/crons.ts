@@ -22,6 +22,12 @@ crons.daily(
 );
 
 crons.daily(
+  "purge old fund trash",
+  { hourUTC: 2, minuteUTC: 20 },
+  internal.fund.purgeOldTrash,
+);
+
+crons.daily(
   "silver price for machatzit hashekel",
   { hourUTC: 9, minuteUTC: 30 },
   internal.silverPrice.refresh,

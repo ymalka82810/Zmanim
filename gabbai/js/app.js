@@ -506,6 +506,24 @@ $("#openSettings").onclick=()=>{sform.openMain.value=settings.openMain||0;sform.
 sform.addEventListener("click",e=>{if(e.target.closest("[data-close]"))sdlg.close()});
 sform.addEventListener("submit",async e=>{e.preventDefault();try{await putSettings({openMain:parseFloat(sform.openMain.value)||0,openPetty:parseFloat(sform.openPetty.value)||0});sdlg.close();toast("ההגדרות נשמרו")}catch(err){toast(errText(err,"השמירה נכשלה"))}});
 
+// ---------- deleted records (soft delete, fund:remove / fund:restore) ----------
+const tdlg=$("#trashDlg"), tlist=$("#trashList");
+async function loadTrash(){
+  tlist.innerHTML='<div class="hint">טוען…</div>';
+  try{
+    const rows=await Auth.client().query("fund:trash",{synagogueId:sid});
+    tlist.innerHTML=rows.length?rows.map(t=>`<div class="rowact" style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line,#ddd)"><div><strong>${esc(label(t))}</strong> · ${esc(money(t.amount))}<div class="hint">${esc(descOf(t))}${descOf(t)?" · ":""}${esc(gFmt.format(parseIso(t.date)))}${t.deletedByName?" · נמחק על ידי "+esc(t.deletedByName):""} · יימחק סופית בעוד ${t.daysLeft} ימים</div></div><button type="button" class="lnk" data-restore="${esc(t.id)}">שחזור</button></div>`).join(""):'<div class="hint">אין רישומים שנמחקו.</div>';
+  }catch(err){tlist.innerHTML='<div class="hint">הטעינה נכשלה. נסו שוב.</div>'}
+}
+$("#openTrash").onclick=()=>{sdlg.close();tdlg.showModal();loadTrash()};
+tdlg.addEventListener("click",async e=>{
+  if(e.target.closest("[data-close]")){tdlg.close();return}
+  const b=e.target.closest("button[data-restore]");if(!b)return;
+  b.disabled=true;
+  try{await call("fund:restore",{id:b.dataset.restore});toast("הרישום שוחזר");loadTrash()}
+  catch(err){toast(errText(err,"השחזור נכשל"));b.disabled=false}
+});
+
 // ---------- events ----------
 document.querySelector("nav.tabs").addEventListener("click",e=>{const b=e.target.closest("button[data-tab]");if(b){tab=b.dataset.tab;render();window.scrollTo(0,0)}});
 $("#addBtn").onclick=()=>tab==="campaigns"?openCampaign(null):openForm(tab==="petty"?"petty":tab==="salary"?"salary":"donation");
@@ -516,7 +534,7 @@ $("#view").addEventListener("click",async e=>{
   if(b.dataset.dv){ui.donView=b.dataset.dv;return render()}
   if(b.dataset.df){ui.donFilter=b.dataset.df;return render()}
   if(b.dataset.edit){const t=txs.find(x=>x.id===b.dataset.edit);if(t)openForm(null,t);return}
-  if(b.dataset.del){const t=txs.find(x=>x.id===b.dataset.del);if(t&&await SiteDialog.confirm(`למחוק את הרישום "${label(t)}" על סך ${money(t.amount)}?`,{ok:"מחיקה",danger:true})){try{await delTx(t.id);toast("נמחק")}catch(err){toast(errText(err,"המחיקה נכשלה"))}}return}
+  if(b.dataset.del){const t=txs.find(x=>x.id===b.dataset.del);if(t&&await SiteDialog.confirm(`למחוק את הרישום "${label(t)}" על סך ${money(t.amount)}? אפשר לשחזר אותו מההגדרות (רישומים שנמחקו) במשך 30 יום.`,{ok:"מחיקה",danger:true})){try{await delTx(t.id);toast("הועבר לרישומים שנמחקו")}catch(err){toast(errText(err,"המחיקה נכשלה"))}}return}
   if(b.dataset.pay){const t=txs.find(x=>x.id===b.dataset.pay);if(t){try{await markPaid(t.id);toast("סומן כשולם")}catch(err){toast(errText(err,"העדכון נכשל"))}}return}
   if(b.id==="csv") return exportCsv();
   if(b.id==="pdf") return print();

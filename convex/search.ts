@@ -146,7 +146,7 @@ const SOURCES: Record<SearchKind, Source> = {
                 .order("desc"),
             )
           ).filter((t) => DONOR_TYPES.has(t.type));
-      return docs.map((t) => {
+      return docs.filter((t) => t.deletedAt === undefined).map((t) => {
         const what = t.type === "mitzvah" ? `${FUND_TYPES.mitzvah}: ${t.mitzvah}` : FUND_TYPES[t.type] ?? t.type;
         const open = DONOR_TYPES.has(t.type) && !t.paid ? "טרם שולם" : "";
         return {

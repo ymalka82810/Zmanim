@@ -178,8 +178,13 @@ export default defineSchema({
     campaignId: v.optional(v.id("fundCampaigns")),
     // תרומה לזמן מיוחד (specialDonations), כמו פדיון כפרות או מחצית השקל. רק לרישום מסוג donation
     specialId: v.optional(v.id("specialDonations")),
+    // מחיקה רכה: רישום שנמחק נשאר כאן עד שחולפים TRASH_DAYS ימים (fund:purgeOldTrash), ואפשר לשחזר אותו (fund:restore)
+    deletedAt: v.optional(v.number()),
+    deletedBy: v.optional(v.id("users")),
   })
     .index("by_synagogue", ["synagogueId"])
+    .index("by_deletedAt", ["deletedAt"])
+    .index("by_synagogue_deletedAt", ["synagogueId", "deletedAt"])
     .index("by_synagogue_donor", ["synagogueId", "donorId"])
     .index("by_synagogue_hebrewYear", ["synagogueId", "hebrewYear"])
     // חלון תאריכים בדף הקופה (fund:ledger), והחיובים הפתוחים בלי קשר לתאריך

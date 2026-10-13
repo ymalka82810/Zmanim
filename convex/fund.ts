@@ -51,6 +51,9 @@ type TxInput = {
   campaignId?: Id<"fundCampaigns"> | null;
 };
 
+const TRASH_DAYS = 30;
+const live = (t: Doc<"fundTransactions">) => t.deletedAt === undefined;
+
 const clip = (s: string | undefined, max: number) => (s ?? "").trim().slice(0, max);
 
 /** מנקה ומאמת רישום. השדות שלא שייכים לסוג הרישום מתאפסים. */
@@ -123,10 +126,11 @@ const SINCE_RE = /^d{4}-d{2}-d{2}$/;
  */
 async function managerTxs(ctx: QueryCtx, synagogueId: Id<"synagogues">, since: string | undefined) {
   if (!since || !SINCE_RE.test(since)) {
-    return await ctx.db
+    const all = await ctx.db
       .query("fundTransactions")
       .withIndex("by_synagogue", (q) => q.eq("synagogueId", synagogueId))
       .collect();
+    return all.filter(live);
   }
   const recent = await ctx.db
     .query("fundTransactions")
@@ -136,7 +140,7 @@ async function managerTxs(ctx: QueryCtx, synagogueId: Id<"synagogues">, since: s
     .query("fundTransactions")
     .withIndex("by_synagogue_paid", (q) => q.eq("synagogueId", synagogueId).eq("paid", false))
     .collect();
-  return [...recent, ...unpaid.filter((t) => t.date < since)];
+  return [...recent, ...unpaid.filter((t) => t.date < since)].filter(live);
 }
 
 /**
@@ -162,6 +166,9 @@ export const carry = query({
     let petty = 0;
     const later: Doc<"fundTransactions">[] = [];
     for (const t of old) {
+      if (!live(t)) {
+        continue;
+      }
       if (INCOME_TYPES.has(t.type)) {
         if (!t.paid) {
           continue;
@@ -206,7 +213,7 @@ export const ledger = query({
         .collect();
       return {
         ...base,
-        txs: mine.filter((t) => DONOR_TYPES.has(t.type)).map(forClient),
+        txs: mine.filter((t) => live(t) && DONOR_TYPES.has(t.type)).map(forClient),
         settings: null,
         members: [],
         campaigns: await Campaigns.listForClient(ctx, args.synagogueId),
@@ -333,7 +340,7 @@ export const sendDueReminders = internalMutation({
         .withIndex("by_paid", (q) => q.eq("paid", false))
         .collect();
       for (const t of txs) {
-        if (!t.donorId || !DONOR_TYPES.has(t.type)) {
+        if (!live(t) || !t.donorId || !DONOR_TYPES.has(t.type)) {
           continue;
         }
         const since = t.lastReminderDate ?? new Date(t.createdAt).toISOString().slice(0, 10);
@@ -371,7 +378,7 @@ export const save = mutation({
     const { userId } = await requireManager(ctx, synagogueId);
     const data = await clean(ctx, synagogueId, tx);
     const existing = id ? await ctx.db.get(id) : null;
-    if (id && (existing === null || existing.synagogueId !== synagogueId)) {
+    if (id && (existing === null || existing.synagogueId !== synagogueId || !live(existing))) {
       throw new ConvexError("הרישום לא נמצא");
     }
     if (data.campaignId) {
@@ -390,22 +397,75 @@ export const markPaid = mutation({
   handler: async (ctx, args) => {
     await requireManager(ctx, args.synagogueId);
     const existing = await ctx.db.get(args.id);
-    if (existing === null || existing.synagogueId !== args.synagogueId || !INCOME_TYPES.has(existing.type)) {
+    if (existing === null || existing.synagogueId !== args.synagogueId || !live(existing) || !INCOME_TYPES.has(existing.type)) {
       throw new ConvexError("הרישום לא נמצא");
     }
     await ctx.db.patch(args.id, { paid: true, paidDate: DATE_RE.test(args.paidDate) ? args.paidDate : existing.date });
   },
 });
 
+/** מחיקה רכה: הרישום עובר לנמחקים ואפשר לשחזר אותו עד TRASH_DAYS ימים (fund:restore) */
 export const remove = mutation({
+  args: { synagogueId: v.id("synagogues"), id: v.id("fundTransactions") },
+  handler: async (ctx, args) => {
+    const { userId } = await requireManager(ctx, args.synagogueId);
+    const existing = await ctx.db.get(args.id);
+    if (existing === null || existing.synagogueId !== args.synagogueId || !live(existing)) {
+      return;
+    }
+    await ctx.db.patch(args.id, { deletedAt: Date.now(), deletedBy: userId });
+  },
+});
+
+export const restore = mutation({
   args: { synagogueId: v.id("synagogues"), id: v.id("fundTransactions") },
   handler: async (ctx, args) => {
     await requireManager(ctx, args.synagogueId);
     const existing = await ctx.db.get(args.id);
-    if (existing === null || existing.synagogueId !== args.synagogueId) {
-      return;
+    if (existing === null || existing.synagogueId !== args.synagogueId || live(existing)) {
+      throw new ConvexError("הרישום לא נמצא בנמחקים");
     }
-    await ctx.db.delete(args.id);
+    if (existing.campaignId) {
+      // מחזיר למגבית רק אם הסכום עדיין נכנס בעלות שלה
+      await Campaigns.assertRoom(ctx, args.synagogueId, existing.campaignId, existing.amount, existing);
+    }
+    await ctx.db.patch(args.id, { deletedAt: undefined, deletedBy: undefined });
+  },
+});
+
+/** הרישומים שנמחקו בקהילה, החדשים ראשונים (גבאי ורב בלבד) */
+export const trash = query({
+  args: { synagogueId: v.id("synagogues") },
+  handler: async (ctx, args) => {
+    await requireManager(ctx, args.synagogueId);
+    const docs = await ctx.db
+      .query("fundTransactions")
+      .withIndex("by_synagogue_deletedAt", (q) => q.eq("synagogueId", args.synagogueId).gt("deletedAt", 0))
+      .order("desc")
+      .take(200);
+    return await Promise.all(
+      docs.map(async (t) => ({
+        ...forClient(t),
+        deletedAt: t.deletedAt ?? 0,
+        deletedByName: t.deletedBy ? displayName(await ctx.db.get(t.deletedBy)) : "",
+        daysLeft: Math.max(0, Math.ceil(((t.deletedAt ?? 0) + TRASH_DAYS * 864e5 - Date.now()) / 864e5)),
+      })),
+    );
+  },
+});
+
+/** מוחק לצמיתות רישומים שנמחקו לפני יותר מ-TRASH_DAYS ימים */
+export const purgeOldTrash = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const cutoff = Date.now() - TRASH_DAYS * 864e5;
+    const old = await ctx.db
+      .query("fundTransactions")
+      .withIndex("by_deletedAt", (q) => q.gt("deletedAt", 0).lt("deletedAt", cutoff))
+      .take(200);
+    for (const t of old) {
+      await ctx.db.delete(t._id);
+    }
   },
 });
 

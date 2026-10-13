@@ -112,7 +112,8 @@ export const list = query({
         const txs = await ctx.db
           .query("fundTransactions")
           .withIndex("by_special", (q) => q.eq("specialId", s._id))
-          .collect();
+          .collect()
+          .then((all) => all.filter((t) => t.deletedAt === undefined));
         const entry = (t: Doc<"fundTransactions">) => ({
           txId: t._id,
           name: t.name,
