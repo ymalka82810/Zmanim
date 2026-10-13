@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 
@@ -26,7 +27,7 @@ export async function create(
     campaignId?: Id<"fundCampaigns">;
   },
 ) {
-  await ctx.db.insert("notifications", {
+  const id = await ctx.db.insert("notifications", {
     synagogueId: args.synagogueId,
     type: args.type,
     to: args.to,
@@ -38,6 +39,8 @@ export async function create(
     transactionId: args.transactionId,
     campaignId: args.campaignId,
   });
+  // פוש למכשירים רשומים. push.dispatch הוא שמחליט אם עכשיו שבת או חג, ולא שולח אז
+  await ctx.scheduler.runAfter(0, internal.push.dispatch, { notificationId: id });
 }
 
 const visibleTo = (n: { by?: Id<"users">; to: Recipient }, userId: Id<"users">, manager: boolean) =>

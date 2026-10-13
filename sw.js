@@ -6,7 +6,7 @@
  * בשרת המקומי (npm start) ובאפליקציה הקבצים נמצאים במכשיר, ולכן שם קודם מהרשת, כדי ששינוי יופיע מיד.
  * גופנים: מהמטמון, ואם אין – מהרשת.
  */
-const CACHE = 'luach-9c2766df3a';
+const CACHE = 'luach-9fb09e255b';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/app-update.js', 'js/app.js', 'js/astro.js', 'js/auth.js', 'js/community.js', 'js/config.js', 'js/convex-config.js', 'js/dates.js', 'js/dialog.js', 'js/font-fill.js', 'js/heb-date.js', 'js/hebrew.js', 'js/image.js', 'js/locate.js', 'js/luach.js', 'js/menu.js', 'js/moadim.js', 'js/native-files.js', 'js/pickers.js', 'js/preload.js', 'js/render.js', 'js/search-actions.js', 'js/search-words.js', 'js/search.js', 'js/settings-sync.js', 'js/special-donations.js', 'js/tab-arrows.js', 'js/template-boxes.js', 'js/template-build.js', 'js/template-fields.js', 'js/template-fonts.js', 'js/template-lines.js', 'js/template-move.js', 'js/template-place.js', 'js/template-read.js', 'js/template-render.js', 'js/template-rules.js', 'js/template-slots.js', 'js/template-state.js', 'js/template-ui.js', 'js/text-edit.js', 'js/theme.js', 'js/wizard.js', 'js/zmanim.js',
@@ -60,4 +60,32 @@ self.addEventListener('fetch', e => {
       return res;
     })));
   }
+});
+
+/* התראות פוש: ההחלטה אם לשלוח (ושבת וחג) נעשית בשרת (convex/push.ts). כאן רק מציגים ופותחים את הדף */
+self.addEventListener('push', e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (_) { /* תוכן לא תקין */ }
+  e.waitUntil(self.registration.showNotification(d.title || 'לוח זמנים', {
+    body: d.body || '',
+    icon: 'icons/icon-192.png',
+    badge: 'icons/icon-192.png',
+    tag: d.tag,
+    dir: 'rtl',
+    lang: 'he',
+    data: { url: d.url || './' }
+  }));
+});
+
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const target = new URL((e.notification.data && e.notification.data.url) || './', self.registration.scope).href;
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    for (const c of list) {
+      if (c.url.startsWith(self.registration.scope) && 'focus' in c) {
+        return (c.navigate ? c.navigate(target) : Promise.resolve()).then(() => c.focus());
+      }
+    }
+    return self.clients.openWindow(target);
+  }));
 });

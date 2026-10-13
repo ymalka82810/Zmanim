@@ -22,7 +22,7 @@ const FEATURES = {
   catalog: { title: 'קטלוג בית הכנסת', desc: 'חפצים שבית הכנסת מוכר, כמו מזוזות, לולבים ואתרוגים, עם מחיר ותמונה. הגבאי והרב מנהלים, וכל הקהילה רואה.' },
 };
 
-const S = { ready:false, isAuthenticated:false, me:null, synagogues:[], invitations:[], joinCode:null, joinInfo:undefined, detail:null, members:null, pending:null, features:null, errorLogs:null, membersSheetOpen:false, membersSearch:'' };
+const S = { ready:false, isAuthenticated:false, me:null, synagogues:[], invitations:[], joinCode:null, joinInfo:undefined, detail:null, members:null, pending:null, features:null, errorLogs:null, membersSheetOpen:false, membersSearch:'', push:null };
 
 let toastT;
 function toast(msg){ let t = $('.toast'); if (!t){ t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role','status'); document.body.appendChild(t); } t.textContent = msg; clearTimeout(toastT); toastT = setTimeout(() => t.remove(), 3600); }
@@ -77,6 +77,7 @@ async function loadAll(){
       } else {
         S.me = me;
         if (me.isOwner) refreshErrorLogs();
+        refreshPush();
       }
     } catch(e){ console.warn(e); }
     if (S.isAuthenticated && S.joinCode){
@@ -484,6 +485,64 @@ function renderViewMode(){
   </div>`;
 }
 
+/* ---------- התראות פוש ---------- */
+/* הפוש לא נשלח בשבת ובחג (convex/push.ts); התראות כאלה מחכות לצאת השבת או החג, או נשארות רק באפליקציה */
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && location.protocol.startsWith('http');
+function keyBytes(b64){
+  const pad = '='.repeat((4 - b64.length % 4) % 4);
+  const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(raw, c => c.charCodeAt(0));
+}
+async function pushRegistration(){ return await navigator.serviceWorker.ready; }
+async function sendSubscription(sub){
+  const j = sub.toJSON();
+  await client.mutation('push:subscribe', { endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth });
+}
+async function refreshPush(){
+  if (!pushSupported() || !S.isAuthenticated){ S.push = null; return; }
+  try {
+    const key = await client.query('push:publicKey', {});
+    const sub = await (await pushRegistration()).pushManager.getSubscription();
+    // מסנכרנים את המנוי עם המשתמש הנוכחי (מכשיר משותף, או כניסה עם חשבון אחר)
+    if (sub && Notification.permission === 'granted') await sendSubscription(sub);
+    S.push = { configured: !!key, permission: Notification.permission, on: !!sub && Notification.permission === 'granted' };
+  } catch(e){ console.warn(e); S.push = null; }
+  render();
+}
+async function enablePush(){
+  try {
+    const key = await client.query('push:publicKey', {});
+    if (!key){ toast('ההתראות עוד לא הופעלו בשרת.'); return; }
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted'){ toast('ההתראות חסומות. אפשר לאפשר אותן בהגדרות הדפדפן.'); await refreshPush(); return; }
+    const reg = await pushRegistration();
+    const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) });
+    await sendSubscription(sub);
+    toast('ההתראות הופעלו במכשיר הזה.');
+  } catch(e){ console.warn(e); toast(errMsg(e)); }
+  await refreshPush();
+}
+async function disablePush(){
+  try {
+    const sub = await (await pushRegistration()).pushManager.getSubscription();
+    if (sub){ await client.mutation('push:unsubscribe', { endpoint: sub.endpoint }); await sub.unsubscribe(); }
+    toast('ההתראות כובו במכשיר הזה.');
+  } catch(e){ console.warn(e); toast(errMsg(e)); }
+  await refreshPush();
+}
+function renderPushCard(){
+  const p = S.push;
+  if (!p || !p.configured) return '';
+  const blocked = p.permission === 'denied';
+  return `<div class="card">
+    <div class="sechead"><h2>התראות בטלפון</h2></div>
+    <p class="muted small">קבלו התראה גם כשהאפליקציה סגורה: קריאה למניין, אזכרות ותזכורות קופה. בשבת ובחג לא נשלחות התראות; תזכורות שאפשר לקרוא אחר כך מגיעות בצאת השבת או החג.</p>
+    ${blocked ? '<p class="muted small">ההתראות חסומות בדפדפן. כדי להפעיל אותן יש לאפשר אותן בהגדרות האתר.</p>'
+      : p.on ? '<button class="btn sec" id="btnPushOff">כיבוי התראות במכשיר הזה</button>'
+      : '<button class="btn" id="btnPushOn">הפעלת התראות במכשיר הזה</button>'}
+  </div>`;
+}
+
 function renderHebrewNameCard(){
   return `<div class="card">
     <h3>מילוי שם בעברית</h3>
@@ -527,6 +586,7 @@ function renderSignedIn(app){
     <button class="btn sec" id="btnSignOut">יציאה</button>
   </div>
   ${renderViewMode()}
+  ${renderPushCard()}
   ${me.needsHebrewName ? renderHebrewNameCard() : ''}
   ${renderInvitations()}
   <div class="sechead"><h2>הקהילות שלי</h2></div>`;
@@ -552,6 +612,8 @@ function renderSignedIn(app){
   }));
   if (me.needsHebrewName) $('#hebrewNameForm').addEventListener('submit', e => { e.preventDefault(); saveHebrewName(e.target); });
   $('#btnNewSyn').addEventListener('click', sheetCreateSynagogue);
+  $('#btnPushOn')?.addEventListener('click', enablePush);
+  $('#btnPushOff')?.addEventListener('click', disablePush);
   app.querySelectorAll('[data-accept]').forEach(b => b.addEventListener('click', () => acceptInvitation(b.dataset.accept)));
   app.querySelectorAll('[data-decline]').forEach(b => b.addEventListener('click', () => declineInvitation(b.dataset.decline)));
   app.querySelectorAll('[data-open]').forEach(el => {

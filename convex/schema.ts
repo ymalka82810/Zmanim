@@ -298,6 +298,17 @@ export default defineSchema({
     .index("by_campaign", ["campaignId"])
     .index("by_synagogue_type_to_at", ["synagogueId", "type", "to", "at"]),
 
+  // מנויי Web Push של מכשירים. מכשיר אחד יכול להיות רשום רק למשתמש אחד (לפי endpoint)
+  pushSubscriptions: defineTable({
+    userId: v.id("users"),
+    endpoint: v.string(),
+    p256dh: v.string(),
+    auth: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_endpoint", ["endpoint"]),
+
   scheduleFiles: defineTable({
     synagogueId: v.id("synagogues"),
     storageId: v.id("_storage"),
