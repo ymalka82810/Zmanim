@@ -1,0 +1,40 @@
+name: Deploy Convex
+
+# בכל push ל-main, וגם ידנית מלשונית Actions עם "Run workflow".
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: convex-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    env:
+      CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Check deploy key
+        run: |
+          if [ -z "$CONVEX_DEPLOY_KEY" ]; then
+            echo "::error::Missing CONVEX_DEPLOY_KEY secret (Settings > Secrets and variables > Actions)"
+            exit 1
+          fi
+
+      - run: npm ci
+
+      # מעלה את התיקייה convex/ לשרת scintillating-coyote-982 (הפרודקשן).
+      - name: Deploy Convex backend
+        run: npx convex deploy -y
