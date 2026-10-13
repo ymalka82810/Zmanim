@@ -199,14 +199,28 @@
       b.addEventListener('click', function () { s.close(); done(it.value); });
       list.appendChild(b);
     });
-    if (find) find.addEventListener('input', function () {
-      var q = find.value.replace(/[׳״'"]/g, '').trim(), any = false;
-      list.querySelectorAll('.pk-opt').forEach(function (b) { var ok = !q || b.dataset.t.indexOf(q) >= 0; b.hidden = !ok; any = any || ok; });
-      var none = list.querySelector('.pk-none');
-      if (!any && !none) list.appendChild(el('div', 'pk-none', 'לא נמצאו תוצאות'));
-      else if (any && none) none.remove();
-    });
+    if (find) {
+      var shown = function () { return Array.from(list.querySelectorAll('.pk-opt')).filter(function (b) { return !b.hidden; }); };
+      find.addEventListener('input', function () {
+        var q = find.value.replace(/[׳״'"\s]/g, ''), any = false;
+        list.querySelectorAll('.pk-opt').forEach(function (b) { var ok = !q || b.dataset.t.indexOf(q) >= 0; b.hidden = !ok; any = any || ok; });
+        var none = list.querySelector('.pk-none');
+        if (!any && !none) list.appendChild(el('div', 'pk-none', 'לא נמצאו תוצאות'));
+        else if (any && none) none.remove();
+        // נשארה תוצאה אחת מתאימה: בוחרים אותה (הקלדת שנה שלמה, כמו תשפ״ז או 5787)
+        var m = shown();
+        if (q.length >= 3 && m.length === 1) m[0].click();
+      });
+      // Enter (או "חיפוש" במקלדת הנייד) בוחר את התוצאה הראשונה
+      find.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        var m = shown();
+        if (m.length) m[0].click();
+      });
+    }
     s.show();
+    if (find) find.focus({ preventScroll: true });
     var c = list.querySelector('[aria-selected="true"]');
     if (c) c.scrollIntoView({ block: 'center' });
   }
