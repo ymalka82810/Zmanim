@@ -541,7 +541,9 @@ function respace(src, erased, shift) {
       const out = [];
       for (const r of list) {
         const last = out[out.length - 1];
-        if (last && r.s - last.e < minGap) last.e = r.e; else out.push({ ...r });
+        // רק פס נמוך (ניקוד, קו) מצטרף לשכן שלו. שני פסים בגובה של שורה הם שתי שורות, גם כשהם קרובים מאוד
+        // (למשל שורה שנמצאת ממש מתחת לבועה) – אחרת שורה שנמחקה נבלעת בשכנה ולא מתפנה מקומה
+        if (last && r.s - last.e < minGap && Math.min(r.e - r.s, last.e - last.s) < lineH * 0.6) last.e = r.e; else out.push({ ...r });
       }
       return out;
     };
