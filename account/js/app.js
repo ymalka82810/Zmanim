@@ -76,7 +76,7 @@ async function loadAll(){
         toast('ההתחברות פגה. נא להתחבר מחדש.');
       } else {
         S.me = me;
-        if (me.isOwner) refreshErrorLogs();
+        if (showErrorLogs(me)) refreshErrorLogs();
         refreshPush();
       }
     } catch(e){ console.warn(e); }
@@ -120,6 +120,8 @@ async function refreshSynagogues(){
   if (!S.synagogues.some(s => s._id === active)) A.setActiveSynagogueId(S.synagogues.length ? S.synagogues[0]._id : null);
 }
 async function refreshInvitations(){ S.invitations = await A.query('invitations:mine', {}); }
+/* יומן הכשלים לבעל האתר בלבד, ולא בתצוגת משתמש רגיל (SiteView ב-js/menu.js), גם אם בעל האתר הוא זה שעבר אליה */
+const showErrorLogs = me => !!(me && me.isOwner) && !(window.SiteView && window.SiteView.active());
 async function refreshErrorLogs(){
   try { S.errorLogs = await client.query('errorLog:recent', {}); render(); }
   catch(e){ console.warn(e); }
@@ -601,7 +603,7 @@ function renderSignedIn(app){
       </div>`).join('') + `</div>`;
   }
   html += `<button class="btn sec" id="btnNewSyn">פתיחת קהילה חדשה</button>`;
-  if (me.isOwner) html += renderErrorLogs();
+  if (showErrorLogs(me)) html += renderErrorLogs();
   app.innerHTML = html;
   $('#btnSignOut').addEventListener('click', signOut);
   app.querySelectorAll('#viewSeg [data-view]').forEach(b => b.addEventListener('click', () => {
