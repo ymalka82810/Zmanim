@@ -8,13 +8,13 @@ import { logError } from "./errorLog";
 import * as Notifications from "./notifications";
 import { hebrewYearOf } from "./hebrewDate";
 import * as Campaigns from "./campaigns";
+import { INCOME_TYPES, carryOf, inLedgerWindow } from "./fundMath";
 
 const PLEDGE_TYPES = v.union(v.literal("donation"), v.literal("mitzvah"));
 const REMINDER_DAYS = 5;
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DONOR_TYPES = new Set(["donation", "mitzvah"]);
-const INCOME_TYPES = new Set(["donation", "mitzvah", "salary"]);
 
 const txFields = {
   type: fundTypeValidator,
@@ -118,7 +118,7 @@ async function myNotifications(ctx: QueryCtx, synagogueId: Id<"synagogues">, use
   return await Notifications.listForRecipient(ctx, synagogueId, "fund", userId);
 }
 
-const SINCE_RE = /^d{4}-d{2}-d{2}$/;
+const SINCE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * רישומי הקופה לגבאי. בלי since: כולם. עם since: הרישומים מהתאריך ואילך, וכן כל חיוב שטרם שולם
@@ -140,7 +140,7 @@ async function managerTxs(ctx: QueryCtx, synagogueId: Id<"synagogues">, since: s
     .query("fundTransactions")
     .withIndex("by_synagogue_paid", (q) => q.eq("synagogueId", synagogueId).eq("paid", false))
     .collect();
-  return [...recent, ...unpaid.filter((t) => t.date < since)].filter(live);
+  return [...recent, ...unpaid.filter((t) => t.date < since && inLedgerWindow(t, since))].filter(live);
 }
 
 /**
@@ -162,36 +162,8 @@ export const carry = query({
       .query("fundTransactions")
       .withIndex("by_synagogue_date", (q) => q.eq("synagogueId", args.synagogueId).lt("date", args.since))
       .collect();
-    let main = 0;
-    let petty = 0;
-    const later: Doc<"fundTransactions">[] = [];
-    for (const t of old) {
-      if (!live(t)) {
-        continue;
-      }
-      if (INCOME_TYPES.has(t.type)) {
-        if (!t.paid) {
-          continue;
-        }
-        if ((t.paidDate || t.date) >= args.since) {
-          later.push(t);
-        } else {
-          main += t.amount;
-        }
-      } else if (t.type === "expense") {
-        main -= t.amount;
-      } else if (t.type === "pettyIn") {
-        main -= t.amount;
-        petty += t.amount;
-      } else if (t.type === "petty") {
-        petty -= t.amount;
-      }
-    }
-    return {
-      main: Math.round(main * 100) / 100,
-      petty: Math.round(petty * 100) / 100,
-      txs: later.map(forClient),
-    };
+    const { main, petty, later } = carryOf(old.filter(live), args.since);
+    return { main, petty, txs: later.map(forClient) };
   },
 });
 

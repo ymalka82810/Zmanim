@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node tools/serve.js",
     "build:sw": "node tools/build-sw.js",
-    "test": "node test/verify.js",
+    "test": "node test/verify.js && node test/fund-window.js",
     "app:sync": "node tools/build-app.js && cap sync android",
     "app:open": "cap open android"
   },
