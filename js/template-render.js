@@ -484,15 +484,19 @@ function blankRows(canvas) {
     rule[y] = all > W * 0.6;
   }
   // הטווח האופקי של הדיו בשורות y0..y1 (בלי קווים אנכיים של מסגרת): { l, r }, או null כשאין דיו
-  const span = (y0, y1) => {
+  // skip – טווחים אופקיים [a, b) שלא נחשבים (עצם בצד השורות, כמו בועה)
+  const isInk = (x, y) => col[x] < H * 0.5 && ink((y * W + x) * 4);
+  const span = (y0, y1, skip = null) => {
+    const ok = x => !skip || !skip.some(([a, b]) => x >= a && x < b);
     let l = W, r = -1;
     for (let y = Math.max(0, y0); y < Math.min(H, y1); y++) {
-      for (let x = 0; x < W; x++) if (col[x] < H * 0.5 && ink((y * W + x) * 4)) { if (x < l) l = x; break; }
-      for (let x = W - 1; x >= 0; x--) if (col[x] < H * 0.5 && ink((y * W + x) * 4)) { if (x > r) r = x; break; }
+      for (let x = 0; x < W; x++) if (ok(x) && isInk(x, y)) { if (x < l) l = x; break; }
+      for (let x = W - 1; x >= 0; x--) if (ok(x) && isInk(x, y)) { if (x > r) r = x; break; }
     }
     return r >= l ? { l, r: r + 1 } : null;
   };
-  return { W, H, c2, blank, rule, span };
+  const frame = col.map(n => n >= H * 0.5 ? 1 : 0);
+  return { W, H, c2, blank, rule, span, isInk, bg, frame };
 }
 
 /** התקרה להגדלת הכתב כשנמחקת שורה: פי כמה מהגודל המקורי */
@@ -512,7 +516,7 @@ function respace(src, erased, shift) {
     sctx.fillStyle = (s.style || {}).bg || '#ffffff';
     sctx.fillRect(b.x - pad, b.y - (b.up || 0) - pad, b.w + 2 * pad, b.h + (b.up || 0) + (b.down || 0) + 2 * pad);
   }
-  const { W, H, c2, blank, rule, span } = blankRows(src);
+  const cur = blankRows(src), { W, H, c2, blank, rule, span } = cur;
   // שורות הטקסט (פסים של שורות עם דיו), לפני המחיקה ואחריה
   const bands = (bl, from, to) => {
     const out = [];
@@ -543,11 +547,103 @@ function respace(src, erased, shift) {
         const last = out[out.length - 1];
         // רק פס נמוך (ניקוד, קו) מצטרף לשכן שלו. שני פסים בגובה של שורה הם שתי שורות, גם כשהם קרובים מאוד
         // (למשל שורה שנמצאת ממש מתחת לבועה) – אחרת שורה שנמחקה נבלעת בשכנה ולא מתפנה מקומה
-        if (last && r.s - last.e < minGap && Math.min(r.e - r.s, last.e - last.s) < lineH * 0.6) last.e = r.e; else out.push({ ...r });
+        if (last && r.s - last.e < minGap && Math.min(r.e - r.s, last.e - last.s) < lineH * 0.6) { last.e = r.e; if (r.img && !last.img) Object.assign(last, { img: r.img, imgY: r.imgY }); }
+        else out.push({ ...r });
       }
       return out;
     };
-    const lines = merge(now), old = merge(bands(before.blank, top, bottom)), n = lines.length;
+    /*
+     * פס גבוה מכמה שורות שיש בו עצם בצד (בועת הסבר, מסגרת קטנה): העצם הוא רכיב דיו מחובר אחד שגבוה משורה וחצי,
+     * יחד עם מה שבתוכו (הטקסט שבבועה). השורות שבפס מזוהות בלי העצם, כדי שיתרווחו כל אחת לחוד ושהרווח מתחתיהן
+     * יימדד מהטקסט ולא מתחתית העצם. העצם (side) זז כיחידה אחת עם השורה שלידו. images – גם התמונות להעתקה
+     */
+    const splitTall = (R, list, images) => {
+      const out = [], sides = [];
+      for (const r of list) {
+        const BH = r.e - r.s;
+        if (BH < lineH * 2.2) { out.push(r); continue; }
+        // רכיבים מחוברים של דיו בפס
+        const lab = new Int32Array(W * BH), comps = [];
+        for (let y0 = 0; y0 < BH; y0++) for (let x0 = 0; x0 < W; x0++) {
+          if (lab[y0 * W + x0] || !R.isInk(x0, r.s + y0)) continue;
+          const id = comps.length + 1, c = { id, x0, x1: x0, y0, y1: y0, rows: new Map() }, stack = [y0 * W + x0];
+          lab[y0 * W + x0] = id;
+          while (stack.length) {
+            const q = stack.pop(), x = q % W, y = (q - x) / W;
+            if (x < c.x0) c.x0 = x; if (x > c.x1) c.x1 = x; if (y < c.y0) c.y0 = y; if (y > c.y1) c.y1 = y;
+            const row = c.rows.get(y); if (!row) c.rows.set(y, [x, x]); else { if (x < row[0]) row[0] = x; if (x > row[1]) row[1] = x; }
+            for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+              const nx = x + dx, ny = y + dy;
+              if (nx < 0 || ny < 0 || nx >= W || ny >= BH) continue;
+              const k = ny * W + nx;
+              if (!lab[k] && R.isInk(nx, r.s + ny)) { lab[k] = id; stack.push(k); }
+            }
+          }
+          comps.push(c);
+        }
+        const big = comps.filter(c => c.y1 - c.y0 > lineH * 1.6);
+        if (!big.length) { out.push(r); continue; }
+        // רכיב בתוך עצם גדול: בכל השורות שלו הוא בין הקצה הימני לשמאלי של העצם באותה שורה
+        const within = (c, g) => {
+          for (let y = c.y0; y <= c.y1; y++) {
+            const row = g.rows.get(y);
+            if (!row || c.x0 < row[0] || c.x1 > row[1]) return false;
+          }
+          return true;
+        };
+        const side = new Uint8Array(comps.length + 1);
+        for (const g of big) side[g.id] = 1;
+        for (const c of comps) if (!side[c.id] && big.some(g => within(c, g))) side[c.id] = 1;
+        // השורות בלי העצם
+        const isSide = (x, y) => { const id = lab[y * W + x]; return id && side[id]; };
+        const subs = [];
+        for (let y = 0, s0 = -1; y <= BH; y++) {
+          let n = 0;
+          if (y < BH) for (let x = 0; x < W && n <= 2; x++) if (lab[y * W + x] && !side[lab[y * W + x]]) n++;
+          if (y < BH && n > 2) { if (s0 < 0) s0 = y; } else if (s0 >= 0) { subs.push({ s: r.s + s0, e: r.s + y }); s0 = -1; }
+        }
+        if (subs.length < 2) { out.push(r); continue; }
+        let img = null, sideImg = null;
+        if (images) {
+          // שתי תמונות של הפס: בלי העצם (רקע במקומו) – לשורות, ורק העצם (שקוף מסביב) – כדי להעתיק אותו כיחידה.
+          // סביב כל פיקסל של העצם נלקחים עוד 2 פיקסלים, כדי שלא יישאר ממנו קו דק (החלקת הקצוות)
+          const data = c2.getImageData(0, r.s, W, BH), only = new ImageData(W, BH);
+          const grow = new Uint8Array(W * BH);
+          for (let y = 0; y < BH; y++) for (let x = 0; x < W; x++) if (isSide(x, y))
+            for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+              const nx = x + dx, ny = y + dy;
+              if (nx >= 0 && ny >= 0 && nx < W && ny < BH && !(lab[ny * W + nx] && !side[lab[ny * W + nx]])) grow[ny * W + nx] = 1;
+            }
+          const bgPix = [data.data[0], data.data[1], data.data[2]];
+          for (let k = 0; k < W * BH; k++) if (grow[k]) {
+            const i = k * 4;
+            for (let j = 0; j < 4; j++) only.data[i + j] = data.data[i + j];
+            data.data[i] = bgPix[0]; data.data[i + 1] = bgPix[1]; data.data[i + 2] = bgPix[2]; data.data[i + 3] = 255;
+          }
+          img = document.createElement('canvas'); img.width = W; img.height = BH; img.getContext('2d').putImageData(data, 0, 0);
+          sideImg = document.createElement('canvas'); sideImg.width = W; sideImg.height = BH; sideImg.getContext('2d').putImageData(only, 0, 0);
+        }
+        for (const sb of subs) {
+          // הטווח האופקי של הטקסט בשורה, וכמה העצם מגיע אליה מכל צד – כדי שהכתב המוגדל לא יגיע אליו
+          let l = W, rr = -1, sideL = W, sideR = -1;
+          for (let y = sb.s - r.s; y < sb.e - r.s; y++) for (let x = 0; x < W; x++) {
+            const id = lab[y * W + x];
+            if (!id) continue;
+            if (side[id]) { if (x < sideL) sideL = x; if (x > sideR) sideR = x; }
+            else { if (x < l) l = x; if (x > rr) rr = x; }
+          }
+          out.push({ ...sb, sp: rr >= l ? { l, r: rr + 1 } : null, side: sideR >= 0 ? { l: sideL, r: sideR + 1 } : null, img, imgY: r.s });
+        }
+        if (images) {
+          let y0 = BH, y1 = 0;
+          for (const g of big) { y0 = Math.min(y0, g.y0); y1 = Math.max(y1, g.y1 + 1); }
+          sides.push({ img: sideImg, y: r.s, y0: r.s + y0, y1: r.s + y1 });
+        }
+      }
+      return { out, sides };
+    };
+    const cut = splitTall(cur, merge(now), true), sides = cut.sides;
+    const lines = merge(cut.out), old = merge(splitTall(before, merge(bands(before.blank, top, bottom)), false).out), n = lines.length;
     if (n < 2 || !old.length) continue;
     // הרווחים לפני המחיקה, כדי לדעת מה הגודל הרגיל של רווח שהטקסט שבו נמחק
     const oldGaps = old.slice(1).map((r, i) => ({ s: old[i].e, e: r.s }));
@@ -564,7 +660,7 @@ function respace(src, erased, shift) {
     if (total < 1 || avail - inked - total < 1) continue;
     // המקום שהתפנה מתחלק באופן יחסי: גם השורות עצמן (הכתב) גדלות, באותו יחס שגדלים הרווחים, ורק מה שנשאר מתווסף לרווחים.
     // הגדלה מוגבלת לרוחב העמוד (הכתב לא יוצא מהשוליים) ולתקרה, כדי שמחיקת שורה אחת לא תנפח את הכל
-    const spans = lines.map(r => span(r.s, r.e));
+    const spans = lines.map(r => r.sp !== undefined ? r.sp : span(r.s, r.e));
     const seen = spans.filter(Boolean);
     let f = 1, pivot = W / 2;
     if (seen.length) {
@@ -574,6 +670,14 @@ function respace(src, erased, shift) {
       const m = Math.max(2, 0.5 * Math.min(minL, W - maxR));
       const half = Math.max(pivot - minL, maxR - pivot, 1);
       f = Math.min(MAX_ERASE_SCALE, avail / (inked + total), Math.min(pivot - m, W - m - pivot) / half);
+      // שורה שליד עצם בצד: הכתב המוגדל לא מגיע אליו
+      const gapX = Math.max(8, lineH * 0.3);
+      lines.forEach((r, i) => {
+        const sp = spans[i], sd = r.side;
+        if (!sd || !sp) return;
+        if (sd.r <= sp.l && pivot > sp.l) f = Math.min(f, (pivot - (sd.r + gapX)) / (pivot - sp.l));
+        if (sd.l >= sp.r && sp.r > pivot) f = Math.min(f, ((sd.l - gapX) - pivot) / (sp.r - pivot));
+      });
     }
     if (!(f > 1.01)) f = 1;
     const hs = lines.map((r, i) => f === 1 || !spans[i] ? r.e - r.s : Math.round((r.e - r.s) * f));
@@ -592,25 +696,58 @@ function respace(src, erased, shift) {
     const t2 = tmp.getContext('2d');
     t2.imageSmoothingEnabled = false;
     // שורה ריקה מהרווח שלפני השורה i בתמונה הנוכחית (i = n – השוליים שבתחתית)
-    const blankAt = i => ((i ? lines[i - 1].e : top) + (i < n ? lines[i].s : bottom)) >> 1;
+    // שורה ריקה באמת: בין שורות שליד עצם בצד השורה שבאמצע עוברת דרך העצם, ואז לוקחים את השורה הריקה הקרובה ביותר
+    const clean = y => {
+      for (let d = 0; d < bottom - top; d++) {
+        if (y - d >= top && blank[y - d]) return y - d;
+        if (y + d < bottom && blank[y + d]) return y + d;
+      }
+      return y;
+    };
+    const blankAt = i => clean(((i ? lines[i - 1].e : top) + (i < n ? lines[i].s : bottom)) >> 1);
+    // שורה ריקה למילוי הרווחים: צבע הרקע, ורק קווי המסגרת האנכיים מהשורה עצמה – כדי שרעש של דחיסת JPEG
+    // או שארית החלקה של אות סמוכה לא יימתחו לפסים לאורך הרווח
+    const rows = new Map();
+    const blankRow = y => {
+      if (!rows.has(y)) {
+        const c = document.createElement('canvas');
+        c.width = W; c.height = 1;
+        const d = c2.getImageData(0, y, W, 1);
+        for (let x = 0; x < W; x++) if (!cur.frame[x]) { const k = x * 4; d.data[k] = cur.bg[0]; d.data[k + 1] = cur.bg[1]; d.data[k + 2] = cur.bg[2]; d.data[k + 3] = 255; }
+        c.getContext('2d').putImageData(d, 0, 0);
+        rows.set(y, c);
+      }
+      return rows.get(y);
+    };
     let y = top;
     for (let i = 0; i <= n; i++) {
       const at = i < n ? to[i] : bottom;
-      if (at > y) t2.drawImage(src, 0, blankAt(i), W, 1, 0, y - top, W, at - y);
+      if (at > y) t2.drawImage(blankRow(blankAt(i)), 0, 0, W, 1, 0, y - top, W, at - y);
       if (i < n) {
         const r = lines[i], h = r.e - r.s, sp = spans[i];
-        if (f === 1 || !sp) t2.drawImage(src, 0, r.s, W, h, 0, at - top, W, h);
+        // שורה מפס שיש בו עצם בצד: מועתקת מהתמונה שבלי העצם; העצם עצמו נכתב בסוף, כיחידה אחת
+        const from = r.img || src, fy = r.img ? r.s - r.imgY : r.s;
+        if (f === 1 || !sp) t2.drawImage(from, 0, fy, W, h, 0, at - top, W, h);
         else {
           // שורה מוגדלת: הרקע (עם קווי המסגרת) משורה ריקה, והכתב עצמו מוגדל סביב מרכז הקטע
           t2.imageSmoothingEnabled = false;
-          t2.drawImage(src, 0, blankAt(i), W, 1, 0, at - top, W, hs[i]);
+          t2.drawImage(blankRow(blankAt(i)), 0, 0, W, 1, 0, at - top, W, hs[i]);
           t2.imageSmoothingEnabled = true;
           t2.imageSmoothingQuality = 'high';
-          t2.drawImage(src, sp.l, r.s, sp.r - sp.l, h, pivot - (pivot - sp.l) * f, at - top, (sp.r - sp.l) * f, hs[i]);
+          t2.drawImage(from, sp.l, fy, sp.r - sp.l, h, pivot - (pivot - sp.l) * f, at - top, (sp.r - sp.l) * f, hs[i]);
           t2.imageSmoothingEnabled = false;
         }
         y = at + hs[i];
       }
+    }
+    // העצמים שבצד: כל אחד זז עם השורה שהכי קרובה למרכז שלו, באותו מרחק ממנה (ביחס להגדלה), בלי לשנות את גודלו
+    for (const sd of sides) {
+      const mid = (sd.y0 + sd.y1) / 2;
+      let i = 0;
+      lines.forEach((r, j) => { if (Math.abs((r.s + r.e) / 2 - mid) < Math.abs((lines[i].s + lines[i].e) / 2 - mid)) i = j; });
+      const r = lines[i], fi = hs[i] / (r.e - r.s);
+      const dy = Math.round(to[i] + hs[i] / 2 + (mid - (r.s + r.e) / 2) * fi - (sd.y1 - sd.y0) / 2) - sd.y0;
+      t2.drawImage(sd.img, 0, sd.y + dy - top);
     }
     c2.drawImage(tmp, 0, top);
     // התיבות זזות (ומוגדלות) עם השורות: קודם השורות שיורדות, מהתחתונה, ואחר כך שעולות, מהעליונה – כדי שאף שורה לא תוזז פעמיים
