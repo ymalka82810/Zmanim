@@ -32,6 +32,7 @@
     '.pk-opt[aria-selected="true"]{background:var(--pk-soft)!important;color:var(--pk-acc);font-weight:700}' +
     '.pk-opt[aria-selected="true"]::after{content:"✓";flex:none}' +
     '.pk-opt:disabled{opacity:.4;cursor:default}' +
+    '.pk-opt[hidden],.pk-grp[hidden],.pk-none[hidden]{display:none!important}' +
     '.pk-grp{padding:10px 14px 4px;font-size:.82rem;font-weight:700;color:var(--pk-muted)}' +
     '.pk-none{padding:18px;text-align:center;color:var(--pk-muted)}' +
     '.pk-cal{padding:10px 12px calc(12px + env(safe-area-inset-bottom,0px));overflow-y:auto}' +
