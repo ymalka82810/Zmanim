@@ -5,7 +5,7 @@
 
 import { CITIES, BASES, WHEN, WHEN_LABELS, APPLIES, ROUND, FONTS, THEMES, LAYOUTS, LAYOUTS_SHOWN, SIZE_PARTS, SIZES, PAPERS, ORIENTS, COLUMNS, pageOf, DEFAULT_CONFIG, DAY_APPLIES, BUILTIN, isBuiltin, newTemplate, designOf, activeDesign,
   prayerBases, fontFamilies, fontsHref, themeColors, normalize, loadConfig, saveConfig, clearConfig, TEXT_BASES } from './config.js';
-import { findOccasion, templateFor, periodFor, adjacentPeriod, adjacentToDate, joinedTemplates, occasionParts, buildLuach, buildDaysLuach, dayPages, buildPoster } from './luach.js';
+import { findOccasion, templateFor, periodFor, adjacentPeriod, adjacentToDate, periodAt, joinedTemplates, occasionParts, buildLuach, buildDaysLuach, dayPages, buildPoster } from './luach.js';
 import { MOADIM } from './moadim.js';
 import { luachHtml, withEdits, esc, multiline } from './render.js';
 import { todayIn, toYmd, toDayNum } from './dates.js';
@@ -346,8 +346,9 @@ function renderLuach() {
   } else {
     $('luach').innerHTML = luachHtml(current, boardEditing, current.tpl.cols);
   }
-  const now = periodFor(cfg, t, todayIn(cfg.tz));
-  $('todayOcc').disabled = !!now && now.first === p.first;
+  // "הקרוב" מחפש לפי התאריך של היום בכל הקטגוריות, ולכן הוא מושבת רק כשהלוח המוצג הוא של היום
+  const now = periodAt(cfg, todayIn(cfg.tz));
+  $('todayOcc').disabled = !!now && now.first === p.first && now.last === p.last;
 }
 
 /** שמירת עריכת טקסט בלוח של האתר: scope 'week' – רק ללוח הזה, 'always' – לתמיד בתבנית */
@@ -427,7 +428,12 @@ $('luach').addEventListener('click', e => {
 
 $('prevOcc').onclick = () => stepLuach(-1);
 $('nextOcc').onclick = () => stepLuach(1);
-$('todayOcc').onclick = () => { cursor = null; posterId = null; renderLuach(); };
+$('todayOcc').onclick = () => {
+  if (board === EVENTS_BOARD) { cursor = null; posterId = null; renderLuach(); return; }
+  // הלוח של התאריך של היום, מכל הקטגוריות, והלשונית מתחלפת אליו (לא הלוח הקרוב של הלשונית הנוכחית)
+  const o = isFinite(cfg.lat) && isFinite(cfg.lng) ? periodAt(cfg, todayIn(cfg.tz)) : null;
+  if (o) setBoard(templateFor(cfg, o).id, o.first); else { cursor = null; renderLuach(); }
+};
 
 /*
  * קבצי תמונה ו-PDF מוכנים מראש לכל לוח שמוצג. בספארי (אייפון) השיתוף חייב לקרות

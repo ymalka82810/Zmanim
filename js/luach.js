@@ -170,6 +170,20 @@ export function adjacentPeriod(cfg, p, dir = 1) {
 }
 
 /**
+ * הלוח של התאריך today, מכל הסוגים: הלוח שהיום נמצא בו (שבת/חג עדיפים על ימות השבוע או חול המועד שמסביבם),
+ * ואם היום לא בתוך אף לוח – הלוח הקרוב שמתחיל אחריו. לא תלוי בלשונית: משמש את הכפתור "הקרוב".
+ */
+export function periodAt(cfg, today) {
+  const first = kind => { for (const x of periods(cfg, kind, today, 1)) if (x.last >= today) return x; return null; };
+  const holy = first('holy'), days = first('days');
+  const inside = x => x && x.first <= today;
+  if (inside(holy)) return holy;
+  if (inside(days)) return days;
+  const list = [holy, days].filter(Boolean);
+  return list.length ? list.reduce((a, b) => b.first < a.first ? b : a) : null;
+}
+
+/**
  * הלוח הבא (dir=1) או הקודם (dir=-1) ביחס לתאריך today עצמו, מכל הסוגים יחד, בלי הלוח skip שכבר מוצג.
  * משמש כשהלוח המוצג נבחר לפי לשונית (למשל "חגים" שמראה את פסח בעוד חצי שנה), ולא לפי ניווט:
  * אז "הבא" ו"הקודם" צריכים להתחיל מהיום ולא מהלוח הרחוק של הלשונית.
