@@ -252,7 +252,7 @@ function yahrzeitSheet(y){
      <label class="f">תאריך הפטירה העברי</label>
      <div class="hdate"><select id="yzDay" aria-label="יום">${dayOptions(hm, hy, hd)}</select><select id="yzMonth" aria-label="חודש">${monthOptions(hy, hm)}</select><select id="yzYear" aria-label="שנה">${yearOptions(hy)}</select></div>
      <details style="margin-top:8px"><summary class="small">יודעים רק את התאריך הלועזי?</summary>
-       <input type="date" id="yzGreg" style="margin-top:6px"><label class="check"><input type="checkbox" id="yzEve"> הפטירה הייתה אחרי השקיעה</label>
+       <input type="date" id="yzGreg" data-greg style="margin-top:6px"><label class="check"><input type="checkbox" id="yzEve"> הפטירה הייתה אחרי השקיעה</label>
        <p class="small muted">התאריך העברי יתעדכן לפי התאריך הלועזי.</p></details>
      <label class="check"><input type="checkbox" id="yzShared"${!y || y.shared ? ' checked' : ''}> להציג ביומן הקהילה (הגבאי והרב רואים תמיד, כדי לתת עלייה)</label>
      <div class="row" style="margin-top:16px"><button class="btn" type="button" data-act="saveYahrzeit" data-id="${y?._id || ''}">שמירה</button>

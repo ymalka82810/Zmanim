@@ -1,14 +1,15 @@
 /* חלונות בחירה בעיצוב האתר במקום החלונות האפורים של הדפדפן.
  * רשימות נפתחות (select) נפתחות כגיליון עם האפשרויות (ועם חיפוש כשיש הרבות), ושדות תאריך
- * (date ו-datetime-local) נפתחים כלוח שנה עם התאריך העברי מתחת לכל יום.
+ * (date ו-datetime-local) נפתחים כלוח שנה עברי כברירת מחדל, עם מעבר ללוח לועזי למי שלא יודע את התאריך העברי.
  * הבחירה נכתבת לשדה המקורי עם אירועי input ו-change, כך שהקוד של הדפים לא צריך להכיר אותה.
  * שדה שלא רוצים להחליף מסמנים ב-data-native. נטען מ-menu.js ולכן פועל בכל דף. */
 (function () {
   "use strict";
   var BASE = document.currentScript.src;
   var H = null, D = null;
-  Promise.all([import(new URL('hebrew.js', BASE).href), import(new URL('dates.js', BASE).href)])
-    .then(function (m) { H = m[0]; D = m[1]; });
+  var ready = Promise.all([import(new URL('hebrew.js', BASE).href), import(new URL('dates.js', BASE).href)])
+    .then(function (m) { H = m[0]; D = m[1]; })
+    .catch(function () { /* בלי הלוח העברי הבחירה נשארת לועזית */ });
 
   var css = '' +
     '.pk{--pk-bg:#fff;--pk-ink:#202a3f;--pk-muted:#726c59;--pk-line:#e2dcc9;--pk-soft:#f2ede0;--pk-acc:#1e3a63;--pk-on:#fff;--pk-gold:#ab7f2e;' +
@@ -49,6 +50,10 @@
     '.pk-day.pk-sel{background:var(--pk-acc)!important;color:var(--pk-on)!important}' +
     '.pk-day.pk-sel i{color:inherit;opacity:.85}' +
     '.pk-day:disabled{opacity:.3;cursor:default}' +
+    '.pk-pick{font-size:1.05rem!important;font-weight:700!important;padding:2px 8px!important;border-radius:8px}' +
+    '.pk-pick:hover{background:var(--pk-soft)!important}' +
+    '.pk-alt{display:block!important;width:100%!important;margin-top:10px!important;padding:8px!important;font-size:.9rem;font-weight:600;color:var(--pk-acc)!important;text-decoration:underline}' +
+    '.pk-cap{display:block;font-size:.8rem;opacity:.75;margin-top:2px}' +
     '.pk-time{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--pk-line)}' +
     '.pk-time span{font-weight:700;color:var(--pk-muted)}' +
     '.pk-time input{width:64px;padding:8px 6px;text-align:center;font:inherit;font-size:1.1rem;border:1px solid var(--pk-line);border-radius:10px;background:var(--pk-soft);color:var(--pk-ink)}' +
@@ -154,11 +159,43 @@
     if (!find) (cur || list.querySelector('.pk-opt:not(:disabled)') || list).focus({ preventScroll: true });
   }
 
-  /* ---------- תאריך ---------- */
+  /* ---------- תאריך ----------
+   * ברירת המחדל: לוח עברי (חודש עברי, ובכל יום האות העברית עם היום הלועזי קטן מתחתיה).
+   * "לא יודעים מה התאריך העברי?" עובר ללוח לועזי (עם התאריך העברי מתחת לכל יום), ואפשר לחזור.
+   * שדה עם data-greg נפתח ישר בלוח לועזי (למשל שדה "התאריך הלועזי" שליד בחירה עברית משלו).
+   * בכל מצב הערך שנכתב לשדה הוא תאריך לועזי YYYY-MM-DD, כמו קודם. */
   var MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
   var DOWS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
   function pad(n) { return (n < 10 ? '0' : '') + n; }
   function ymd(y, m, d) { return y + '-' + pad(m + 1) + '-' + pad(d); }
+  var YMD = /^\d{4}-\d{2}-\d{2}$/;
+
+  function hOrder(y) { return H.isLeap(y) ? [7, 8, 9, 10, 11, 12, 13, 1, 2, 3, 4, 5, 6] : [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6]; }
+  function hStep(v, dir) {
+    var o = hOrder(v.y), i = o.indexOf(v.m) + dir;
+    if (i >= o.length) return { y: v.y + 1, m: 7 };
+    if (i < 0) return { y: v.y - 1, m: 6 };
+    return { y: v.y, m: o[i] };
+  }
+  function hFix(y, m) { return { y: y, m: (m === 13 && !H.isLeap(y)) ? 12 : m }; }
+
+  /* רשימה קצרה לבחירת חודש או שנה עבריים */
+  function chooseFrom(title, items, cur, done) {
+    var s = sheet(title);
+    var list = el('div', 'pk-list');
+    list.setAttribute('role', 'listbox');
+    s.dlg.appendChild(list);
+    items.forEach(function (it) {
+      var b = el('button', 'pk-opt', it.label);
+      b.type = 'button'; b.setAttribute('role', 'option');
+      b.setAttribute('aria-selected', String(it.value === cur));
+      b.addEventListener('click', function () { s.close(); done(it.value); });
+      list.appendChild(b);
+    });
+    s.show();
+    var c = list.querySelector('[aria-selected="true"]');
+    if (c) c.scrollIntoView({ block: 'center' });
+  }
 
   function openDate(inp) {
     if (inp.disabled || inp.readOnly) return;
@@ -166,11 +203,14 @@
     var raw = inp.value || '';
     var now = new Date();
     var selStr = raw.slice(0, 10);
-    var base = /^\d{4}-\d{2}-\d{2}$/.test(selStr) ? selStr : ymd(now.getFullYear(), now.getMonth(), now.getDate());
-    var vy = +base.slice(0, 4), vm = +base.slice(5, 7) - 1;
     var todayStr = ymd(now.getFullYear(), now.getMonth(), now.getDate());
+    var base = YMD.test(selStr) ? selStr : todayStr;
     var min = inp.min ? inp.min.slice(0, 10) : '', max = inp.max ? inp.max.slice(0, 10) : '';
-    var picked = selStr;
+    var picked = YMD.test(selStr) ? selStr : '';
+    var canHeb = !!(H && D) && !inp.hasAttribute('data-greg');
+    var mode = canHeb ? 'heb' : 'greg';
+    var vy = +base.slice(0, 4), vm = +base.slice(5, 7) - 1;   // תצוגה לועזית
+    var hv = canHeb ? (function (h) { return { y: h.y, m: h.m }; })(H.toHebrew(D.toDayNum(base))) : null;   // תצוגה עברית
 
     var s = sheet(labelOf(inp));
     var cal = el('div', 'pk-cal');
@@ -209,10 +249,15 @@
       s.close();
       if (changed) fire(inp);
     }
+    function choose(str) { picked = str; if (withTime) render(); else commit(); }
 
     var foot = el('div', 'pk-foot');
     var tb = el('button', null, 'היום'); tb.type = 'button';
-    tb.addEventListener('click', function () { vy = now.getFullYear(); vm = now.getMonth(); picked = todayStr; if (withTime) render(); else commit(); });
+    tb.addEventListener('click', function () {
+      vy = now.getFullYear(); vm = now.getMonth();
+      if (canHeb) { var h = H.toHebrew(D.toDayNum(todayStr)); hv = { y: h.y, m: h.m }; }
+      choose(todayStr);
+    });
     foot.appendChild(tb);
     if (withTime) {
       var ok = el('button', 'pk-ok', 'אישור'); ok.type = 'button';
@@ -226,37 +271,128 @@
     }
     cal.appendChild(foot);
 
+    var alt = null;
+    if (canHeb) {
+      alt = el('button', 'pk-alt'); alt.type = 'button';
+      alt.addEventListener('click', function () {
+        if (mode === 'heb') {
+          var g = picked || D.toYmd(H.fromHebrew(hv.y, hv.m, 15));
+          vy = +g.slice(0, 4); vm = +g.slice(5, 7) - 1;
+          mode = 'greg';
+        } else {
+          var g2 = picked || ymd(vy, vm, 15), h = H.toHebrew(D.toDayNum(g2));
+          hv = { y: h.y, m: h.m };
+          mode = 'heb';
+        }
+        render();
+      });
+      cal.appendChild(alt);
+    }
+
+    function dayCell(str, big, small) {
+      var b = el('button', 'pk-day');
+      b.type = 'button';
+      b.appendChild(el('b', null, big));
+      if (small) b.appendChild(el('i', null, small));
+      if (str === todayStr) b.classList.add('pk-today');
+      if (str === picked) b.classList.add('pk-sel');
+      b.disabled = !!((min && str < min) || (max && str > max));
+      b.addEventListener('click', function () { choose(str); });
+      grid.appendChild(b);
+    }
+
     function render() {
       mt.textContent = '';
-      mt.append(MONTHS[vm] + ' ' + vy);
-      if (H && D) {
-        var a = H.toHebrew(D.toDayNum(ymd(vy, vm, 1))), b = H.toHebrew(D.toDayNum(ymd(vy, vm, new Date(vy, vm + 1, 0).getDate())));
-        var t = H.monthName(a.y, a.m) + ' ' + H.gematria(a.y);
-        if (a.m !== b.m) t = H.monthName(a.y, a.m) + ' – ' + H.monthName(b.y, b.m) + ' ' + H.gematria(b.y);
-        mt.appendChild(el('small', null, t));
-      }
       grid.textContent = '';
       DOWS.forEach(function (d) { grid.appendChild(el('div', 'pk-dow', d)); });
-      var first = new Date(vy, vm, 1).getDay(), len = new Date(vy, vm + 1, 0).getDate();
-      for (var i = 0; i < first; i++) grid.appendChild(el('div'));
-      for (let d = 1; d <= len; d++) {
-        var str = ymd(vy, vm, d);
-        var b2 = el('button', 'pk-day');
-        b2.type = 'button';
-        b2.appendChild(el('b', null, String(d)));
-        if (H && D) b2.appendChild(el('i', null, H.gematria(H.toHebrew(D.toDayNum(str)).d)));
-        if (str === todayStr) b2.classList.add('pk-today');
-        if (str === picked) b2.classList.add('pk-sel');
-        b2.disabled = (min && str < min) || (max && str > max);
-        b2.addEventListener('click', function () { picked = str; if (withTime) render(); else commit(); });
-        grid.appendChild(b2);
+      if (alt) alt.textContent = mode === 'heb' ? 'לא יודעים מה התאריך העברי?' : 'חזרה לבחירה לפי תאריך עברי';
+      if (mode === 'heb') {
+        var mb = el('button', 'pk-pick', H.monthName(hv.y, hv.m) + ' ▾'), yb = el('button', 'pk-pick', H.gematria(hv.y) + ' ▾');
+        mb.type = yb.type = 'button';
+        mb.setAttribute('aria-label', 'בחירת חודש עברי'); yb.setAttribute('aria-label', 'בחירת שנה עברית');
+        mb.addEventListener('click', function () {
+          chooseFrom('חודש עברי', hOrder(hv.y).map(function (m) { return { label: H.monthName(hv.y, m), value: m }; }), hv.m,
+            function (m) { hv = { y: hv.y, m: m }; render(); });
+        });
+        yb.addEventListener('click', function () {
+          var cy = H.toHebrew(D.toDayNum(todayStr)).y, from = Math.min(cy - 130, hv.y), to = Math.max(cy + 15, hv.y), items = [];
+          for (var y = to; y >= from; y--) items.push({ label: H.gematria(y) + ' (' + y + ')', value: y });
+          chooseFrom('שנה עברית', items, hv.y, function (y) { hv = hFix(y, hv.m); render(); });
+        });
+        mt.append(mb, ' ', yb);
+        var len = H.monthLength(hv.y, hv.m), start = H.fromHebrew(hv.y, hv.m, 1);
+        var g1 = D.toYmd(start), g2 = D.toYmd(start + len - 1);
+        var m1 = +g1.slice(5, 7) - 1, m2 = +g2.slice(5, 7) - 1;
+        mt.appendChild(el('small', null, m1 === m2 ? MONTHS[m1] + ' ' + g1.slice(0, 4) : MONTHS[m1] + ' – ' + MONTHS[m2] + ' ' + g2.slice(0, 4)));
+        for (var i = D.dow(start); i > 0; i--) grid.appendChild(el('div'));
+        for (var d = 1; d <= len; d++) {
+          var str = D.toYmd(start + d - 1), gd = +str.slice(8), gm = +str.slice(5, 7);
+          dayCell(str, H.gematria(d), (d === 1 || gd === 1) ? gd + '/' + gm : String(gd));
+        }
+      } else {
+        mt.append(MONTHS[vm] + ' ' + vy);
+        if (H && D) {
+          var a = H.toHebrew(D.toDayNum(ymd(vy, vm, 1))), b = H.toHebrew(D.toDayNum(ymd(vy, vm, new Date(vy, vm + 1, 0).getDate())));
+          var t = H.monthName(a.y, a.m) + ' ' + H.gematria(a.y);
+          if (a.m !== b.m) t = H.monthName(a.y, a.m) + ' – ' + H.monthName(b.y, b.m) + ' ' + H.gematria(b.y);
+          mt.appendChild(el('small', null, t));
+        }
+        var first = new Date(vy, vm, 1).getDay(), glen = new Date(vy, vm + 1, 0).getDate();
+        for (var j = 0; j < first; j++) grid.appendChild(el('div'));
+        for (var k = 1; k <= glen; k++) {
+          var gs = ymd(vy, vm, k);
+          dayCell(gs, String(k), (H && D) ? H.gematria(H.toHebrew(D.toDayNum(gs)).d) : '');
+        }
       }
     }
-    next.addEventListener('click', function () { vm--; if (vm < 0) { vm = 11; vy--; } render(); });
-    prev.addEventListener('click', function () { vm++; if (vm > 11) { vm = 0; vy++; } render(); });
+    next.addEventListener('click', function () {
+      if (mode === 'heb') hv = hStep(hv, -1);
+      else { vm--; if (vm < 0) { vm = 11; vy--; } }
+      render();
+    });
+    prev.addEventListener('click', function () {
+      if (mode === 'heb') hv = hStep(hv, 1);
+      else { vm++; if (vm > 11) { vm = 0; vy++; } }
+      render();
+    });
     render();
     s.show();
   }
+
+  /* ---------- כיתוב עם התאריך העברי מתחת לשדה תאריך ----------
+   * השדה עצמו מציג תאריך לועזי (כך הדפדפן מציג ערך של date), לכן מתחתיו נכתב התאריך העברי של הערך. */
+  var caps = [];
+  function hebText(v) {
+    if (!H || !D || !YMD.test((v || '').slice(0, 10))) return '';
+    var h = H.toHebrew(D.toDayNum(v.slice(0, 10)));
+    return H.gematria(h.d) + ' ' + H.monthName(h.y, h.m) + ' ' + H.gematria(h.y);
+  }
+  function addCap(inp) {
+    if (inp.dataset.pkCap || inp.hasAttribute('data-native') || inp.hasAttribute('data-greg') || inp.closest('.pk')) return;
+    inp.dataset.pkCap = '1';
+    var c = el('small', 'pk-cap');
+    inp.insertAdjacentElement('afterend', c);
+    caps.push({ inp: inp, c: c, v: null });
+  }
+  function refreshCaps() {
+    caps = caps.filter(function (x) { return x.inp.isConnected; });
+    caps.forEach(function (x) { if (x.inp.value !== x.v) { x.v = x.inp.value; x.c.textContent = hebText(x.v); } });
+  }
+  function scanCaps(root) {
+    if (!root.querySelectorAll) return;
+    if (root.matches && root.matches('input[type=date],input[type=datetime-local]')) addCap(root);
+    root.querySelectorAll('input[type=date],input[type=datetime-local]').forEach(addCap);
+    refreshCaps();
+  }
+  ready.then(function () {
+    scanCaps(document);
+    new MutationObserver(function (muts) {
+      muts.forEach(function (m) { m.addedNodes.forEach(function (n) { if (n.nodeType === 1) scanCaps(n); }); });
+    }).observe(document.body, { childList: true, subtree: true });
+    document.addEventListener('input', refreshCaps, true);
+    document.addEventListener('change', refreshCaps, true);
+    setInterval(refreshCaps, 700);
+  });
 
   /* ---------- חיבור לשדות ---------- */
   function isSel(t) { return t && t.tagName === 'SELECT' && !t.multiple && !(t.size > 1) && !t.hasAttribute('data-native') && !t.closest('.pk'); }
@@ -269,12 +405,12 @@
   document.addEventListener('click', function (e) {
     var t = e.target;
     if (isSel(t)) { e.preventDefault(); openSelect(t); }
-    else if (isDate(t)) { e.preventDefault(); openDate(t); }
+    else if (isDate(t)) { e.preventDefault(); ready.then(function () { openDate(t); }); }
   }, true);
   document.addEventListener('keydown', function (e) {
     var t = e.target;
     if (e.defaultPrevented || e.ctrlKey || e.metaKey) return;
     if (isSel(t) && (e.key === 'Enter' || e.key === ' ' || (e.altKey && e.key === 'ArrowDown'))) { e.preventDefault(); openSelect(t); }
-    else if (isDate(t) && (e.key === 'Enter' || (e.altKey && e.key === 'ArrowDown'))) { e.preventDefault(); openDate(t); }
+    else if (isDate(t) && (e.key === 'Enter' || (e.altKey && e.key === 'ArrowDown'))) { e.preventDefault(); ready.then(function () { openDate(t); }); }
   }, true);
 })();
