@@ -290,11 +290,16 @@ function ruleTime(rule, ctx, seen = new Set()) {
  * ערך "קידוש": הטקסט של הכלל הזה לא זמן, אלא ההודעה בנוסח שהגבאי קבע בלוח הקידושים –
  * השורה הראשונה, "ע״י", בעל הקידוש והסיבה – לפי מי שאושר לקידוש בתאריך של היום הזה.
  * השורות כמו בלוח הקידושים, עם ירידת שורה ביניהן: הכותרת / "ע״י" ובעל הקידוש / הסיבה.
- * אין אישור קידוש לתאריך – אין ערך.
+ * אין אישור קידוש לתאריך – רק השורה הראשונה בנוסח הגבאי ("קידוש והתוועדות לאחר התפילה"), בלי "ע״י" ובלי שם.
  */
+const DEFAULT_KIDDUSH_HEADING = 'קידוש לאחר התפילה';
 function kiddushRow(rule, ctx) {
   const info = ctx.kiddush && ctx.kiddush.get(toYmd(ctx.day.day));
-  if (!info) return null;
+  if (!info) {
+    const w = ctx.kiddush && ctx.kiddush.wording;
+    const heading = String((w && w.heading) || DEFAULT_KIDDUSH_HEADING).replace(/\s+/g, ' ').trim();
+    return { text: heading, key: 9998 };
+  }
   const line = (...parts) => parts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
   // שורת הסיבה כבר כוללת את הסוג: "לרגל בר המצווה", "לעילוי נשמת … ז״ל"
   // כמה סיבות מגיעות מופרדות בירידת שורה, וכל אחת נשארת בשורה משלה
