@@ -500,7 +500,7 @@ function blankRows(canvas) {
 }
 
 /** התקרה להגדלת הכתב כשנמחקת שורה: פי כמה מהגודל המקורי */
-const MAX_ERASE_SCALE = 1.35;
+const MAX_ERASE_SCALE = 1.8;
 
 /**
  * מחיקת טקסט מהתמונה (אזורים מסוג "מחיקה"), וריווח מחדש של השורות סביבו: בקטע שבין הקווים האופקיים
@@ -644,7 +644,7 @@ function respace(src, erased, shift) {
     };
     const cut = splitTall(cur, merge(now), true), sides = cut.sides;
     const lines = merge(cut.out), old = merge(splitTall(before, merge(bands(before.blank, top, bottom)), false).out), n = lines.length;
-    if (n < 2 || !old.length) continue;
+    if (!n || !old.length) continue;
     // הרווחים לפני המחיקה, כדי לדעת מה הגודל הרגיל של רווח שהטקסט שבו נמחק
     const oldGaps = old.slice(1).map((r, i) => ({ s: old[i].e, e: r.s }));
     const gaps = lines.slice(1).map((r, i) => {
@@ -657,37 +657,47 @@ function respace(src, erased, shift) {
     const head = Math.min(lines[0].s, old[0].s) - top, tail = bottom - Math.max(lines[n - 1].e, old[old.length - 1].e);
     const inked = lines.reduce((t, r) => t + r.e - r.s, 0), total = gaps.reduce((t, g) => t + g, 0);
     const avail = bottom - top - head - tail;
-    if (total < 1 || avail - inked - total < 1) continue;
-    // המקום שהתפנה מתחלק באופן יחסי: גם השורות עצמן (הכתב) גדלות, באותו יחס שגדלים הרווחים, ורק מה שנשאר מתווסף לרווחים.
-    // הגדלה מוגבלת לרוחב העמוד (הכתב לא יוצא מהשוליים) ולתקרה, כדי שמחיקת שורה אחת לא תנפח את הכל
+    if ((n > 1 && total < 1) || avail - inked - total < 1) continue;
+    // המקום שהתפנה מתחלק באופן יחסי: הכתב גדל באותו יחס שגדלים הרווחים, ורק מה שנשאר מתווסף לרווחים.
+    // כל שורה גדלה עד הרוחב שמותר לה (הכתב לא יוצא מהשוליים ולא מגיע לעצם שבצד), כך ששורה רחבה אחת
+    // לא עוצרת את ההגדלה של כל השאר. הגדלה מוגבלת לתקרה, כדי שמחיקת שורה אחת לא תנפח את הכל
     const spans = lines.map(r => r.sp !== undefined ? r.sp : span(r.s, r.e));
     const seen = spans.filter(Boolean);
-    let f = 1, pivot = W / 2;
+    const lim = lines.map(() => 1);
+    let pivot = W / 2;
     if (seen.length) {
       const centers = seen.map(x => (x.l + x.r) / 2).sort((a, b) => a - b);
       pivot = centers[centers.length >> 1];
       const minL = Math.min(...seen.map(x => x.l)), maxR = Math.max(...seen.map(x => x.r));
       const m = Math.max(2, 0.5 * Math.min(minL, W - maxR));
-      const half = Math.max(pivot - minL, maxR - pivot, 1);
-      f = Math.min(MAX_ERASE_SCALE, avail / (inked + total), Math.min(pivot - m, W - m - pivot) / half);
-      // שורה שליד עצם בצד: הכתב המוגדל לא מגיע אליו
       const gapX = Math.max(8, lineH * 0.3);
       lines.forEach((r, i) => {
-        const sp = spans[i], sd = r.side;
-        if (!sd || !sp) return;
-        if (sd.r <= sp.l && pivot > sp.l) f = Math.min(f, (pivot - (sd.r + gapX)) / (pivot - sp.l));
-        if (sd.l >= sp.r && sp.r > pivot) f = Math.min(f, ((sd.l - gapX) - pivot) / (sp.r - pivot));
+        const sp = spans[i];
+        if (!sp) return;
+        let f = Math.min(MAX_ERASE_SCALE,
+          sp.l < pivot ? (pivot - m) / (pivot - sp.l) : Infinity,
+          sp.r > pivot ? (W - m - pivot) / (sp.r - pivot) : Infinity);
+        // שורה שליד עצם בצד: הכתב המוגדל לא מגיע אליו
+        const sd = r.side;
+        if (sd && sd.r <= sp.l && pivot > sp.l) f = Math.min(f, (pivot - (sd.r + gapX)) / (pivot - sp.l));
+        if (sd && sd.l >= sp.r && sp.r > pivot) f = Math.min(f, ((sd.l - gapX) - pivot) / (sp.r - pivot));
+        lim[i] = Math.max(1, f);
       });
     }
-    if (!(f > 1.01)) f = 1;
-    const hs = lines.map((r, i) => f === 1 || !spans[i] ? r.e - r.s : Math.round((r.e - r.s) * f));
+    // יחס ההגדלה המשותף: הגדול ביותר שבו השורות (כל אחת עד התקרה שלה) והרווחים ממלאים את המקום
+    const fill = g => lines.reduce((t, r, i) => t + (r.e - r.s) * Math.min(g, lim[i]), 0) + total * g;
+    let lo = 1, hi = MAX_ERASE_SCALE;
+    if (fill(hi) <= avail) lo = hi;
+    else for (let it = 0; it < 30; it++) { const mid = (lo + hi) / 2; if (fill(mid) <= avail) lo = mid; else hi = mid; }
+    const fs = lines.map((r, i) => { const f = Math.min(lo, lim[i]); return f > 1.01 && spans[i] ? f : 1; });
+    const hs = lines.map((r, i) => fs[i] === 1 ? r.e - r.s : Math.round((r.e - r.s) * fs[i]));
     const room = avail - hs.reduce((t, h) => t + h, 0);
-    if (room - total < 1) continue;
-    // כל רווח גדל לפי הגודל שלו
-    const k = room / total, to = [];
-    let acc = top + head;
+    if (room < 1 || (n > 1 && room - total < 1)) continue;
+    // כל רווח גדל לפי הגודל שלו. שורה אחת שנשארה בקטע – באמצע המקום
+    const k = n > 1 ? room / total : 0, to = [];
+    let acc = top + head + (n > 1 ? 0 : room / 2);
     lines.forEach((r, i) => {
-      to.push(i === n - 1 ? bottom - tail - hs[i] : Math.round(acc));
+      to.push(i === n - 1 && n > 1 ? bottom - tail - hs[i] : Math.round(acc));
       acc += hs[i] + (i < n - 1 ? gaps[i] * k : 0);
     });
     // התמונה החדשה של הקטע: כל שורה מועתקת למקומה החדש, והרווחים ממולאים בשורה ריקה מתוכם (כדי שקווי מסגרת אנכיים יימשכו)
@@ -727,6 +737,7 @@ function respace(src, erased, shift) {
         const r = lines[i], h = r.e - r.s, sp = spans[i];
         // שורה מפס שיש בו עצם בצד: מועתקת מהתמונה שבלי העצם; העצם עצמו נכתב בסוף, כיחידה אחת
         const from = r.img || src, fy = r.img ? r.s - r.imgY : r.s;
+        const f = fs[i];
         if (f === 1 || !sp) t2.drawImage(from, 0, fy, W, h, 0, at - top, W, h);
         else {
           // שורה מוגדלת: הרקע (עם קווי המסגרת) משורה ריקה, והכתב עצמו מוגדל סביב מרכז הקטע
@@ -751,7 +762,7 @@ function respace(src, erased, shift) {
     }
     c2.drawImage(tmp, 0, top);
     // התיבות זזות (ומוגדלות) עם השורות: קודם השורות שיורדות, מהתחתונה, ואחר כך שעולות, מהעליונה – כדי שאף שורה לא תוזז פעמיים
-    const shifts = lines.map((r, i) => ({ s: r.s, e: r.e, k: to[i] - r.s, f: f === 1 || !spans[i] ? 1 : hs[i] / (r.e - r.s) })).filter(m => m.k || m.f !== 1);
+    const shifts = lines.map((r, i) => ({ s: r.s, e: r.e, k: to[i] - r.s, f: fs[i] === 1 ? 1 : hs[i] / (r.e - r.s) })).filter(m => m.k || m.f !== 1);
     for (const m of shifts.filter(m => m.k > 0 || (m.k === 0 && m.f !== 1)).reverse()) shift(m.s, m.e, m.k, m.f, pivot);
     for (const m of shifts.filter(m => m.k < 0)) shift(m.s, m.e, m.k, m.f, pivot);
   }
