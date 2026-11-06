@@ -104,6 +104,56 @@ export function refineBox(canvas, box) {
 }
 
 /**
+ * הגובה של הטקסט שבתיבה לפי הדיו בפועל, כשהתיבה גבוהה ממנו ונכנסת לשורה שכנה: { y, h }, או null.
+ * בניגוד ל-refineBox, שורה נחשבת שורה של הטקסט רק כשיש בה הרבה דיו – קו דק שעובר בתיבה (הזנב של בועה,
+ * קו מסגרת) לא מחבר אותה לשורה שמעליה או מתחתיה
+ */
+function tightBox(canvas, b) {
+  const size = b.size;
+  const x0 = Math.max(0, Math.floor(b.x)), x1 = Math.min(canvas.width, Math.ceil(b.x + b.w));
+  const y0 = Math.max(0, Math.floor(b.y)), y1 = Math.min(canvas.height, Math.ceil(b.y + b.h));
+  const W = x1 - x0, H = y1 - y0;
+  if (W < 4 || H < 4) return null;
+  const data = canvas.getContext('2d', { willReadFrequently: true }).getImageData(x0, y0, W, H).data;
+  const px = (x, y) => { const i = (y * W + x) * 4; return [data[i], data[i + 1], data[i + 2]]; };
+  const bg = median([...Array(W).keys()].flatMap(x => [px(x, 0), px(x, H - 1)]));
+  const count = y => { let n = 0; for (let x = 0; x < W; x++) if (dist(px(x, y), bg) > 70) n++; return n; };
+  const rows = [...Array(H).keys()].map(count);
+  const thr = Math.max(4, W * 0.015);
+  const at = Math.round(b.baseline - size * 0.35) - y0;
+  if (at < 0 || at >= H || rows[at] <= thr) return null;
+  // מאמצע האותיות לשני הכיוונים, עד שורה כמעט ריקה; רווח קטן (ניקוד, גרש) לא עוצר
+  const gapMax = Math.max(2, Math.round(size * 0.12));
+  let top = at, bottom = at;
+  for (let y = at - 1, gap = 0; y >= 0 && gap <= gapMax; y--) { if (rows[y] > thr) { top = y; gap = 0; } else gap++; }
+  for (let y = at + 1, gap = 0; y < H && gap <= gapMax; y++) { if (rows[y] > thr) { bottom = y; gap = 0; } else gap++; }
+  // קצוות דקים של אותיות (ל׳ שעולה, ק׳ שיורדת): ממשיכים רק בדיו שמחובר לדיו שכבר בשורות של הטקסט,
+  // כדי לא לצרף קו שעובר לידן (הזנב של בועה) או את השורה השכנה
+  const ink = (x, y) => dist(px(x, y), bg) > 70;
+  const grow = (from, step, reach) => {
+    let on = new Uint8Array(W), edge = from;
+    for (let x = 0; x < W; x++) if (ink(x, from)) on[x] = 1;
+    for (let y = from + step, k = 0; y >= 0 && y < H && k < reach; y += step, k++) {
+      if (rows[y] > thr) break;
+      const next = new Uint8Array(W);
+      let any = false;
+      for (let x = 0; x < W; x++) if (ink(x, y) && (on[x] || on[x - 1] || on[x + 1])) { next[x] = 1; any = true; }
+      if (!any) break;
+      on = next; edge = y;
+    }
+    return edge;
+  };
+  const reach = Math.round(size * 0.5);
+  top = grow(top, -1, reach);
+  bottom = grow(bottom, 1, reach);
+  // הדיו ממלא את כל התיבה: אין שורה שכנה בתוכה
+  if (top === 0 && bottom === H - 1) return null;
+  const ny = y0 + top - 2, nh = bottom - top + 5;
+  if (nh >= b.h - 2 || nh < size * 0.4) return null;
+  return { y: ny, h: nh };
+}
+
+/**
  * ניקוד או סימן שנפרד מהאזור בשורה ריקה, מעליו או מתחתיו: כמה פיקסלים צריך להוסיף למחיקה כדי שלא יישאר בתמונה.
  * בתבניות שנשמרו לפני ש-refineBox כלל אותם, וגם כשהתיבה לא עברה התאמה
  */
@@ -1038,8 +1088,19 @@ export async function templateCanvas(tpl, values) {
     candidates: (tpl.candidates || []).map(c => ({ ...c, box: copy(c.box) })) };
   // המפתח של אזור טקסט נקבע לפי מקומו בקובץ – נשמר לפני שהאזורים זזים בריווח מחדש, כדי שעריכות לשבוע ימשיכו להתאים
   for (const s of tpl.slots) if (s.box) s.renderKey = slotKey(s);
+  // תיבה שסומנה גבוהה מהטקסט שלה ונכנסת לשורה שמעליה או מתחתיה (למשל אזור טקסט שמגיע עד אמצע "מנחה"):
+  // הגובה שלה מותאם לדיו בפועל, כדי שהרקע שמכסה את הטקסט הישן לא ימחק חלק מהשורה השכנה
+  const hits = (a, b) => a && b && a !== b && Math.min(a.x + a.w, b.x + b.w) > Math.max(a.x, b.x) && Math.min(a.y + a.h, b.y + b.h) > Math.max(a.y, b.y);
+  for (const s of tpl.slots) {
+    const b = s.box;
+    if (!b || !b.size || b.baseline == null || s.kind === 'erase') continue;
+    if (!tpl.slots.some(o => o !== s && o.kind !== 'erase' && (hits(b, o.box) || hits(b, o.labelBox)))) continue;
+    const r = tightBox(src, b);
+    if (r) { Object.assign(b, r); b.tight = true; }
+  }
   // ניקוד מופרד שמעל האזור או מתחתיו נמחק יחד איתו
-  for (const s of tpl.slots) if (s.box) Object.assign(s.box, markMargins(src, s.box));
+  // בתיבה שהותאמה לדיו אין מה להוסיף: מה שמעליה ומתחתיה הוא השורה השכנה (או קו של בועה), לא ניקוד
+  for (const s of tpl.slots) if (s.box && !s.box.tight) Object.assign(s.box, markMargins(src, s.box));
   // המקום הישן של השם זז יחד עם הטקסט שבקובץ, כדי שיימצא לפיו הטקסט של השם (redrawLabel)
   const allBoxes = [...tpl.slots.flatMap(s => [s.box, s.labelBox, s.origin && s.origin.labelBox]), ...tpl.candidates.map(c => c.box)].filter(Boolean);
   // כל ההזזות לפי הסדר: מהן יודעים איפה נקודה מהקובץ נמצאת בתמונה החדשה, ולהפך
@@ -1115,8 +1176,10 @@ export async function templateCanvas(tpl, values) {
     const multi = s.wrap && s.srcLines > 1;
     const split = w > room && multi && !chosen ? splitLines(text, str => writeAt(str, size, baseline, false), count) : null;
     if ((w > room || own) && chosen) {
-      const cw = multi || own ? widest(chosen) : w;
-      if ((!multi && !own) || cw > room) size = Math.max(size * 0.7, size * room / cw);
+      // השורות שנבחרו נכתבות בגודל המקורי, ומוקטנות רק כשהשורה הרחבה ביניהן עדיין לא נכנסת.
+      // המקום לשורות הנוספות נפתח בריווח העמוד (שלב 2), כדי שהטקסט יישאר בגודל של השורות שלידו
+      const cw = widest(chosen);
+      if (cw > room) size = Math.max(size * 0.7, size * room / cw);
       lines = chosen;
       w = widest(lines);
     } else if (split && widest(split) <= room) {
@@ -1162,7 +1225,9 @@ export async function templateCanvas(tpl, values) {
   // וטקסט של כמה שורות נכתב כבר כאן על התמונה, כדי שהרווח מהשורה שמתחתיו יימדד מהטקסט החדש
   const spaceOf = (p, sz) => {
     const b = p.s.box;
-    return verticalRoom(src, b, Math.min(b.x, p.cx - p.w / 2), Math.max(b.x + b.w, p.cx + p.w / 2), sideBoxes(tpl, p.s), p.st.bg, sz * (p.n + 1), sz);
+    // כמה שורות: נבדקות רק העמודות של הטקסט עצמו, כדי שקו שעובר בקצה התיבה (הזנב של בועה) לא ייחשב שורה שכנה
+    const x0 = p.n > 1 ? p.cx - p.w / 2 : Math.min(b.x, p.cx - p.w / 2), x1 = p.n > 1 ? p.cx + p.w / 2 : Math.max(b.x + b.w, p.cx + p.w / 2);
+    return verticalRoom(src, b, x0, x1, sideBoxes(tpl, p.s), p.st.bg, sz * (p.n + 1), sz);
   };
   const edges = paraEdges(tpl.slots.filter(s => s.kind !== 'erase'));
   // המרווח הרצוי: { px, exact }. exact – בדיוק כך (הגבאי קבע), אחרת – לפחות כך. null – נשאר כמו בקובץ
@@ -1288,7 +1353,10 @@ export async function templateCanvas(tpl, values) {
       if (slack < 0) shift = (space.top + space.bottom) / 2 - (top0 + bottom0) / 2;
       else {
         const k = a + z > slack ? slack / (a + z) : 1, lo = lo0 + a * k, hi = hi0 - z * k;
+        // טקסט שקיבל יותר שורות ממה שהיה לו בקובץ: באמצע המקום, כך שהרווח מעליו ומתחתיו שווה
+        const grew = n > Math.max(1, s.srcLines || 1);
         shift = top && top.exact ? lo - top0 : bottom && bottom.exact ? hi - bottom0
+          : grew ? (lo + hi) / 2 - (top0 + bottom0) / 2
           : top0 < lo ? lo - top0 : bottom0 > hi ? hi - bottom0 : 0;
       }
       baselines = lines.map((ln, i) => first + shift + i * lineGap);
