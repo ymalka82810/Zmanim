@@ -462,6 +462,73 @@ function closeRows(canvas, from, to, d, shift) {
   return total;
 }
 
+/**
+ * עצמים בצד השורות (בועת הסבר, מסגרת קטנה): רכיב דיו מחובר שגבוה מכמה שורות, צר מרוב העמוד ולא עובר במרכז
+ * העמוד, יחד עם מה שבתוכו. הם נמחקים מהתמונה (צבע הרקע במקומם), כדי שהשורות שלידם ייחשבו שורות עם רווחים
+ * ביניהן, ומוחזרים כתמונות שקופות מסביב: { img, y0, y1 } – כדי להחזיר כל אחד כיחידה אחת אחרי ההזזה
+ */
+function takeSides(canvas, R) {
+  const { W, H, c2, blank, isInk, bg } = R;
+  // גובה שורה רגיל: החציון של הפסים עם דיו
+  const hs = [];
+  for (let y = 0, s0 = -1; y <= H; y++) {
+    if (y < H && !blank[y]) { if (s0 < 0) s0 = y; } else if (s0 >= 0) { hs.push(y - s0); s0 = -1; }
+  }
+  if (!hs.length) return [];
+  hs.sort((a, b) => a - b);
+  const lineH = hs[hs.length >> 1];
+  const mask = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (isInk(x, y)) mask[y * W + x] = 1;
+  const lab = new Int32Array(W * H), comps = [];
+  for (let k0 = 0; k0 < W * H; k0++) {
+    if (!mask[k0] || lab[k0]) continue;
+    const id = comps.length + 1, c = { id, x0: W, x1: -1, y0: H, y1: -1 }, stack = [k0];
+    lab[k0] = id;
+    while (stack.length) {
+      const q = stack.pop(), x = q % W, y = (q - x) / W;
+      if (x < c.x0) c.x0 = x; if (x > c.x1) c.x1 = x; if (y < c.y0) c.y0 = y; if (y > c.y1) c.y1 = y;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const k = ny * W + nx;
+        if (mask[k] && !lab[k]) { lab[k] = id; stack.push(k); }
+      }
+    }
+    comps.push(c);
+  }
+  const big = comps.filter(c => c.y1 - c.y0 > lineH * 2.2 && c.x1 - c.x0 < W * 0.6 && !(c.x0 <= W / 2 && c.x1 >= W / 2));
+  if (!big.length) return [];
+  const side = new Uint8Array(comps.length + 1);
+  for (const g of big) {
+    side[g.id] = g.id;
+    for (const c of comps) if (!side[c.id] && c.x0 >= g.x0 && c.x1 <= g.x1 && c.y0 >= g.y0 && c.y1 <= g.y1) side[c.id] = g.id;
+  }
+  const data = c2.getImageData(0, 0, W, H), out = [];
+  for (const g of big) {
+    const x0 = Math.max(0, g.x0 - 2), y0 = Math.max(0, g.y0 - 2), w = Math.min(W, g.x1 + 3) - x0, h = Math.min(H, g.y1 + 3) - y0;
+    const only = new ImageData(w, h);
+    // סביב כל פיקסל של העצם עוד 2 פיקסלים (החלקת הקצוות), בלי לגעת בדיו שאינו שלו
+    for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
+      let hit = false;
+      for (let dy = -2; dy <= 2 && !hit; dy++) for (let dx = -2; dx <= 2 && !hit; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if (nx >= 0 && ny >= 0 && nx < W && ny < H && side[lab[ny * W + nx]] === g.id) hit = true;
+      }
+      const id = lab[y * W + x];
+      if (!hit || (id && side[id] !== g.id)) continue;
+      const i = (y * W + x) * 4, j = ((y - y0) * w + (x - x0)) * 4;
+      for (let t = 0; t < 4; t++) only.data[j + t] = data.data[i + t];
+      data.data[i] = bg[0]; data.data[i + 1] = bg[1]; data.data[i + 2] = bg[2]; data.data[i + 3] = 255;
+    }
+    const img = document.createElement('canvas');
+    img.width = w; img.height = h;
+    img.getContext('2d').putImageData(only, 0, 0);
+    out.push({ img, x: x0, y0, y1: y0 + h });
+  }
+  c2.putImageData(data, 0, 0);
+  return out;
+}
+
 /** הכי פחות שמוקטן העמוד כולו כשאין מספיק רווחים לטקסט שנוסף */
 const MIN_PAGE_SCALE = 0.7;
 
@@ -473,7 +540,16 @@ const MIN_PAGE_SCALE = 0.7;
  * יחסי זה לזה ולא רק הטקסט החדש יוקטן. shift – כמו ב-openRows. מחזיר את יחס ההקטנה (1 – בלי הקטנה)
  */
 function makeRoom(canvas, from, to, d, shift) {
-  const R = blankRows(canvas), { W, H, c2, blank, bg, frame } = R;
+  // בועה בצד השורות לא נחשבת: בלעדיה יש רווחים בין השורות שלידה. היא חוזרת בסוף, כיחידה אחת
+  const R0 = blankRows(canvas), sides = takeSides(canvas, R0);
+  const R = sides.length ? blankRows(canvas) : R0, { W, H, c2, blank, bg, frame } = R;
+  let segs = [];
+  const putSides = () => {
+    for (const sd of sides) {
+      const mid = (sd.y0 + sd.y1) / 2, m = segs.find(m => mid >= m.s && mid < m.e) || segs.find(m => m.s >= mid);
+      c2.drawImage(sd.img, sd.x, sd.y0 + (m ? m.o : 0));
+    }
+  };
   const runs = [];
   for (let y = 0, s = -1; y <= H; y++) {
     if (y < H && blank[y]) { if (s < 0) s = y; } else if (s >= 0) { runs.push({ s, e: y }); s = -1; }
@@ -483,7 +559,7 @@ function makeRoom(canvas, from, to, d, shift) {
     const s = Math.max(r.s, Math.ceil(from)), e = Math.min(r.e, Math.floor(to));
     if (e - s > 0 && (!best || e - s > best.e - best.s)) best = { s, e, run: r };
   }
-  if (!best) return 1;
+  if (!best) { putSides(); return 1; }
   const cut = (best.s + best.e) >> 1;
   const need = Math.ceil(d);
   // שורה ריקה למילוי: צבע הרקע, ורק קווי המסגרת האנכיים
@@ -520,7 +596,6 @@ function makeRoom(canvas, from, to, d, shift) {
     tmp.width = W; tmp.height = H;
     const t2 = tmp.getContext('2d');
     t2.imageSmoothingEnabled = false;
-    const segs = [];
     let y = 0, o = 0;
     for (const ev of events) {
       if (ev.at > y) { t2.drawImage(canvas, 0, y, W, ev.at - y, 0, y + o, W, ev.at - y); segs.push({ s: y, e: ev.at, o }); }
@@ -534,6 +609,7 @@ function makeRoom(canvas, from, to, d, shift) {
     for (const m of segs.filter(m => m.o < 0)) shift(m.s, m.e, m.o);
     for (const m of segs.filter(m => m.o > 0).reverse()) shift(m.s, m.e, m.o);
   }
+  putSides();
   const left = need - got;
   if (left < 1) return 1;
   // העמוד מלא: מקטינים את כולו, כדי שגם הטקסט החדש (שמוקטן איתו) ייכנס. f = H / (H + left)
