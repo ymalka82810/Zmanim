@@ -498,7 +498,8 @@ function takeSides(canvas, R) {
   }
   const big = comps.filter(c => c.y1 - c.y0 > lineH * 2.2 && c.x1 - c.x0 < W * 0.6 && !(c.x0 <= W / 2 && c.x1 >= W / 2));
   if (!big.length) return [];
-  const side = new Uint8Array(comps.length + 1);
+  // Int32Array: מספרי הרכיבים בעמוד שלם גדולים מ-255
+  const side = new Int32Array(comps.length + 1);
   for (const g of big) {
     side[g.id] = g.id;
     for (const c of comps) if (!side[c.id] && c.x0 >= g.x0 && c.x1 <= g.x1 && c.y0 >= g.y0 && c.y1 <= g.y1) side[c.id] = g.id;
