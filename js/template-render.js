@@ -462,6 +462,104 @@ function closeRows(canvas, from, to, d, shift) {
   return total;
 }
 
+/** הכי פחות שמוקטן העמוד כולו כשאין מספיק רווחים לטקסט שנוסף */
+const MIN_PAGE_SCALE = 0.7;
+
+/**
+ * פותח d שורות ריקות ברווח שבין from ל-to, בשביל טקסט שנוסף ותופס יותר מקום, תוך ריווח יחסי של העמוד כולו:
+ * המקום נלקח מכל הרווחים שבין השורות בעמוד – מעל ומתחת – כל רווח לפי הגודל שלו, וכל רווח שומר לפחות
+ * כמחצית מגודלו (כך שהעמוד נשאר מאוזן ולא רק מה שמתחת נדחס). מה שמעל המקום שנפתח עולה, ומה שמתחתיו יורד.
+ * אם גם זה לא מספיק – העמוד כולו מוקטן באותו יחס (רוחב וגובה, סביב המרכז), כדי שכל הכתב יישאר בגודל
+ * יחסי זה לזה ולא רק הטקסט החדש יוקטן. shift – כמו ב-openRows. מחזיר את יחס ההקטנה (1 – בלי הקטנה)
+ */
+function makeRoom(canvas, from, to, d, shift) {
+  const R = blankRows(canvas), { W, H, c2, blank, bg, frame } = R;
+  const runs = [];
+  for (let y = 0, s = -1; y <= H; y++) {
+    if (y < H && blank[y]) { if (s < 0) s = y; } else if (s >= 0) { runs.push({ s, e: y }); s = -1; }
+  }
+  let best = null;
+  for (const r of runs) {
+    const s = Math.max(r.s, Math.ceil(from)), e = Math.min(r.e, Math.floor(to));
+    if (e - s > 0 && (!best || e - s > best.e - best.s)) best = { s, e, run: r };
+  }
+  if (!best) return 1;
+  const cut = (best.s + best.e) >> 1;
+  const need = Math.ceil(d);
+  // שורה ריקה למילוי: צבע הרקע, ורק קווי המסגרת האנכיים
+  const blankRow = document.createElement('canvas');
+  blankRow.width = W; blankRow.height = 1;
+  {
+    const row = c2.getImageData(0, cut, W, 1);
+    for (let x = 0; x < W; x++) if (!frame[x]) { const k = x * 4; row.data[k] = bg[0]; row.data[k + 1] = bg[1]; row.data[k + 2] = bg[2]; row.data[k + 3] = 255; }
+    blankRow.getContext('2d').putImageData(row, 0, 0);
+  }
+  // הרווחים שבין השורות (בלי השוליים שבראש העמוד ובתחתיתו, ובלי הרווח שבו נפתח המקום)
+  const inner = runs.filter(r => r.s > 0 && r.e < H && r !== best.run);
+  const lens = inner.map(r => r.e - r.s).sort((a, b) => a - b);
+  const med = lens.length ? lens[lens.length >> 1] : 0;
+  // רווח קטן מאוד (ניקוד שנפרד מהאות) אינו רווח בין שורות
+  const gaps = inner.filter(r => r.e - r.s >= Math.max(3, med * 0.3)).map(r => {
+    const len = r.e - r.s, keep = Math.max(1, Math.ceil(len * 0.5));
+    return { r, cap: Math.max(0, len - keep) };
+  }).filter(g => g.cap > 0);
+  const cap = gaps.reduce((t, g) => t + g.cap, 0);
+  // כל רווח נותן לפי היחס של מה שהוא יכול לתת
+  let got = 0;
+  for (const g of gaps) { g.t = cap <= need ? g.cap : Math.floor(g.cap * need / cap); got += g.t; }
+  for (const g of [...gaps].sort((a, b) => (b.cap - b.t) - (a.cap - a.t))) {
+    if (got >= need || cap <= need) break;
+    if (g.t < g.cap) { g.t++; got++; }
+  }
+  // האירועים לפי הסדר: הסרת שורות מרווח, והוספת got שורות במקום שנפתח
+  const events = gaps.filter(g => g.t > 0).map(g => ({ at: g.r.s + ((g.r.e - g.r.s - g.t) >> 1), t: g.t }));
+  if (got > 0) {
+    events.push({ at: cut, add: got });
+    events.sort((a, b) => a.at - b.at);
+    const tmp = document.createElement('canvas');
+    tmp.width = W; tmp.height = H;
+    const t2 = tmp.getContext('2d');
+    t2.imageSmoothingEnabled = false;
+    const segs = [];
+    let y = 0, o = 0;
+    for (const ev of events) {
+      if (ev.at > y) { t2.drawImage(canvas, 0, y, W, ev.at - y, 0, y + o, W, ev.at - y); segs.push({ s: y, e: ev.at, o }); }
+      if (ev.add) { t2.drawImage(blankRow, 0, 0, W, 1, 0, ev.at + o, W, ev.add); o += ev.add; y = ev.at; }
+      else { o -= ev.t; y = ev.at + ev.t; }
+    }
+    if (H > y) { t2.drawImage(canvas, 0, y, W, H - y, 0, y + o, W, H - y); segs.push({ s: y, e: H, o }); }
+    c2.clearRect(0, 0, W, H);
+    c2.drawImage(tmp, 0, 0);
+    // מה שעולה – מהעליון, ומה שיורד – מהתחתון, כדי שאף תיבה לא תוזז פעמיים
+    for (const m of segs.filter(m => m.o < 0)) shift(m.s, m.e, m.o);
+    for (const m of segs.filter(m => m.o > 0).reverse()) shift(m.s, m.e, m.o);
+  }
+  const left = need - got;
+  if (left < 1) return 1;
+  // העמוד מלא: מקטינים את כולו, כדי שגם הטקסט החדש (שמוקטן איתו) ייכנס. f = H / (H + left)
+  const f = Math.max(MIN_PAGE_SCALE, H / (H + left));
+  const add = Math.round(H - H * f);
+  if (add < 1) return 1;
+  const cut2 = cut + (got > 0 ? events.filter(ev => ev.at < cut && !ev.add).reduce((t, ev) => t - ev.t, 0) : 0);
+  const pivot = W / 2, nw = W * f, x0 = pivot - nw / 2;
+  const top = Math.round(cut2 * f);
+  const tmp = document.createElement('canvas');
+  tmp.width = W; tmp.height = H;
+  const t2 = tmp.getContext('2d');
+  t2.fillStyle = hex(bg);
+  t2.fillRect(0, 0, W, H);
+  t2.imageSmoothingEnabled = true;
+  t2.imageSmoothingQuality = 'high';
+  if (cut2 > 0) t2.drawImage(canvas, 0, 0, W, cut2, x0, 0, nw, top);
+  t2.drawImage(canvas, 0, cut2, W, H - cut2, x0, top + add, nw, H - top - add);
+  c2.clearRect(0, 0, W, H);
+  c2.drawImage(tmp, 0, 0);
+  const fy = (H - top - add) / (H - cut2);
+  shift(0, cut2, 0, top / Math.max(1, cut2), pivot);
+  shift(cut2, H, top + add - cut2, fy, pivot);
+  return { f, pivot };
+}
+
 /**
  * השורות בתמונה: blank[y] – שורה ריקה (רק קווים אנכיים של מסגרת), rule[y] – קו אופקי לרוחב רוב העמוד
  * (קו מפריד, צד של מסגרת), שתוחם את הקטע שבו השורות מתרווחות
@@ -924,7 +1022,8 @@ export async function templateCanvas(tpl, values) {
     const minSize = size * 0.6;
     const cx = b.x + b.w / 2, baseline = b.baseline ?? (b.y + b.h * 0.78);
     const f = fonts[b.font] || fonts[tpl.mainFont];
-    const writeAt = textWriter(ctx, f, slotLook(s, f, st), cx, styled);
+    const mk = (c, x) => textWriter(c, f, slotLook(s, f, st), x, styled);
+    const writeAt = mk(ctx, cx);
     // טקסט ארוך מהמקום: מקטינים עד 70%, ואם עדיין לא נכנס ומותר לגלוש – מחלקים לכמה שורות
     let w = writeAt(text, size, baseline, false);
     const room = Math.max(b.w * 1.15, b.w + size);
@@ -934,6 +1033,7 @@ export async function templateCanvas(tpl, values) {
     const count = s.lineCount || 2;
     const chosen = s.wrap ? chosenLines(text, s.lines, count) : null;
     const widest = ls => Math.max(...ls.map(ln => writeAt(ln, size, baseline, false)));
+    let pre = null;
     // טקסט שתפס כמה שורות בקובץ הישן (srcLines): מחלקים לשורות בגודל המקורי, ומקטינים רק אם עדיין לא נכנס
     const multi = s.wrap && s.srcLines > 1;
     const split = w > room && multi && !chosen ? splitLines(text, str => writeAt(str, size, baseline, false), count) : null;
@@ -950,6 +1050,10 @@ export async function templateCanvas(tpl, values) {
       const widest = () => Math.max(...lines.map(ln => writeAt(ln, size, baseline, false)));
       w = widest();
       if (w > room) { size = Math.max(size * 0.7, size * room / w); w = widest(); }
+    } else if (w > room && s.wrap && (pre = splitLines(text, str => writeAt(str, size, baseline, false), count)) && widest(pre) <= room) {
+      // טקסט שמותר לו לגלוש: קודם מחלקים לשורות בגודל המקורי, ורק אם עדיין לא נכנס – מקטינים
+      lines = pre;
+      w = widest(lines);
     } else if (w > room) {
       size = Math.max(size * 0.7, size * room / w);
       w = writeAt(text, size, baseline, false);
@@ -960,8 +1064,8 @@ export async function templateCanvas(tpl, values) {
     }
     // המרווח בין השורות: כפי שנבחר, אבל לא פחות ממרווח נוח לקריאה. need – המינימום שבו שורה לא עולה על השורה שמעליה
     const n = lines.length, pct = s.wrap ? (s.lineHeightPct || 100) / 100 : 1;
-    const layout = sz => {
-      const ink = lines.map(ln => writeAt.ink(ln, sz));
+    const layout = function (sz) {
+      const ink = lines.map(ln => (this && this.writeAt || writeAt).ink(ln, sz));
       const touch = n > 1 ? Math.max(...ink.slice(1).map((m, i) => ink[i].desc + m.asc)) : 0, need = n > 1 ? touch + sz * 0.08 : 0;
       const gap = Math.max(sz * 1.15 * pct, need + sz * 0.15);
       // ריווח פסקה: הרווח שמעל הטקסט ומתחתיו גדול מהרווח שבין שורותיו, כדי שייראה כפסקה נפרדת מהשורות השכנות
@@ -974,7 +1078,7 @@ export async function templateCanvas(tpl, values) {
       const slope = mapY(c + 1) - mapY(c);
       return [mapY(c), h * slope];
     }) : null;
-    plans.push({ s, text, st, size, minSize, cx, writeAt, lines, w, n, rowsAt, rowHint0: s.rowHint && s.rowHint.map(r => r[1]), layout, pen: c => textWriter(c, f, slotLook(s, f, st), cx, styled) });
+    plans.push({ s, text, st, size, minSize, cx, writeAt, lines, w, n, rowsAt, rowHint0: s.rowHint && s.rowHint.map(r => r[1]), layout, mk, mv: moves.length, pen: c => mk(c, cx) });
   }
 
   // שלב 2: ריווח הפסקאות, מלמעלה למטה. הרווח מעל פסקה ומתחתיה נקבע בשורות הריקות שבתמונה (מה שמתחת עולה או יורד),
@@ -1027,7 +1131,17 @@ export async function templateCanvas(tpl, values) {
     // כמה שורות: לא נכנס עם הרווחים – מורידים את מה שמתחתיו; נשאר יותר מדי מקום ושני הרווחים נקבעו – מעלים אותו
     const a = top ? top.px : 0, z = bottom ? bottom.px : 0, h = L.height(L.gap);
     const miss = h + a + z - (space.bottom - space.top + (top && top.exact ? pad : 0) + (bottom && bottom.exact ? pad : 0));
-    if (miss > 1) openRows(src, b.y + b.h, space.bottom + pad, miss, shiftBoxes);
+    if (miss > 1) {
+      // הריווח נעשה בכל העמוד; אם העמוד הוקטן – גם הטקסט שעוד לא נכתב מוקטן באותו יחס, כדי שהגדלים יישארו יחסיים
+      const sc = makeRoom(src, b.y + b.h, space.bottom + pad, miss, shiftBoxes);
+      if (sc !== 1) for (const q of plans) {
+        if (done.has(q)) continue;
+        q.size *= sc.f; q.minSize *= sc.f; q.w *= sc.f;
+        q.cx = sc.pivot + (q.cx - sc.pivot) * sc.f;
+        q.writeAt = q.mk(ctx, q.cx);
+        q.pen = c => q.mk(c, q.cx);
+      }
+    }
     else if (miss < -1 && top && top.exact && bottom && bottom.exact) resize(Math.max(b.y + b.h, space.top - pad + a + h), space.bottom + pad, miss);
     const inkBottom = paint(p, sctx, p.pen(sctx), top, bottom);
     done.add(p);
@@ -1056,11 +1170,18 @@ export async function templateCanvas(tpl, values) {
    * מחזיר את תחתית הדיו של הטקסט
    */
   function paint(p, c, write, top, bottom) {
-    const { s, st, cx, lines, n, minSize, rowsAt } = p, b = s.box;
+    const { s, st, cx, lines, n, minSize } = p, b = s.box;
+    let { rowsAt } = p;
     let { size, w } = p;
     const baseline = b.baseline ?? (b.y + b.h * 0.78);
     let L, lineGap, baselines;
     if (rowsAt) {
+      // הזזות שנעשו אחרי שהשורות חושבו (פתיחת מקום לטקסט אחר): השורות זזות איתן
+      const later = moves.slice(p.mv);
+      if (later.length) rowsAt = rowsAt.map(([c, h]) => {
+        const at = y => later.reduce((y, [cut, end, k, f = 1]) => y >= cut && y < end ? cut + k + (y - cut) * f : y, y);
+        return [at(c), h * (at(c + 1) - at(c))];
+      });
       // הטקסט נכתב על השורות שבתמונה, באותו גודל יחסי שבו הן גדלו בריווח מחדש, ממורכז על כל שורה
       const grow = rowsAt.reduce((t, [c, h], i) => t + h / p.rowHint0[i], 0) / rowsAt.length;
       size *= grow;
