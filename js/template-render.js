@@ -792,7 +792,13 @@ function respace(src, erased, shift, units = [], skip = []) {
   // בקטעים שמתחתית העמוד ומעלה, כדי שההזזות של קטע אחד לא יזיזו את הגבולות של קטע שעוד לא סודר
   for (const [top, bottom] of [...sections.values()].sort((a, b) => b[0] - a[0])) {
     const now = bands(blank, top, bottom);
-    if (!now.length) continue;
+    if (!now.length) {
+      // שורה של טבלה (בין שני קווים) שכל מה שבה נמחק: השורה נסגרת יחד עם הקו שמתחתיה, ומה שמתחתיה עולה
+      let end = bottom;
+      while (end < H && rule[end]) end++;
+      if (bottom < H && end > bottom && bands(before.blank, top, bottom).length) dropRows(src, top, end - top, shift);
+      continue;
+    }
     // ניקוד שנפרד מהשורה בשורה ריקה אחת או שתיים אינו רווח בין שורות
     const lineH = now.map(r => r.e - r.s).sort((a, b) => a - b)[now.length >> 1];
     const minGap = Math.max(2, lineH * 0.3);
@@ -1065,6 +1071,42 @@ function respace(src, erased, shift, units = [], skip = []) {
   return scales;
 }
 
+/**
+ * מוחק את k השורות שמ-cut בתמונה: מה שמתחתיהן עולה, והשורות נוספות לרווחים הריקים הגדולים שמתחתיהן (שורה ריקה
+ * מהקטע עצמו, כדי שקווים אנכיים של מסגרת יימשכו), ואם אין – לתחתית העמוד. shift – כמו ב-openRows
+ */
+function dropRows(canvas, cut, k, shift) {
+  const { W, H, c2, runs } = blankGap(canvas, 0, 0);
+  if (k < 1 || cut + k > H) return;
+  const blankRow = document.createElement('canvas');
+  blankRow.width = W; blankRow.height = 1;
+  blankRow.getContext('2d').drawImage(canvas, 0, cut + 1, W, 1, 0, 0, W, 1);
+  const below = runs.filter(r => r.s >= cut + k).sort((a, b) => (b.e - b.s) - (a.e - a.s));
+  const give = [];
+  let left = k;
+  for (const r of below) {
+    if (left <= 0) break;
+    const n = Math.min(left, r.e - r.s);
+    if (n < 1) continue;
+    give.push({ at: r.s + ((r.e - r.s) >> 1), k: n });
+    left -= n;
+  }
+  if (left > 0) give.push({ at: H, k: left });
+  c2.imageSmoothingEnabled = false;
+  // לפי הסדר מלמעלה: כל פעם נמחקות g.k שורות ב-cut, ומה שבין cut למקום שמקבל את השורות עולה
+  for (const g of give.sort((a, b) => a.at - b.at)) {
+    const h = g.at - cut - g.k;
+    if (h > 0) {
+      const tmp = document.createElement('canvas');
+      tmp.width = W; tmp.height = h;
+      tmp.getContext('2d').drawImage(canvas, 0, cut + g.k, W, h, 0, 0, W, h);
+      c2.drawImage(tmp, 0, cut);
+    }
+    c2.drawImage(blankRow, 0, 0, W, 1, 0, g.at - g.k, W, g.k);
+    shift(cut + g.k, g.at, -g.k);
+  }
+}
+
 /** השורות הריקות בתמונה (runs: { s, e }), והרווח הריק הארוך ביותר שבין from ל-to (best) */
 function blankGap(canvas, from, to) {
   const { W, H, c2, blank } = blankRows(canvas);
@@ -1211,6 +1253,17 @@ export async function templateCanvas(tpl, values) {
   // טקסט שנמחק מהקובץ: נמחק מהתמונה, והמקום שהתפנה מתחלק בין הרווחים שבין השורות סביבו
   // שורת זמן שאין לה ערך בלוח הזה (תפילה שלא חלה בו, זמן שאין ביום הזה): השורה כולה – השעה, השם שלידה והקו
   // שביניהם – נמחקת ומתרווחת כמו מחיקה, במקום שתישאר בה השעה הישנה מהקובץ
+  /*
+   * רוחב שמותר לטקסט חדש בשורה משלו (קידוש, הודעה, שם שבת מיוחדת): בקובץ התיבה ברוחב הטקסט הישן בלבד, שיכול להיות
+   * קצר בהרבה מהחדש. כשאין בשורה עוד אזור – עד הדיו הקרוב משני הצדדים (בועה, מסגרת) סביב המרכז, ולא יותר מ-80% מהעמוד
+   */
+  const wideRoom = (s, b, size, cx = b.x + b.w / 2) => {
+    if (!['kiddush', 'text', 'special', 'title', 'parasha', 'parashaName', 'address'].includes(s.kind) || s.labelBox) return 0;
+    if (tpl.slots.some(o => o !== s && o.kind !== 'erase' && o.box && Math.abs((o.box.y + o.box.h / 2) - (b.y + b.h / 2)) < Math.max(o.box.h, b.h) / 2)) return 0;
+    const bg = (s.style || {}).bg || '#ffffff';
+    const L = b.x - freeBeside(src, b, -1, bg, src.width), R = b.x + b.w + freeBeside(src, b, 1, bg, src.width);
+    return Math.max(0, Math.min(2 * Math.min(cx - L, R - cx) - size, src.width * 0.8));
+  };
   // כך גם טקסט שנמחק בעריכה (ריק) בשורה משלו: השורה מתרווחת במקום שיישאר רווח ריק
   if (values) {
     const host0 = specialHost(tpl.slots);
@@ -1258,7 +1311,7 @@ export async function templateCanvas(tpl, values) {
       const f = fonts[b.font] || fonts[tpl.mainFont], st = s.style || { bg: '#fff', fg: '#000', bold: false };
       const size = (b.size || b.h * 0.72) * ((s.sizePct || 100) / 100);
       const write = textWriter(ctx, f, slotLook(s, f, st), b.x + b.w / 2, styledRuns(rich, s.underline || s.ulDim));
-      const measure = str => write(str, size, b.baseline ?? (b.y + b.h * 0.78), false), room = Math.max(b.w * 1.15, b.w + size);
+      const measure = str => write(str, size, b.baseline ?? (b.y + b.h * 0.78), false), room = Math.max(b.w * 1.15, b.w + size, wideRoom(s, b, size));
       // לא נכנס בשורה אחת: כמה שורות ייכתבו (כמו בשלב 1 – כמה שפחות שורות שנכנסות ברוחב)
       const split = measure(rich.plain) <= room ? null : splitLines(rich.plain, measure, s.lineCount || 2, room);
       now = !split ? (measure(rich.plain) <= room ? 1 : 0) : Math.max(...split.map(measure)) <= room ? split.length : 0;
@@ -1317,10 +1370,14 @@ export async function templateCanvas(tpl, values) {
     const nearL = !s.wrap && !s.labelBox && (s.kind === 'rule' || s.kind === 'zman') ? freeBeside(src, b, -1, st.bg, size * 3) : 0;
     const nearR = nearL ? freeBeside(src, b, 1, st.bg, size * 3) : 0;
     const lb = !s.wrap && (s.labelBox || (nearL && nearR !== nearL ? { x: nearR < nearL ? b.x + b.w : b.x - 1, w: 1 } : null));
-    const toLeft = lb && lb.x + lb.w / 2 > b.x + b.w / 2;
+    // שעות בטור של טבלה: היישור של הטור (שעות שמתחילות או נגמרות באותו מקום) קובע איזה צד נשאר במקומו
+    const col = lb && tpl.slots.filter(o => o !== s && (o.kind === 'rule' || o.kind === 'zman') && o.box);
+    const same = f => col ? col.filter(o => Math.abs(f(o.box) - f(b)) < 6).length : 0;
+    const aL = same(k => k.x), aR = same(k => k.x + k.w), aC = same(k => k.x + k.w / 2);
+    const toLeft = aL >= 2 && aL > aR && aL > aC ? false : aR >= 2 && aR > aL && aR > aC ? true : lb && lb.x + lb.w / 2 > b.x + b.w / 2;
     const free = lb ? freeBeside(src, b, toLeft ? -1 : 1, st.bg, size * 5) : 0;
     // ולא יותר מרוחב העמוד סביב מרכז האזור, כדי שטקסט ארוך (גם בשורה שהוגדלה בריווח מחדש) לא ייצא מהדף
-    const room = Math.min(Math.max(b.w * 1.15, b.w + size, lb ? b.w + free - size * 0.3 : 0),
+    const room = Math.min(Math.max(b.w * 1.15, b.w + size, lb ? b.w + free - size * 0.3 : 0, wideRoom(s, b, size, cx)),
       Math.max(b.w, 2 * Math.min(cx, canvas.width - cx) - size));
     // טקסט חדש בשורה משלו, שהשורה הישנה שלו לא הוגדלה בריווח מחדש (למשל ליד בועה בצד): גדל כמו שאר השורות בקטע,
     // כדי שיישאר בגודל יחסי להן – עד הרוחב של המקום שלו, כדי שלא יגיע לבועה
@@ -1396,7 +1453,7 @@ export async function templateCanvas(tpl, values) {
       const slope = mapY(c + 1) - mapY(c);
       return [mapY(c), h * slope];
     }) : null;
-    plans.push({ s, text, st, size, minSize, cx, writeAt, lines, w, n, rowsAt, rowHint0: s.rowHint && s.rowHint.map(r => r[1]), layout, mk, mv: moves.length, pen: c => mk(c, cx) });
+    plans.push({ s, text, st, size, minSize, cx, writeAt, lines, w, n, rowsAt, pre: b.size && size0.get(s) ? b.size / size0.get(s) : 1, rowHint0: s.rowHint && s.rowHint.map(r => r[1]), layout, mk, mv: moves.length, pen: c => mk(c, cx) });
   }
 
   // עצמים בצד השורות (בועת הסבר) יוצאים מהתמונה עד סוף הכתיבה: הרקע של טקסט חדש לא מוחק חלק מהם (קצה הזנב שליד
@@ -1513,8 +1570,9 @@ export async function templateCanvas(tpl, values) {
         return [at(c), h * (at(c + 1) - at(c))];
       });
       // הטקסט נכתב על השורות שבתמונה, באותו גודל יחסי שבו הן גדלו בריווח מחדש, ממורכז על כל שורה
+      // הגודל של התיבה כבר הוגדל עם השורה (p.pre) – לא מגדילים פעמיים
       const grow = rowsAt.reduce((t, [c, h], i) => t + h / p.rowHint0[i], 0) / rowsAt.length;
-      size *= grow;
+      size *= grow / p.pre;
       L = p.layout(size);
       w = Math.max(...lines.map(ln => p.writeAt(ln, size, baseline, false)));
       baselines = rowsAt.map(([c], i) => c + (L.ink[i].asc - L.ink[i].desc) / 2);

@@ -5,3 +5,4 @@ www/
 .env.local
 
 .VSCodeCounter/
+template-lab-out/
