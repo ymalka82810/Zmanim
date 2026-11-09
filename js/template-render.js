@@ -654,13 +654,28 @@ function makeRoom(canvas, from, to, d, shift) {
     const len = r.e - r.s, keep = Math.max(1, Math.ceil(len * 0.5));
     return { r, cap: Math.max(0, len - keep) };
   }).filter(g => g.cap > 0);
-  const cap = gaps.reduce((t, g) => t + g.cap, 0);
+  // שוליים ריקים בתחתית העמוד, גדולים מהשוליים שבראשו: המקום נלקח קודם מהם (מה שמתחת למקום שנפתח יורד אליהם),
+  // כדי שהרווחים שבין השורות – גם הרווח שמעל הטקסט שנוסף ומתחתיו – יישארו כמו בקובץ
+  // (בתוך מסגרת – השוליים שבין הטקסט לקו התחתון שלה, בהשוואה לשוליים שבין הקו העליון לטקסט)
+  const { rule } = R, text = y => !blank[y] && !rule[y];
+  let first = 0, last = H - 1;
+  while (first < H && !text(first)) first++;
+  while (last > 0 && !text(last)) last--;
+  const headRun = runs.find(r => r.e === first), tailRun = runs.find(r => r.s === last + 1 && r.s > cut && r !== best.run);
+  const spare = tailRun ? Math.max(0, tailRun.e - tailRun.s - Math.max(headRun ? headRun.e - headRun.s : 0, Math.round(H * 0.03))) : 0;
+  const fromTail = Math.min(spare, need);
+  if (fromTail > 0) {
+    const i = gaps.findIndex(g => g.r === tailRun);
+    if (i >= 0) gaps.splice(i, 1);
+    gaps.push({ r: { s: tailRun.s, e: tailRun.s + fromTail }, cap: fromTail, tail: true });
+  }
+  const rest = need - fromTail, cap = gaps.reduce((t, g) => t + (g.tail ? 0 : g.cap), 0);
   // כל רווח נותן לפי היחס של מה שהוא יכול לתת
   let got = 0;
-  for (const g of gaps) { g.t = cap <= need ? g.cap : Math.floor(g.cap * need / cap); got += g.t; }
+  for (const g of gaps) { g.t = g.tail ? g.cap : cap <= rest ? g.cap : Math.floor(g.cap * rest / cap); got += g.t; }
   for (const g of [...gaps].sort((a, b) => (b.cap - b.t) - (a.cap - a.t))) {
-    if (got >= need || cap <= need) break;
-    if (g.t < g.cap) { g.t++; got++; }
+    if (got >= need || cap <= rest) break;
+    if (!g.tail && g.t < g.cap) { g.t++; got++; }
   }
   // האירועים לפי הסדר: הסרת שורות מרווח, והוספת got שורות במקום שנפתח
   const events = gaps.filter(g => g.t > 0).map(g => ({ at: g.r.s + ((g.r.e - g.r.s - g.t) >> 1), t: g.t }));
@@ -1337,6 +1352,55 @@ export async function templateCanvas(tpl, values) {
     const keepTop = rows[0].top, keepBottom = rows[now - 1].bottom;
     Object.assign(b, { y: keepTop, h: keepBottom - keepTop + 1, baseline: (keepTop + keepBottom) / 2 + (b.size || b.h * 0.72) * 0.3, up: 0, down: 0 });
   }
+  /*
+   * לוח של כמה טורים (ערב שבת ויום השבת זה ליד זה): שורה שנמחקה בטור אחד נסגרת רק בטור שלה – מה שמתחתיה בטור עולה,
+   * והטור השני לא זז. טור: בשורה של המחיקה יש עוד דיו לצד, והגבול שבאמצע ביניהם פנוי לאורך כמה שורות מתחת
+   */
+  const inColumn = e => {
+    const R = blankRows(src), { W, isInk } = R, b = e.box;
+    const y0 = Math.max(0, Math.floor(b.y - (b.up || 0))), y1 = Math.min(src.height, Math.ceil(b.y + b.h + (b.down || 0)));
+    const colInk = (x, ya, yb) => { for (let y = ya; y < yb; y++) if (isInk(x, y)) return true; return false; };
+    let oL = -1, oR = -1;
+    for (let x = Math.floor(b.x) - 3; x >= 0; x--) if (colInk(x, y0, y1)) { oL = x; break; }
+    for (let x = Math.ceil(b.x + b.w) + 3; x < W; x++) if (colInk(x, y0, y1)) { oR = x; break; }
+    if (oL < 0 && oR < 0) return false;
+    const xL = oL >= 0 ? Math.round((oL + b.x) / 2) : 0, xR = oR >= 0 ? Math.round((oR + b.x + b.w) / 2) : W;
+    // עד איפה הגבול פנוי: שם נגמר הטור (שורה שעוברת לרוחב, קו מפריד)
+    const crosses = y => (oL >= 0 && (isInk(xL - 1, y) || isInk(xL, y) || isInk(xL + 1, y))) || (oR >= 0 && (isInk(xR - 1, y) || isInk(xR, y) || isInk(xR + 1, y)));
+    let yEnd = y1;
+    while (yEnd < src.height && !crosses(yEnd)) yEnd++;
+    // השורה שחוצה את הגבול מתחילה כבר באות הגבוהה הראשונה שלה (גם אם היא לא על הגבול) – היא לא חלק מהטור
+    const any = y => { for (let x = xL; x < xR; x++) if (isInk(x, y)) return true; return false; };
+    if (yEnd < src.height) while (yEnd > y1 && any(yEnd - 1)) yEnd--;
+    if (yEnd - y1 < 2 * (y1 - y0)) return false;
+    // השורות בטור (לפני המחיקה)
+    const bands = [];
+    for (let y = Math.max(0, y0 - 3 * (y1 - y0)), st = -1; y <= yEnd; y++) {
+      let n = 0;
+      if (y < yEnd) for (let x = xL; x < xR && n <= 2; x++) if (isInk(x, y)) n++;
+      if (y < yEnd && n > 2) { if (st < 0) st = y; } else if (st >= 0) { bands.push({ s: st, e: y }); st = -1; }
+    }
+    const mine = bands.find(r => r.e > y0 && r.s < y1), next = bands.find(r => r.s >= y1 && (!mine || r.s >= mine.e));
+    const c = src.getContext('2d');
+    c.fillStyle = (e.style || {}).bg || '#ffffff';
+    const pad = Math.max(2, (b.size || b.h * 0.72) * 0.08);
+    c.fillRect(b.x - pad, y0 - pad, b.w + 2 * pad, y1 - y0 + 2 * pad);
+    if (!mine || !next) return true;
+    const d = next.s - mine.s, h = yEnd - next.s;
+    if (d > 0 && h > 0) {
+      const tmp = document.createElement('canvas');
+      tmp.width = xR - xL; tmp.height = h;
+      tmp.getContext('2d').drawImage(src, xL, next.s, xR - xL, h, 0, 0, xR - xL, h);
+      c.fillRect(xL, next.s - d, xR - xL, h + d);
+      c.drawImage(tmp, xL, next.s - d);
+      for (const k of allBoxes) {
+        const mx = k.x + k.w / 2, my = k.y + k.h / 2;
+        if (mx >= xL && mx < xR && my >= next.s && my < yEnd) { k.y -= d; if (k.baseline != null) k.baseline -= d; }
+      }
+    }
+    return true;
+  };
+  for (let i = erased.length - 1; i >= 0; i--) if (inColumn(erased[i])) erased.splice(i, 1);
   erased.sort((a, b) => a.box.y - b.box.y);
   // תיבות של אזורים שתופסים כמה שורות בתמונה – כדי שהשורות שלהן יזוזו יחד בריווח מחדש
   const units = tpl.slots.filter(s => s.kind !== 'erase' && s.box && s.box.size && s.box.h > s.box.size * 1.5).map(s => s.box);
@@ -1495,9 +1559,17 @@ export async function templateCanvas(tpl, values) {
     if (p.rowsAt) continue;
     const b = p.s.box, e = edges.get(p.s), L = p.layout(p.size), pad = Math.max(1, p.size * 0.06);
     let top = want(e.top, p, L);
-    const bottom = want(e.bottom, p, L);
+    let bottom = want(e.bottom, p, L);
     const baseline = () => b.baseline ?? (b.y + b.h * 0.78);
     let space = spaceOf(p, p.size);
+    // טקסט שקיבל יותר שורות מבקובץ (קידוש ארוך): הרווח מעליו ומתחתיו כמו בקובץ – כך רווח של פסקה נשמר,
+    // ואם אין מקום הוא נפתח בריווח העמוד, במקום שהשורה הנוספת תמלא את רווח הפסקה
+    if (p.n > Math.max(1, p.s.srcLines || 1)) {
+      // כמו בקובץ – לא פחות מהרווח שבין שורות הטקסט, ולא יותר מ-2.5 שורות
+      const lim = p.size * 2.5, line = Math.max(1, L.gap - L.touch);
+      if (top && !top.exact) top = { px: Math.max(line, Math.min(lim, b.y - (b.up || 0) - space.top)), exact: false };
+      if (bottom && !bottom.exact) bottom = { px: Math.max(line, Math.min(lim, space.bottom - (b.y + b.h + (b.down || 0)))), exact: false };
+    }
     const mark = markAt(space.top - pad, p);
     if (mark) top = { px: Math.max(mark.px, top ? top.px : 0), exact: true };
     if (p.n < 2) {

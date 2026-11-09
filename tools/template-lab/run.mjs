@@ -31,6 +31,7 @@ const S = {
   missing: (v, t) => { const s = firstRule(t); delete v.rules[s.when + '|' + s.name]; return v; },
   kidFull: (v, t) => { const s = t.slots.find(s => s.kind === 'kiddush'); if (s) v.rules[s.when + '|' + s.name] = 'קידוש והתוועדות לאחר התפילה\nע"י משפחת אברהמי ומשפחת יצחקי\nלרגל בר המצווה של נכדם\nולרגל הולדת הנכדה'; return v; },
   special: v => (v.special = 'שבת מברכים חודש כסלו', v.parashaName = 'אחרי מות-קדושים', v.parasha = 'פרשת אחרי מות-קדושים', v),
+  missingRight: v => { delete v.rules['כניסה|מנחה ערב שבת']; return v; },
   emptyText: (v, t) => { for (const s of t.slots) if (s.kind === 'text') v.edits['text|' + Math.round(s.box.x) + ',' + Math.round(s.box.y)] = ''; return v; },
 };
 const only = process.argv.slice(2);
