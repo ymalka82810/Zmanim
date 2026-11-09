@@ -731,9 +731,9 @@ const MAX_ERASE_SCALE = 1.8;
  * מחיקת טקסט מהתמונה (אזורים מסוג "מחיקה"), וריווח מחדש של השורות סביבו: בקטע שבין הקווים האופקיים
  * (או בעמוד כולו) הרווח שנשאר במקום הטקסט חוזר לגודל של רווח רגיל בין השורות, והמקום שהתפנה מתחלק
  * בין כל הרווחים שבין השורות באותו קטע, כל רווח לפי הגודל שלו. השוליים בראש הקטע ובתחתיתו לא משתנים,
- * וכך גם מה שמחוץ לקטע. shift(cut, end, k) – כמו ב-openRows
+ * וכך גם מה שמחוץ לקטע. shift(cut, end, k) – כמו ב-openRows. units – תיבות של אזורים רב-שורתיים, שהשורות שבהן זזות יחד
  */
-function respace(src, erased, shift) {
+function respace(src, erased, shift, units = []) {
   const before = blankRows(src);
   const sctx = src.getContext('2d');
   for (const s of erased) {
@@ -759,6 +759,8 @@ function respace(src, erased, shift) {
     while (bottom < H && !rule[bottom]) bottom++;
     sections.set(top + ':' + bottom, [top, bottom]);
   }
+  // יחס ההגדלה המשותף של כל קטע שהתרווח: { top, bottom, f }
+  const scales = [];
   // בקטעים שמתחתית העמוד ומעלה, כדי שההזזות של קטע אחד לא יזיזו את הגבולות של קטע שעוד לא סודר
   for (const [top, bottom] of [...sections.values()].sort((a, b) => b[0] - a[0])) {
     const now = bands(blank, top, bottom);
@@ -868,7 +870,24 @@ function respace(src, erased, shift) {
       return { out, sides };
     };
     const cut = splitTall(cur, merge(now), true), sides = cut.sides;
-    const lines = merge(cut.out), old = merge(splitTall(before, merge(bands(before.blank, top, bottom)), false).out), n = lines.length;
+    // טקסט של אזור שתופס כמה שורות (הודעה בתחתית העמוד): השורות שלו זזות ומוגדלות יחד, כיחידה אחת, כדי שהתיבה
+    // של האזור (שהטקסט החדש נכתב בה והרקע שלה מכסה את הישן) תזוז ותוגדל יחד איתן
+    const together = list => {
+      const out = [];
+      for (const r of list) {
+        const last = out[out.length - 1], mid = (r.s + r.e) / 2;
+        const u = last && !r.img && !last.img && units.find(b => (last.s + last.e) / 2 >= b.y && (last.s + last.e) / 2 < b.y + b.h && mid >= b.y && mid < b.y + b.h);
+        if (u) {
+          last.e = r.e;
+          if (last.sp !== undefined || r.sp !== undefined) {
+            const a = last.sp !== undefined ? last.sp : span(last.s, last.e), c = r.sp !== undefined ? r.sp : span(r.s, r.e);
+            last.sp = a && c ? { l: Math.min(a.l, c.l), r: Math.max(a.r, c.r) } : a || c;
+          }
+        } else out.push({ ...r });
+      }
+      return out;
+    };
+    const lines = together(merge(cut.out)), old = merge(splitTall(before, merge(bands(before.blank, top, bottom)), false).out), n = lines.length;
     if (!n || !old.length) continue;
     // הרווחים לפני המחיקה, כדי לדעת מה הגודל הרגיל של רווח שהטקסט שבו נמחק
     const oldGaps = old.slice(1).map((r, i) => ({ s: old[i].e, e: r.s }));
@@ -919,6 +938,7 @@ function respace(src, erased, shift) {
     const room = avail - hs.reduce((t, h) => t + h, 0);
     if (room < 1 || (n > 1 && room - total < 1)) continue;
     // כל רווח גדל לפי הגודל שלו. שורה אחת שנשארה בקטע – באמצע המקום
+    scales.push({ top, bottom, f: lo });
     const k = n > 1 ? room / total : 0, to = [];
     let acc = top + head + (n > 1 ? 0 : room / 2);
     lines.forEach((r, i) => {
@@ -991,6 +1011,7 @@ function respace(src, erased, shift) {
     for (const m of shifts.filter(m => m.k > 0 || (m.k === 0 && m.f !== 1)).reverse()) shift(m.s, m.e, m.k, m.f, pivot);
     for (const m of shifts.filter(m => m.k < 0)) shift(m.s, m.e, m.k, m.f, pivot);
   }
+  return scales;
 }
 
 /** השורות הריקות בתמונה (runs: { s, e }), והרווח הריק הארוך ביותר שבין from ל-to (best) */
@@ -1121,19 +1142,32 @@ export async function templateCanvas(tpl, values) {
   };
   // טקסט שנמחק מהקובץ: נמחק מהתמונה, והמקום שהתפנה מתחלק בין הרווחים שבין השורות סביבו
   const erased = tpl.slots.filter(s => s.kind === 'erase' && s.box);
-  // שורה שנמחקה מטקסט רב-שורתי בשבוע הזה בלבד (עריכת הנוסח לשבוע): השורות שנשארו נשארות למעלה, והשורות שפונו
-  // נמחקות מהתמונה ומתרווחות כמו מחיקה מהלוח – אבל רק בציור של השבוע הזה, בלי לשנות את התבנית
+  // טקסט רב-שורתי שהשבוע תופס פחות שורות מבקובץ – עריכת הנוסח לשבוע, או ערך קצר יותר (למשל שורת קידוש בלי
+  // קידוש מאושר: רק הכותרת): השורות שנשארו נשארות למעלה, והשורות שפונו נמחקות מהתמונה ומתרווחות כמו מחיקה
+  // מהלוח, כך שהמקום מתחלק באופן יחסי בין כל הרווחים – אבל רק בציור של השבוע הזה, בלי לשנות את התבנית
   const hostRows = specialHost(tpl.slots);
   for (const s of tpl.slots) {
     const b = s.box, was = s.srcLines;
-    if (!b || !s.wrap || !(was > 1) || !values || !values.edits || !(slotKey(s) in values.edits)) continue;
+    if (!b || !s.wrap || !(was > 1) || !values) continue;
     const raw = slotText(s, values, hostRows);
-    const now = raw == null ? 0 : raw.split('\n').filter(ln => ln.trim()).length;
+    if (raw == null) continue;
+    let now;
+    if (/\S\s*\n\s*\S/.test(raw) || (values.edits && slotKey(s) in values.edits)) now = raw.split('\n').filter(ln => ln.trim()).length;
+    else {
+      // טקסט בלי ירידות שורה: שורה אחת רק כשהוא נכנס ברוחב, בגודל המקורי (כמו בשלב 1)
+      const rich = parseMarkup(raw.replace(/\s*\n\s*/g, ' ').trim());
+      if (!rich.plain) continue;
+      const f = fonts[b.font] || fonts[tpl.mainFont], st = s.style || { bg: '#fff', fg: '#000', bold: false };
+      const size = (b.size || b.h * 0.72) * ((s.sizePct || 100) / 100);
+      const w = textWriter(ctx, f, slotLook(s, f, st), b.x + b.w / 2, styledRuns(rich, s.underline || s.ulDim))(rich.plain, size, b.baseline ?? (b.y + b.h * 0.78), false);
+      now = w <= Math.max(b.w * 1.15, b.w + size) ? 1 : 0;
+    }
     if (now < 1 || now >= was) continue;
-    // השורות שבתמונה: רק כשזוהו בדיוק כמספר השורות שבקובץ אפשר לדעת איזה מקום להשאיר ואיזה למחוק
-    const rows = inkLines(src, b);
-    if (rows.length !== was) continue;
-    const gone = { top: rows[now].top, bottom: rows[was - 1].bottom };
+    // השורות שבתמונה: כשזוהו בדיוק כמספר השורות שבקובץ יודעים איזה מקום להשאיר ואיזה למחוק. שורות שהדיו שלהן
+    // נוגע זו בזו (אות עולה מתחת לאות יורדת) מזוהות כפס אחד – מספיק שהשורות שנשארות זוהו כל אחת לחוד
+    const rows = inkLines(src, b), lineH = (b.size || b.h / was * 0.72) * 1.6;
+    if (rows.length > was || rows.length <= now || rows.slice(0, now).some(r => r.bottom - r.top + 1 > lineH)) continue;
+    const gone = { top: rows[now].top, bottom: rows[rows.length - 1].bottom };
     erased.push({ kind: 'erase', box: { x: b.x, y: gone.top, w: b.w, h: gone.bottom - gone.top + 1, size: b.size, up: 0, down: 0 }, style: s.style });
     // מרכז וגובה של כל שורה שנשארה, כדי שהטקסט החדש ייכתב על השורות כפי שהן אחרי הריווח מחדש
     s.rowHint = rows.slice(0, now).map(r => [(r.top + r.bottom) / 2, r.bottom - r.top + 1]);
@@ -1141,7 +1175,11 @@ export async function templateCanvas(tpl, values) {
     Object.assign(b, { y: keepTop, h: keepBottom - keepTop + 1, baseline: (keepTop + keepBottom) / 2 + (b.size || b.h * 0.72) * 0.3, up: 0, down: 0 });
   }
   erased.sort((a, b) => a.box.y - b.box.y);
-  if (erased.length) respace(src, erased, shiftBoxes);
+  // תיבות של אזורים שתופסים כמה שורות בתמונה – כדי שהשורות שלהן יזוזו יחד בריווח מחדש
+  const units = tpl.slots.filter(s => s.kind !== 'erase' && s.box && s.box.size && s.box.h > s.box.size * 1.5).map(s => s.box);
+  // הגודל של כל אזור לפני הריווח מחדש, כדי לדעת כמה הוגדל איתו
+  const size0 = new Map(tpl.slots.map(s => [s, s.box && s.box.size]));
+  const scales = erased.length ? respace(src, erased, shiftBoxes, units) : [];
   // איפה נקודה מהקובץ נמצאת בתמונה אחרי כל ההזזות
   const mapY = y => moves.reduce((y, [cut, end, k, f = 1]) => y >= cut && y < end ? cut + k + (y - cut) * f : y, y);
 
@@ -1157,14 +1195,24 @@ export async function templateCanvas(tpl, values) {
     const text = rich.plain, styled = styledRuns(rich, s.underline || s.ulDim);
     const b = s.box, st = s.style || { bg: '#fff', fg: '#000', bold: false };
     let size = (b.size || b.h * 0.72) * ((s.sizePct || 100) / 100);
-    const minSize = size * 0.6;
     const cx = b.x + b.w / 2, baseline = b.baseline ?? (b.y + b.h * 0.78);
     const f = fonts[b.font] || fonts[tpl.mainFont];
     const mk = (c, x) => textWriter(c, f, slotLook(s, f, st), x, styled);
     const writeAt = mk(ctx, cx);
+    const room = Math.max(b.w * 1.15, b.w + size);
+    // טקסט חדש בשורה משלו, שהשורה הישנה שלו לא הוגדלה בריווח מחדש (למשל ליד בועה בצד): גדל כמו שאר השורות בקטע,
+    // כדי שיישאר בגודל יחסי להן – עד הרוחב של המקום שלו, כדי שלא יגיע לבועה
+    const sec = scales.find(k => b.y + b.h / 2 >= k.top && b.y + b.h / 2 < k.bottom);
+    const grown = b.size && size0.get(s) ? b.size / size0.get(s) : 1;
+    const alone = !s.labelBox && !tpl.slots.some(o => o !== s && o.kind !== 'erase' && o.box && Math.abs((o.box.y + o.box.h / 2) - (b.y + b.h / 2)) < Math.max(o.box.h, b.h) / 2);
+    if (sec && alone && !s.rowHint && sec.f > grown * 1.01 && (s.kind === 'text' || s.kind === 'kiddush')) {
+      const parts = (/\S\s*\n\s*\S/.test(text) ? text.split('\n') : s.wrap && s.lines ? chosenLines(text, s.lines, s.lineCount || 2) || [text] : [text]);
+      const widest0 = Math.max(...parts.map(ln => writeAt(ln, size, baseline, false)));
+      size *= Math.max(1, Math.min(sec.f / grown, widest0 > 0 ? room / widest0 : 1));
+    }
+    const minSize = size * 0.6;
     // טקסט ארוך מהמקום: מקטינים עד 70%, ואם עדיין לא נכנס ומותר לגלוש – מחלקים לכמה שורות
     let w = writeAt(text, size, baseline, false);
-    const room = Math.max(b.w * 1.15, b.w + size);
     let lines = [text];
     // שם שבת מיוחדת שנוסף לכותרת ולא נכנס בשורה אחת יורד לשורה משלו, בגודל המקורי ככל האפשר
     const added = s.kind === host && values.special ? text.lastIndexOf(' – ') : -1;
