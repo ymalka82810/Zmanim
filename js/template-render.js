@@ -399,23 +399,28 @@ function embeddedText(ctx, text, f, look, size, cx, baseline, draw) {
 }
 
 /** מחלקים טקסט לעד n שורות בנקודות הרווח שבהן השורה הרחבה ביותר הכי צרה */
-function splitLines(text, measure, n) {
+function splitLines(text, measure, n, room = 0) {
   const words = text.trim().split(/\s+/);
   if (words.length < 2) return null;
-  let best = null, bestMax = Infinity;
+  // לכל מספר שורות – החלוקה שבה השורה הרחבה ביותר הכי צרה
+  const best = new Map();
   // כל החלוקות של המילים לשורות רצופות (עד n), מהשורה הראשונה והלאה
   const walk = (from, acc) => {
     if (from === words.length) {
       if (acc.length < 2) return;
-      const max = Math.max(...acc.map(measure));
-      if (max < bestMax) { bestMax = max; best = acc; }
+      const max = Math.max(...acc.map(measure)), b = best.get(acc.length);
+      if (!b || max < b.max) best.set(acc.length, { max, lines: acc });
       return;
     }
     if (acc.length === n) return;
     for (let i = from + 1; i <= words.length; i++) walk(i, [...acc, words.slice(from, i).join(' ')]);
   };
   walk(0, []);
-  return best;
+  if (!best.size) return null;
+  const all = [...best.entries()].sort((a, b) => a[0] - b[0]);
+  // room – כמה שפחות שורות שנכנסות ברוחב (שורות רחבות ומלאות, ולא הרבה שורות קצרות); בלי – הכי צר
+  const fit = room > 0 && all.find(([, b]) => b.max <= room);
+  return fit ? fit[1].lines : all.reduce((a, b) => b[1].max < a[1].max ? b : a)[1].lines;
 }
 
 /**
@@ -517,7 +522,7 @@ function closeRows(canvas, from, to, d, shift) {
  * העמוד, יחד עם מה שבתוכו. הם נמחקים מהתמונה (צבע הרקע במקומם), כדי שהשורות שלידם ייחשבו שורות עם רווחים
  * ביניהן, ומוחזרים כתמונות שקופות מסביב: { img, y0, y1 } – כדי להחזיר כל אחד כיחידה אחת אחרי ההזזה
  */
-function takeSides(canvas, R) {
+function takeSides(canvas, R, skip = []) {
   const { W, H, c2, blank, isInk, bg } = R;
   // גובה שורה רגיל: החציון של הפסים עם דיו
   const hs = [];
@@ -532,11 +537,12 @@ function takeSides(canvas, R) {
   const lab = new Int32Array(W * H), comps = [];
   for (let k0 = 0; k0 < W * H; k0++) {
     if (!mask[k0] || lab[k0]) continue;
-    const id = comps.length + 1, c = { id, x0: W, x1: -1, y0: H, y1: -1 }, stack = [k0];
+    const id = comps.length + 1, c = { id, x0: W, x1: -1, y0: H, y1: -1, rows: new Map() }, stack = [k0];
     lab[k0] = id;
     while (stack.length) {
       const q = stack.pop(), x = q % W, y = (q - x) / W;
       if (x < c.x0) c.x0 = x; if (x > c.x1) c.x1 = x; if (y < c.y0) c.y0 = y; if (y > c.y1) c.y1 = y;
+      const row = c.rows.get(y); if (!row) c.rows.set(y, [x, x]); else { if (x < row[0]) row[0] = x; if (x > row[1]) row[1] = x; }
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
         const nx = x + dx, ny = y + dy;
         if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
@@ -552,7 +558,25 @@ function takeSides(canvas, R) {
   const side = new Int32Array(comps.length + 1);
   for (const g of big) {
     side[g.id] = g.id;
-    for (const c of comps) if (!side[c.id] && c.x0 >= g.x0 && c.x1 <= g.x1 && c.y0 >= g.y0 && c.y1 <= g.y1) side[c.id] = g.id;
+    // מה שבתוך העצם: בכל השורות שלו בין הקצה הימני לשמאלי של העצם באותה שורה – ולא רק בתוך המלבן שסביבו,
+    // כדי שאותיות של שורה שליד הזנב של בועה לא יילקחו איתה
+    const inside = c => {
+      for (let y = c.y0; y <= c.y1; y++) { const row = g.rows.get(y); if (!row || c.x0 < row[0] || c.x1 > row[1]) return false; }
+      return true;
+    };
+    // טקסט של אזור שנכתב מחדש (skip – התיבות שלהם) אינו חלק מהעצם, גם כשהוא בתוך המלבן שלו
+    const ours = c => !skip.some(b => c.x0 < b.x + b.w && c.x1 >= b.x && c.y0 < b.y + b.h && c.y1 >= b.y);
+    for (const c of comps) if (!side[c.id] && c.x0 >= g.x0 && c.x1 <= g.x1 && c.y0 >= g.y0 && c.y1 <= g.y1 && inside(c) && ours(c)) side[c.id] = g.id;
+    // שבר קטן של העצם שנותק ממנו בדחיסה (הקצה הדק של הזנב): רכיב קטן שנמצא עד 3 פיקסלים מהעצם
+    const near = c => {
+      for (const [y, [a, z]] of c.rows) for (let x = a; x <= z; x++)
+        for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+          const nx = x + dx, ny = y + dy;
+          if (nx >= 0 && ny >= 0 && nx < W && ny < H && lab[ny * W + nx] === g.id) return true;
+        }
+      return false;
+    };
+    for (const c of comps) if (!side[c.id] && c.y1 - c.y0 < lineH * 0.6 && c.x1 - c.x0 < lineH * 1.5 && c.x1 >= g.x0 - 4 && c.x0 <= g.x1 + 4 && c.y1 >= g.y0 - 4 && c.y0 <= g.y1 + 4 && ours(c) && near(c)) side[c.id] = g.id;
   }
   const data = c2.getImageData(0, 0, W, H), out = [];
   for (const g of big) {
@@ -733,7 +757,7 @@ const MAX_ERASE_SCALE = 1.8;
  * בין כל הרווחים שבין השורות באותו קטע, כל רווח לפי הגודל שלו. השוליים בראש הקטע ובתחתיתו לא משתנים,
  * וכך גם מה שמחוץ לקטע. shift(cut, end, k) – כמו ב-openRows. units – תיבות של אזורים רב-שורתיים, שהשורות שבהן זזות יחד
  */
-function respace(src, erased, shift, units = []) {
+function respace(src, erased, shift, units = [], skip = []) {
   const before = blankRows(src);
   const sctx = src.getContext('2d');
   for (const s of erased) {
@@ -741,7 +765,11 @@ function respace(src, erased, shift, units = []) {
     sctx.fillStyle = (s.style || {}).bg || '#ffffff';
     sctx.fillRect(b.x - pad, b.y - (b.up || 0) - pad, b.w + 2 * pad, b.h + (b.up || 0) + (b.down || 0) + 2 * pad);
   }
+  // עצמים בצד השורות (בועת הסבר עם הזנב שלה) יוצאים מהתמונה לפני זיהוי השורות, כל אחד כיחידה אחת – גם הקצה
+  // הדק של הזנב, שבזיהוי לפי שורות היה נחשב חלק מהשורה שלידו ונשאר מאחור כשהבועה זזה. הם חוזרים בסוף
+  const taken = takeSides(src, blankRows(src), skip).map(t => ({ ...t, y: t.y0 }));
   const cur = blankRows(src), { W, H, c2, blank, rule, span } = cur;
+  const placed = new Set();
   // שורות הטקסט (פסים של שורות עם דיו), לפני המחיקה ואחריה
   const bands = (bl, from, to) => {
     const out = [];
@@ -821,6 +849,17 @@ function respace(src, erased, shift, units = []) {
         const side = new Uint8Array(comps.length + 1);
         for (const g of big) side[g.id] = 1;
         for (const c of comps) if (!side[c.id] && big.some(g => within(c, g))) side[c.id] = 1;
+        // שבר קטן של העצם שנותק ממנו בדחיסה (קצה דק של הזנב של בועה): רכיב נמוך שנמצא עד 3 פיקסלים מהעצם
+        const bigId = new Set(big.map(g => g.id));
+        const near = c => {
+          for (const [y, [a, z]] of c.rows) for (let x = a; x <= z; x++)
+            for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+              const nx = x + dx, ny = y + dy;
+              if (nx >= 0 && ny >= 0 && nx < W && ny < BH && bigId.has(lab[ny * W + nx])) return true;
+            }
+          return false;
+        };
+        for (const c of comps) if (!side[c.id] && c.y1 - c.y0 < lineH * 0.6 && c.x1 - c.x0 < lineH && big.some(g => c.x1 >= g.x0 - 3 && c.x0 <= g.x1 + 3 && c.y1 >= g.y0 - 3 && c.y0 <= g.y1 + 3) && near(c)) side[c.id] = 1;
         // השורות בלי העצם
         const isSide = (x, y) => { const id = lab[y * W + x]; return id && side[id]; };
         const subs = [];
@@ -869,7 +908,16 @@ function respace(src, erased, shift, units = []) {
       }
       return { out, sides };
     };
-    const cut = splitTall(cur, merge(now), true), sides = cut.sides;
+    const cut = splitTall(cur, merge(now), true), sides = [...cut.sides];
+    // העצמים שהוצאו ושהמרכז שלהם בקטע: זזים עם השורות שבו. השורות שלידם לא מוגדלות עד אליהם
+    for (const t of taken) {
+      if (placed.has(t) || (t.y0 + t.y1) / 2 < top || (t.y0 + t.y1) / 2 >= bottom) continue;
+      sides.push(t);
+      for (const r of cut.out) if (r.e > t.y0 && r.s < t.y1) {
+        if (r.sp === undefined) r.sp = span(r.s, r.e);
+        r.side = r.side ? { l: Math.min(r.side.l, t.x), r: Math.max(r.side.r, t.x + t.img.width) } : { l: t.x, r: t.x + t.img.width };
+      }
+    }
     // טקסט של אזור שתופס כמה שורות (הודעה בתחתית העמוד): השורות שלו זזות ומוגדלות יחד, כיחידה אחת, כדי שהתיבה
     // של האזור (שהטקסט החדש נכתב בה והרקע שלה מכסה את הישן) תזוז ותוגדל יחד איתן
     const together = list => {
@@ -1003,7 +1051,8 @@ function respace(src, erased, shift, units = []) {
       lines.forEach((r, j) => { if (Math.abs((r.s + r.e) / 2 - mid) < Math.abs((lines[i].s + lines[i].e) / 2 - mid)) i = j; });
       const r = lines[i], fi = hs[i] / (r.e - r.s);
       const dy = Math.round(to[i] + hs[i] / 2 + (mid - (r.s + r.e) / 2) * fi - (sd.y1 - sd.y0) / 2) - sd.y0;
-      t2.drawImage(sd.img, 0, sd.y + dy - top);
+      t2.drawImage(sd.img, sd.x || 0, sd.y + dy - top);
+      placed.add(sd);
     }
     c2.drawImage(tmp, 0, top);
     // התיבות זזות (ומוגדלות) עם השורות: קודם השורות שיורדות, מהתחתונה, ואחר כך שעולות, מהעליונה – כדי שאף שורה לא תוזז פעמיים
@@ -1011,6 +1060,8 @@ function respace(src, erased, shift, units = []) {
     for (const m of shifts.filter(m => m.k > 0 || (m.k === 0 && m.f !== 1)).reverse()) shift(m.s, m.e, m.k, m.f, pivot);
     for (const m of shifts.filter(m => m.k < 0)) shift(m.s, m.e, m.k, m.f, pivot);
   }
+  // עצמים שלא היו בקטע שהתרווח חוזרים למקומם
+  for (const t of taken) if (!placed.has(t)) c2.drawImage(t.img, t.x, t.y0);
   return scales;
 }
 
@@ -1122,6 +1173,23 @@ export async function templateCanvas(tpl, values) {
   // ניקוד מופרד שמעל האזור או מתחתיו נמחק יחד איתו
   // בתיבה שהותאמה לדיו אין מה להוסיף: מה שמעליה ומתחתיה הוא השורה השכנה (או קו של בועה), לא ניקוד
   for (const s of tpl.slots) if (s.box && !s.box.tight) Object.assign(s.box, markMargins(src, s.box));
+  // תיבה שסומנה גבוהה ונכנסת לקו מפריד שמעליה או מתחתיה (למשל אזור שם החג בתבנית בלי טקסט בקובץ): היא מקוצרת
+  // עד הקו, כדי שהרקע שמכסה את הטקסט הישן לא ימחק חלק מהקו
+  {
+    const { rule } = blankRows(src);
+    for (const s of tpl.slots) {
+      const b = s.box;
+      if (!b || s.kind === 'erase') continue;
+      const y0 = Math.max(0, Math.floor(b.y - (b.up || 0))), y1 = Math.min(src.height, Math.ceil(b.y + b.h + (b.down || 0)));
+      const mid = b.baseline != null ? b.baseline - (b.size || b.h * 0.5) * 0.35 : (y0 + y1) / 2;
+      let top = y0, bottom = y1;
+      for (let y = y0; y < y1; y++) if (rule[y]) { if (y < mid) top = Math.max(top, y + 3); else bottom = Math.min(bottom, y - 2); }
+      if ((top === y0 && bottom === y1) || bottom - top < 4) continue;
+      const nt = Math.max(b.y, top), nb = Math.min(b.y + b.h, bottom);
+      if (nb - nt < 4) continue;
+      Object.assign(b, { y: nt, h: nb - nt, up: Math.min(b.up || 0, nt - top), down: Math.min(b.down || 0, bottom - nb) });
+    }
+  }
   // המקום הישן של השם זז יחד עם הטקסט שבקובץ, כדי שיימצא לפיו הטקסט של השם (redrawLabel)
   const allBoxes = [...tpl.slots.flatMap(s => [s.box, s.labelBox, s.origin && s.origin.labelBox]), ...tpl.candidates.map(c => c.box)].filter(Boolean);
   // כל ההזזות לפי הסדר: מהן יודעים איפה נקודה מהקובץ נמצאת בתמונה החדשה, ולהפך
@@ -1141,6 +1209,36 @@ export async function templateCanvas(tpl, values) {
     }
   };
   // טקסט שנמחק מהקובץ: נמחק מהתמונה, והמקום שהתפנה מתחלק בין הרווחים שבין השורות סביבו
+  // שורת זמן שאין לה ערך בלוח הזה (תפילה שלא חלה בו, זמן שאין ביום הזה): השורה כולה – השעה, השם שלידה והקו
+  // שביניהם – נמחקת ומתרווחת כמו מחיקה, במקום שתישאר בה השעה הישנה מהקובץ
+  // כך גם טקסט שנמחק בעריכה (ריק) בשורה משלו: השורה מתרווחת במקום שיישאר רווח ריק
+  if (values) {
+    const host0 = specialHost(tpl.slots);
+    const rowOf = (a, b) => Math.abs((a.y + a.h / 2) - (b.y + b.h / 2)) < Math.max(a.h, b.h) / 2;
+    const gone = [];
+    for (const s of tpl.slots) {
+      if (!s.box || s.kind === 'erase') continue;
+      const v = slotText(s, values, host0);
+      const timeless = (s.kind === 'rule' || s.kind === 'zman') && v == null;
+      const empty = (s.kind === 'text' || s.kind === 'special') && v != null && !String(v).replace(/\[\/?[biu]\]/g, '').trim()
+        && !tpl.slots.some(o => o !== s && o.kind !== 'erase' && o.box && rowOf(o.box, s.box));
+      if (!timeless && !empty) continue;
+      gone.push(s);
+      const b = s.box, l = s.labelBox || b;
+      const x0 = Math.min(b.x, l.x), y0 = Math.min(b.y - (b.up || 0), l.y), x1 = Math.max(b.x + b.w, l.x + l.w), y1 = Math.max(b.y + b.h + (b.down || 0), l.y + l.h);
+      s.kind = 'erase';
+      s.box = { ...b, x: x0, y: y0, w: x1 - x0, h: y1 - y0, up: 0, down: 0 };
+      s.style = { ...(s.style || {}), bg: (s.style || {}).bg || '#ffffff' };
+    }
+    // כל השעות בשורה נמחקו (הדלקת נרות ושקיעה): גם מה שביניהן ("||") נמחק – תיבה אחת מקצה לקצה
+    for (const s of gone) {
+      const row = gone.filter(o => rowOf(o.box, s.box));
+      if (row.length < 2 || tpl.slots.some(o => o.kind !== 'erase' && o.box && rowOf(o.box, s.box))) continue;
+      const x0 = Math.min(...row.map(o => o.box.x)), x1 = Math.max(...row.map(o => o.box.x + o.box.w));
+      const y0 = Math.min(...row.map(o => o.box.y)), y1 = Math.max(...row.map(o => o.box.y + o.box.h));
+      Object.assign(s.box, { x: x0, w: x1 - x0, y: y0, h: y1 - y0 });
+    }
+  }
   const erased = tpl.slots.filter(s => s.kind === 'erase' && s.box);
   // טקסט רב-שורתי שהשבוע תופס פחות שורות מבקובץ – עריכת הנוסח לשבוע, או ערך קצר יותר (למשל שורת קידוש בלי
   // קידוש מאושר: רק הכותרת): השורות שנשארו נשארות למעלה, והשורות שפונו נמחקות מהתמונה ומתרווחות כמו מחיקה
@@ -1159,13 +1257,25 @@ export async function templateCanvas(tpl, values) {
       if (!rich.plain) continue;
       const f = fonts[b.font] || fonts[tpl.mainFont], st = s.style || { bg: '#fff', fg: '#000', bold: false };
       const size = (b.size || b.h * 0.72) * ((s.sizePct || 100) / 100);
-      const w = textWriter(ctx, f, slotLook(s, f, st), b.x + b.w / 2, styledRuns(rich, s.underline || s.ulDim))(rich.plain, size, b.baseline ?? (b.y + b.h * 0.78), false);
-      now = w <= Math.max(b.w * 1.15, b.w + size) ? 1 : 0;
+      const write = textWriter(ctx, f, slotLook(s, f, st), b.x + b.w / 2, styledRuns(rich, s.underline || s.ulDim));
+      const measure = str => write(str, size, b.baseline ?? (b.y + b.h * 0.78), false), room = Math.max(b.w * 1.15, b.w + size);
+      // לא נכנס בשורה אחת: כמה שורות ייכתבו (כמו בשלב 1 – כמה שפחות שורות שנכנסות ברוחב)
+      const split = measure(rich.plain) <= room ? null : splitLines(rich.plain, measure, s.lineCount || 2, room);
+      now = !split ? (measure(rich.plain) <= room ? 1 : 0) : Math.max(...split.map(measure)) <= room ? split.length : 0;
     }
     if (now < 1 || now >= was) continue;
     // השורות שבתמונה: כשזוהו בדיוק כמספר השורות שבקובץ יודעים איזה מקום להשאיר ואיזה למחוק. שורות שהדיו שלהן
     // נוגע זו בזו (אות עולה מתחת לאות יורדת) מזוהות כפס אחד – מספיק שהשורות שנשארות זוהו כל אחת לחוד
-    const rows = inkLines(src, b), lineH = (b.size || b.h / was * 0.72) * 1.6;
+    let rows = inkLines(src, b);
+    const lineH = (b.size || b.h / was * 0.72) * 1.6;
+    if (rows.length < was) {
+      // פס של כמה שורות נוגעות: מחולק לפי הגובה של שורה בקובץ, אם כך יוצא בדיוק מספר השורות שבקובץ
+      const pitch = b.h / was, parts = rows.map(r => Math.max(1, Math.round((r.bottom - r.top + 1) / pitch)));
+      if (parts.reduce((t, k) => t + k, 0) === was) rows = rows.flatMap((r, i) => Array.from({ length: parts[i] }, (_, j) => {
+        const h = (r.bottom - r.top + 1) / parts[i];
+        return { top: Math.round(r.top + j * h), bottom: Math.round(r.top + (j + 1) * h) - 1 };
+      }));
+    }
     if (rows.length > was || rows.length <= now || rows.slice(0, now).some(r => r.bottom - r.top + 1 > lineH)) continue;
     const gone = { top: rows[now].top, bottom: rows[rows.length - 1].bottom };
     erased.push({ kind: 'erase', box: { x: b.x, y: gone.top, w: b.w, h: gone.bottom - gone.top + 1, size: b.size, up: 0, down: 0 }, style: s.style });
@@ -1179,7 +1289,7 @@ export async function templateCanvas(tpl, values) {
   const units = tpl.slots.filter(s => s.kind !== 'erase' && s.box && s.box.size && s.box.h > s.box.size * 1.5).map(s => s.box);
   // הגודל של כל אזור לפני הריווח מחדש, כדי לדעת כמה הוגדל איתו
   const size0 = new Map(tpl.slots.map(s => [s, s.box && s.box.size]));
-  const scales = erased.length ? respace(src, erased, shiftBoxes, units) : [];
+  const scales = erased.length ? respace(src, erased, shiftBoxes, units, tpl.slots.filter(s => s.kind !== 'erase').flatMap(s => [s.box, s.labelBox]).filter(Boolean)) : [];
   // איפה נקודה מהקובץ נמצאת בתמונה אחרי כל ההזזות
   const mapY = y => moves.reduce((y, [cut, end, k, f = 1]) => y >= cut && y < end ? cut + k + (y - cut) * f : y, y);
 
@@ -1187,6 +1297,7 @@ export async function templateCanvas(tpl, values) {
   const host = specialHost(tpl.slots);
   const plans = [];
   for (const s of tpl.slots) {
+    if (s.kind === 'erase') continue;
     const raw = slotText(s, values, host);
     if (raw == null) continue;
     // ירידות שורה שנשמרו בעריכה לשבוע מסוים: קובעות את השורות רק כשמותר לגלוש
@@ -1195,11 +1306,22 @@ export async function templateCanvas(tpl, values) {
     const text = rich.plain, styled = styledRuns(rich, s.underline || s.ulDim);
     const b = s.box, st = s.style || { bg: '#fff', fg: '#000', bold: false };
     let size = (b.size || b.h * 0.72) * ((s.sizePct || 100) / 100);
-    const cx = b.x + b.w / 2, baseline = b.baseline ?? (b.y + b.h * 0.78);
+    let cx = b.x + b.w / 2;
+    const baseline = b.baseline ?? (b.y + b.h * 0.78);
     const f = fonts[b.font] || fonts[tpl.mainFont];
     const mk = (c, x) => textWriter(c, f, slotLook(s, f, st), x, styled);
-    const writeAt = mk(ctx, cx);
-    const room = Math.max(b.w * 1.15, b.w + size);
+    let writeAt = mk(ctx, cx);
+    // שעה ליד שם ("שחרית – 8:45"): הצד הקרוב לשם נשאר במקומו, ושעה רחבה יותר (08:45) גדלה לצד הרחוק – עד הדיו
+    // הבא בשורה – במקום להתרחב לשני הצדדים ולכסות את הקו שבין השם לשעה
+    // בלי תיבה לשם (תבנית שסומנה בלי שמות): הצד של השם הוא הצד שבו הדיו (הקו והשם) קרוב יותר
+    const nearL = !s.wrap && !s.labelBox && (s.kind === 'rule' || s.kind === 'zman') ? freeBeside(src, b, -1, st.bg, size * 3) : 0;
+    const nearR = nearL ? freeBeside(src, b, 1, st.bg, size * 3) : 0;
+    const lb = !s.wrap && (s.labelBox || (nearL && nearR !== nearL ? { x: nearR < nearL ? b.x + b.w : b.x - 1, w: 1 } : null));
+    const toLeft = lb && lb.x + lb.w / 2 > b.x + b.w / 2;
+    const free = lb ? freeBeside(src, b, toLeft ? -1 : 1, st.bg, size * 5) : 0;
+    // ולא יותר מרוחב העמוד סביב מרכז האזור, כדי שטקסט ארוך (גם בשורה שהוגדלה בריווח מחדש) לא ייצא מהדף
+    const room = Math.min(Math.max(b.w * 1.15, b.w + size, lb ? b.w + free - size * 0.3 : 0),
+      Math.max(b.w, 2 * Math.min(cx, canvas.width - cx) - size));
     // טקסט חדש בשורה משלו, שהשורה הישנה שלו לא הוגדלה בריווח מחדש (למשל ליד בועה בצד): גדל כמו שאר השורות בקטע,
     // כדי שיישאר בגודל יחסי להן – עד הרוחב של המקום שלו, כדי שלא יגיע לבועה
     const sec = scales.find(k => b.y + b.h / 2 >= k.top && b.y + b.h / 2 < k.bottom);
@@ -1208,7 +1330,10 @@ export async function templateCanvas(tpl, values) {
     if (sec && alone && !s.rowHint && sec.f > grown * 1.01 && (s.kind === 'text' || s.kind === 'kiddush')) {
       const parts = (/\S\s*\n\s*\S/.test(text) ? text.split('\n') : s.wrap && s.lines ? chosenLines(text, s.lines, s.lineCount || 2) || [text] : [text]);
       const widest0 = Math.max(...parts.map(ln => writeAt(ln, size, baseline, false)));
-      size *= Math.max(1, Math.min(sec.f / grown, widest0 > 0 ? room / widest0 : 1));
+      // עד הדיו הקרוב משני הצדדים (בועה בצד), סביב מרכז האזור
+      const L = b.x - freeBeside(src, b, -1, st.bg, canvas.width), R = b.x + b.w + freeBeside(src, b, 1, st.bg, canvas.width);
+      const near = Math.min(room, 2 * Math.min(cx - L, R - cx) - size * 0.5);
+      size *= Math.max(1, Math.min(sec.f / grown, widest0 > 0 ? near / widest0 : 1));
     }
     const minSize = size * 0.6;
     // טקסט ארוך מהמקום: מקטינים עד 70%, ואם עדיין לא נכנס ומותר לגלוש – מחלקים לכמה שורות
@@ -1222,7 +1347,7 @@ export async function templateCanvas(tpl, values) {
     let pre = null;
     // טקסט שתפס כמה שורות בקובץ הישן (srcLines): מחלקים לשורות בגודל המקורי, ומקטינים רק אם עדיין לא נכנס
     const multi = s.wrap && s.srcLines > 1;
-    const split = w > room && multi && !chosen ? splitLines(text, str => writeAt(str, size, baseline, false), count) : null;
+    const split = w > room && multi && !chosen ? splitLines(text, str => writeAt(str, size, baseline, false), count, room) : null;
     if ((w > room || own) && chosen) {
       // השורות שנבחרו נכתבות בגודל המקורי, ומוקטנות רק כשהשורה הרחבה ביניהן עדיין לא נכנסת.
       // המקום לשורות הנוספות נפתח בריווח העמוד (שלב 2), כדי שהטקסט יישאר בגודל של השורות שלידו
@@ -1234,11 +1359,12 @@ export async function templateCanvas(tpl, values) {
       lines = split;
       w = widest(lines);
     } else if (w > room && added > 0) {
-      lines = [text.slice(0, added), text.slice(added + 3)];
+      // בשורה משלו השם המיוחד נכתב במלואו ("שבת הגדול", ולא רק "הגדול" כמו אחרי "לשבת צו –")
+      lines = [text.slice(0, added), s.kind === 'parashaName' ? String(values.special).trim() : text.slice(added + 3)];
       const widest = () => Math.max(...lines.map(ln => writeAt(ln, size, baseline, false)));
       w = widest();
       if (w > room) { size = Math.max(size * 0.7, size * room / w); w = widest(); }
-    } else if (w > room && s.wrap && (pre = splitLines(text, str => writeAt(str, size, baseline, false), count)) && widest(pre) <= room) {
+    } else if (w > room && s.wrap && (pre = splitLines(text, str => writeAt(str, size, baseline, false), count, room)) && widest(pre) <= room) {
       // טקסט שמותר לו לגלוש: קודם מחלקים לשורות בגודל המקורי, ורק אם עדיין לא נכנס – מקטינים
       lines = pre;
       w = widest(lines);
@@ -1249,6 +1375,10 @@ export async function templateCanvas(tpl, values) {
         const split = splitLines(text, str => writeAt(str, size, baseline, false), count);
         if (split) { lines = split; w = Math.max(...lines.map(ln => writeAt(ln, size, baseline, false))); }
       }
+    }
+    if (lb && lines.length === 1) {
+      cx = toLeft ? b.x + b.w - w / 2 : b.x + w / 2;
+      writeAt = mk(ctx, cx);
     }
     // המרווח בין השורות: כפי שנבחר, אבל לא פחות ממרווח נוח לקריאה. need – המינימום שבו שורה לא עולה על השורה שמעליה
     const n = lines.length, pct = s.wrap ? (s.lineHeightPct || 100) / 100 : 1;
@@ -1268,6 +1398,15 @@ export async function templateCanvas(tpl, values) {
     }) : null;
     plans.push({ s, text, st, size, minSize, cx, writeAt, lines, w, n, rowsAt, rowHint0: s.rowHint && s.rowHint.map(r => r[1]), layout, mk, mv: moves.length, pen: c => mk(c, cx) });
   }
+
+  // עצמים בצד השורות (בועת הסבר) יוצאים מהתמונה עד סוף הכתיבה: הרקע של טקסט חדש לא מוחק חלק מהם (קצה הזנב שליד
+  // השורה), והם לא נחשבים שורה בריווח. התיבה שלהם זזה עם כל הזזה, והם נכתבים מחדש בסוף, מעל הכל
+  const rewritten = tpl.slots.filter(s => s.kind !== 'erase').flatMap(s => [s.box, s.labelBox]).filter(Boolean);
+  const bubbles = takeSides(src, blankRows(src), rewritten).map(t => {
+    const m = { x: t.x, y: t.y0, w: t.img.width, h: t.img.height, img: t.img };
+    allBoxes.push(m);
+    return m;
+  });
 
   // שלב 2: ריווח הפסקאות, מלמעלה למטה. הרווח מעל פסקה ומתחתיה נקבע בשורות הריקות שבתמונה (מה שמתחת עולה או יורד),
   // וטקסט של כמה שורות נכתב כבר כאן על התמונה, כדי שהרווח מהשורה שמתחתיו יימדד מהטקסט החדש
@@ -1344,6 +1483,7 @@ export async function templateCanvas(tpl, values) {
     if (!done.has(p)) paint(p, ctx, p.writeAt, null, null);
     if ((p.s.sizePct || 100) !== 100) p.s.labelInk = redrawLabel(ctx, tpl, p.s, fonts, p.st);
   }
+  for (const m of bubbles) ctx.drawImage(m.img, m.x, m.y, m.w, m.h);
   // איפה נכתב כל אזור בתמונה החדשה – כדי שהמסגרות בעורך יהיו על הטקסט עצמו ובגודל שלו
   canvas.layout = {
     slots: new Map(given.slots.map((s, i) => {
@@ -1559,6 +1699,23 @@ function verticalRoom(src, b, x0, x1, side, bg, reach, size) {
   };
   const pad = Math.max(1, size * 0.06);
   return { top: scan(Math.floor(b.y) - 1, -1, y0 - 1) + 1 + pad, bottom: scan(Math.ceil(b.y + b.h), 1, y1) - pad };
+}
+
+/**
+ * כמה מקום ריק יש ליד התיבה b בשורה שלה, לצד dir (-1 שמאלה, 1 ימינה), עד הדיו הבא או קצה התמונה – עד max
+ */
+function freeBeside(src, b, dir, bg, max) {
+  const y0 = Math.max(0, Math.floor(b.y)), y1 = Math.min(src.height, Math.ceil(b.y + b.h));
+  const start = dir < 0 ? Math.floor(b.x) - 2 : Math.ceil(b.x + b.w) + 2;
+  const end = dir < 0 ? Math.max(0, start - Math.ceil(max)) : Math.min(src.width, start + Math.ceil(max));
+  const x0 = Math.min(start, end), x1 = Math.max(start, end);
+  if (x1 - x0 < 1 || y1 - y0 < 1) return 0;
+  const data = src.getContext('2d', { willReadFrequently: true }).getImageData(x0, y0, x1 - x0, y1 - y0).data, c = rgb(bg), RW = x1 - x0;
+  for (let x = start; dir < 0 ? x > end : x < end; x += dir) {
+    let n = 0;
+    for (let y = 0; y < y1 - y0; y++) { const i = (y * RW + (x - x0)) * 4; if (dist([data[i], data[i + 1], data[i + 2]], c) > 70 && ++n > 1) return Math.abs(x - start); }
+  }
+  return Math.abs(end - start);
 }
 
 /** תיבות של טקסט באותה שורה של האזור, מימינו או משמאלו (לא מעליו או מתחתיו, ולא הטקסט המקורי שלו) */
