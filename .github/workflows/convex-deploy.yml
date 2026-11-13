@@ -37,4 +37,19 @@ jobs:
 
       # מעלה את התיקייה convex/ לשרת scintillating-coyote-982 (הפרודקשן).
       - name: Deploy Convex backend
-        run: npx convex deploy -y
+        run: |
+          set -o pipefail
+          npx convex deploy -y 2>&1 | tee deploy.log
+
+      # בודק שהשרת שעודכן הוא השרת שהאתר פונה אליו (js/convex-config.js), ומציג את יעד הפריסה בסיכום הריצה.
+      - name: Verify the deployment is the one the site uses
+        if: always()
+        run: |
+          want=$(grep -o 'https://[a-z0-9-]*' js/convex-config.js | head -1 | sed 's#https://##')
+          got=$(grep -o 'https://[a-z0-9-]*[a-z0-9.-]*\.convex\.cloud' deploy.log | tail -1 | sed 's#https://##; s#\..*##')
+          tail_log=$(tail -n 6 deploy.log | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g' | tr '\n' '|' | cut -c1-600)
+          echo "::notice title=Convex deploy::site=$want deployed=${got:-unknown} log=$tail_log"
+          if [ -n "$got" ] && [ "$got" != "$want" ]; then
+            echo "::error::Convex deployed to $got, but the site uses $want (js/convex-config.js). Check the CONVEX_DEPLOY_KEY secret."
+            exit 1
+          fi
