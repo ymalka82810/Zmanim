@@ -26,6 +26,9 @@ export function zmanim(dayNum, lat, lng) {
       chatzot: at(6),
       minchaGedola: at(6.5),
       sofShaa7: at(7),
+      // שעה שביעית לחב"ד (שו"ע הרב רע"א ס"ג, אג"ק חי"ג ע' קיט): שעות שוות של 60 דקות אחרי חצות היום, ובה לא מקדשים בליל שבת
+      shaa7ChabadStart: at(6) + 360 * MIN,
+      shaa7ChabadEnd: at(6) + 420 * MIN,
       minchaKetana: at(9.5),
       plagHaMincha: at(10.75)
     });
@@ -37,7 +40,7 @@ export function zmanim(dayNum, lat, lng) {
  * עיגול לדקה שלמה, לצד המחמיר:
  * זמנים שעד אליהם צריך להספיק מעוגלים למטה, זמנים שמהם מותר להתחיל מעוגלים למעלה.
  */
-const ROUND_UP = new Set(['alotHaShachar', 'sunrise', 'tzeit', 'havdalah', 'minchaGedola', 'sofShaa7', 'minchaKetana', 'plagHaMincha']);
+const ROUND_UP = new Set(['alotHaShachar', 'sunrise', 'tzeit', 'havdalah', 'minchaGedola', 'sofShaa7', 'shaa7ChabadEnd', 'minchaKetana', 'plagHaMincha']);
 
 export function roundZman(key, ms) {
   if (ms == null) return null;
