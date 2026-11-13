@@ -352,7 +352,7 @@ function announceHTML(p){
   const s = syn();
   return `<div class="announce">
     <div class="an-head">${esc(s.kiddushHeading)}</div>
-    <label class="f" for="${p}Sponsor">מי מביא את הקידוש (אפשר להשאיר ריק אם ממלאים סיבה)</label>
+    <label class="f" for="${p}Sponsor">מי מביא את הקידוש (לא חובה)</label>
     <div class="an-line">${s.kiddushBy?`<span class="an-fixed">${esc(s.kiddushBy)}</span>`:''}<input type="text" id="${p}Sponsor" maxlength="60" placeholder="משפחת לוי">
       <select id="${p}SponsorSfx" aria-label="תוספת אחרי השם">${options(LIVING_SFX, '', 'ללא')}</select></div>
     <label class="f" for="${p}Occ">סיבת הקידוש (לא חובה)</label>
@@ -571,7 +571,6 @@ const A = {
   },
   register: d => registerSheet(d.k),
   regNext: () => {
-    if (!$('#fSponsor').value.trim() && !$('#fOcc').value.trim()){ $('#fSponsor').focus(); return toast('נא למלא את שם בעל הקידוש או את סיבת הקידוש'); }
     const ce = coError('f'); if (ce) return toast(ce);
     $('#step1').hidden = true; $('#step2').hidden = false; $('#st2').classList.add('on'); $('#sheet').scrollTop = 0;
   },
@@ -633,7 +632,6 @@ const A = {
   doReason: guard(async d => {
     const k = d.k, kind = d.kind;
     if (kind === 'manual'){
-      if (!$('#rSponsor').value.trim() && !$('#rOcc').value.trim()) return toast('נא למלא את שם בעל הקידוש או את סיבת הקידוש');
       const ce = coError('r'); if (ce) return toast(ce);
       await call('kiddush:registerManual', { dateKey:k, ...announceValues('r'), cosponsors:coPayload('r'), phone:$('#rPhone').value });
       toast('נשמר');

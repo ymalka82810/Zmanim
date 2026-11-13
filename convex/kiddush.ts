@@ -61,10 +61,7 @@ function checkOccasion(args: OccasionInput) {
 /** שדות ההכרזה מהטופס, אחרי בדיקה שהבחירות מהרשימות המותרות */
 function announceFields(args: { sponsorName: string; sponsorSuffix?: string; occasion: string; occasionType?: string; occasionSuffix?: string; moreOccasions?: OccasionInput[] }) {
   const sponsorName = clip(args.sponsorName, 60);
-  // בלי בעל קידוש (הקדשה בלבד: "לזכות ולהצלחת …") חייבת להיות לפחות סיבה אחת
-  if (!sponsorName && !(args.occasion ?? "").trim() && !(args.moreOccasions ?? []).some((m) => (m.occasion ?? "").trim())) {
-    throw new ConvexError("נא למלא את שם בעל הקידוש או את סיבת הקידוש");
-  }
+  // שם בעל הקידוש אינו חובה: קידוש יכול להופיע רק עם הכותרת, או עם הקדשה ("לזכות ולהצלחת …") בלי "ע״י"
   const sponsorSuffix = sponsorName ? args.sponsorSuffix ?? "" : "";
   if (sponsorSuffix && !LIVING_SUFFIXES.includes(sponsorSuffix)) {
     throw new ConvexError("בחירה לא תקינה אחרי השם");
