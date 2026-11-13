@@ -116,7 +116,7 @@ const SOURCES: Record<SearchKind, Source> = {
         }
         entries.push({
           kind: "kiddush",
-          title: `קידוש ${by} ${fullSponsorLine(b, by)}`,
+          title: fullSponsorLine(b, by) ? `קידוש ${by} ${fullSponsorLine(b, by)}` : "קידוש",
           sub: join(occasionLine(b).replace(/\n/g, " · "), b.status === "pending" ? "ממתין לאישור" : ""),
           dateKey: b.dateKey,
           page: "kiddush/",

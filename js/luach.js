@@ -306,7 +306,7 @@ function kiddushRow(rule, ctx) {
   const occasions = String(info.occasion || '').split('\n').map(o => line(o));
   // כל בעל קידוש בשורה משלו; מהשני ואילך עם וי״ו החיבור: "ע״י משפחת לוי" / "וע״י משפחת כהן"
   const names = info.sponsorLines && info.sponsorLines.length ? info.sponsorLines : [info.sponsorName];
-  const sponsors = names.map((n, i) => line(i && info.by ? 'ו' + info.by : info.by, n));
+  const sponsors = names.filter(Boolean).map((n, i) => line(i && info.by ? 'ו' + info.by : info.by, n));
   const text = [line(info.heading), ...sponsors, ...occasions].filter(Boolean).join('\n');
   return { text, key: 9998 };
 }

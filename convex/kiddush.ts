@@ -27,7 +27,7 @@ export const DEFAULT_KIDDUSH_BY = "ע״י";
 const LIVING_SUFFIXES = ["שיחי׳", "שתחי׳", "שיחיו"];
 const MEMORIAL_SUFFIXES = ["ז״ל", "ע״ה"];
 const MEMORIAL_TYPE = "לעילוי נשמת";
-const OCCASION_TYPES = ["לרגל", "לזכות", "לרפואת", "להצלחת", MEMORIAL_TYPE];
+const OCCASION_TYPES = ["לרגל", "לזכות", "לזכות ולהצלחת", "לרפואת", "להצלחת", MEMORIAL_TYPE];
 
 const clip = (s: string, max: number) => s.trim().slice(0, max);
 
@@ -61,10 +61,11 @@ function checkOccasion(args: OccasionInput) {
 /** שדות ההכרזה מהטופס, אחרי בדיקה שהבחירות מהרשימות המותרות */
 function announceFields(args: { sponsorName: string; sponsorSuffix?: string; occasion: string; occasionType?: string; occasionSuffix?: string; moreOccasions?: OccasionInput[] }) {
   const sponsorName = clip(args.sponsorName, 60);
-  if (!sponsorName) {
-    throw new ConvexError("נא למלא את שם בעל הקידוש");
+  // בלי בעל קידוש (הקדשה בלבד: "לזכות ולהצלחת …") חייבת להיות לפחות סיבה אחת
+  if (!sponsorName && !(args.occasion ?? "").trim() && !(args.moreOccasions ?? []).some((m) => (m.occasion ?? "").trim())) {
+    throw new ConvexError("נא למלא את שם בעל הקידוש או את סיבת הקידוש");
   }
-  const sponsorSuffix = args.sponsorSuffix ?? "";
+  const sponsorSuffix = sponsorName ? args.sponsorSuffix ?? "" : "";
   if (sponsorSuffix && !LIVING_SUFFIXES.includes(sponsorSuffix)) {
     throw new ConvexError("בחירה לא תקינה אחרי השם");
   }
@@ -81,7 +82,7 @@ function announceFields(args: { sponsorName: string; sponsorSuffix?: string; occ
 const withSuffix = (name: string, suffix?: string) => (suffix ? name + " " + suffix : name);
 /** "משפחת לוי שיחיו" */
 export function sponsorLine(b: Doc<"kiddushBookings">) {
-  return withSuffix(b.sponsorName, b.sponsorSuffix);
+  return b.sponsorName ? withSuffix(b.sponsorName, b.sponsorSuffix) : "";
 }
 /** "לזכות בנם משה שיחי׳". רישום ישן בלי סוג: "לרגל …". כמה סיבות: כל אחת בשורה משלה (ירידת שורה) */
 export function occasionLine(b: Doc<"kiddushBookings">) {
@@ -102,7 +103,7 @@ const hasPendingCosponsor = (b: Doc<"kiddushBookings">) => (b.cosponsors ?? []).
 
 /** הנרשם והשותפים שאישרו: "משפחת לוי וע״י משפחת כהן". ה"ע״י" הראשון מתווסף בלקוח, כמו תמיד */
 export function fullSponsorLine(b: Doc<"kiddushBookings">, by: string) {
-  const lines = [sponsorLine(b), ...(b.cosponsors ?? []).filter((c) => c.status === "confirmed").map(cosponsorLine)];
+  const lines = [sponsorLine(b), ...(b.cosponsors ?? []).filter((c) => c.status === "confirmed").map(cosponsorLine)].filter(Boolean);
   return lines.join(by ? ` ו${by} ` : " ו");
 }
 
@@ -396,7 +397,7 @@ export const register = mutation({
     if (phone && membership.phone !== phone) {
       await ctx.db.patch(membership._id, { phone });
     }
-    const sponsor = withSuffix(fields.sponsorName, fields.sponsorSuffix);
+    const sponsor = fields.sponsorName ? withSuffix(fields.sponsorName, fields.sponsorSuffix) : fields.occasion;
     const partnersNote = cosponsors.length ? " (ממתין לאישור השותפים)" : "";
     await notify(ctx, args.synagogueId, userId, "managers", args.dateKey,
       selfApproved

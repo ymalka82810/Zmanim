@@ -170,7 +170,7 @@ function statusHTML(b, past){
   if (b.status === 'blocked') return `<span class="chip block">${esc(b.blockLabel||'לא זמין')}</span>`;
   const mineTag = b.mine ? '<span class="mine-tag">הרישום שלי</span>' : '';
   if (past) return `<span class="chip done">נעשה</span><span class="by">${esc(b.sponsorLine)}</span>${mineTag}`;
-  const chip = b.status === 'approved' ? `<span class="chip appr">קידוש ${esc(syn().kiddushBy)}</span>` : '<span class="chip pend">ממתין לאישור</span>';
+  const chip = b.status === 'approved' ? `<span class="chip appr">קידוש${b.sponsorLine ? ' ' + esc(syn().kiddushBy) : ''}</span>` : '<span class="chip pend">ממתין לאישור</span>';
   return `${chip}<span class="by">${esc(b.sponsorLine)}</span>${mineTag}`;
 }
 function calHTML(){
@@ -218,7 +218,7 @@ function mineHTML(){
     return `<div class="card">
       <div class="row" style="justify-content:space-between"><div><div class="meta">${esc(heFull(sl.hd))} | ${esc(gFull(sl.date))}</div><h3>${esc(slotTitle(sl))}</h3></div>
       ${b.status==='approved'?'<span class="chip appr">מאושר</span>':'<span class="chip pend">ממתין לאישור</span>'}</div>
-      <div class="small">${esc(syn().kiddushBy)} ${esc(b.sponsorLine)}${b.occasionLine?' | '+occInline(b.occasionLine):''}</div>
+      <div class="small">${b.sponsorLine ? esc(syn().kiddushBy) + ' ' + esc(b.sponsorLine) : ''}${b.sponsorLine && b.occasionLine ? ' | ' : ''}${b.occasionLine?' | '+occInline(b.occasionLine):''}</div>
       ${partnersHTML(b)}
       <div class="meta">אושרו הנחיות גרסה ${b.termsVersion||'—'}</div>
       ${outdated?`<div class="warn">ההנחיות עודכנו לגרסה ${ct.version}. יש לעיין ולאשר מחדש.</div>`:''}
@@ -234,7 +234,7 @@ function mineHTML(){
     return `<div class="card">
       <div class="row" style="justify-content:space-between"><div><div class="meta">${esc(heFull(sl.hd))} | ${esc(gFull(sl.date))}</div><h3>${esc(slotTitle(sl))}</h3></div>
       ${pend?'<span class="chip pend">ממתין לאישורך</span>':'<span class="chip appr">אישרת</span>'}</div>
-      <div class="small">${esc(b.invitedBy)} הוסיף אותך כשותף לקידוש: ${esc(syn().kiddushBy)} ${esc(b.sponsorLine)}${b.occasionLine?' | '+occInline(b.occasionLine):''}</div>
+      <div class="small">${esc(b.invitedBy)} הוסיף אותך כשותף לקידוש: ${b.sponsorLine ? esc(syn().kiddushBy) + ' ' + esc(b.sponsorLine) : ''}${b.sponsorLine && b.occasionLine ? ' | ' : ''}${b.occasionLine?' | '+occInline(b.occasionLine):''}</div>
       ${partnersHTML(b)}
       <div class="row" style="margin-top:10px">${pend
         ? `<button class="btn ok" data-act="respond" data-a="1" data-k="${k}">אישור ההשתתפות</button><button class="btn danger" data-act="respond" data-a="0" data-k="${k}">דחייה</button>`
@@ -247,7 +247,7 @@ function mineHTML(){
     return `<div class="card">
       <div class="row" style="justify-content:space-between"><div><div class="meta">${esc(heFull(sl.hd))} | ${esc(gFull(sl.date))}</div><h3>${esc(slotTitle(sl))}</h3></div>
       <span class="chip block">נדחה</span></div>
-      <div class="small">${esc(s.kiddushBy)} ${esc(r.sponsorLine)}${r.occasionLine?' | '+occInline(r.occasionLine):''}</div>
+      <div class="small">${r.sponsorLine ? esc(s.kiddushBy) + ' ' + esc(r.sponsorLine) : ''}${r.sponsorLine && r.occasionLine ? ' | ' : ''}${r.occasionLine?''+occInline(r.occasionLine):''}</div>
       ${r.reason ? `<div class="warn">סיבת הדחייה: ${esc(r.reason)}</div>` : ''}
       <div class="meta">נדחה ב${esc(fmtTime(r.rejectedAt))}</div>
       <div class="row" style="margin-top:10px"><button class="btn sec" data-act="dismissRejection" data-id="${r._id}">הבנתי, הסתרה</button></div>
@@ -346,13 +346,13 @@ function slotSheet(k){
 /* נוסח ההכרזה: שורה קבועה של הגבאי, "ע״י" + בעל הקידוש, ואז "לרגל / לזכות / לעילוי נשמת…" + שם.
    הרשימות זהות לאלו שהשרת מקבל (convex/kiddush.ts) */
 const LIVING_SFX = ['שיחי׳','שתחי׳','שיחיו'], MEMORIAL_SFX = ['ז״ל','ע״ה'], MEMORIAL = 'לעילוי נשמת';
-const OCC_HINT = {'לרגל':'בר המצווה של בנם','לזכות':'בנם משה','לרפואת':'משה בן שרה','להצלחת':'בנם משה',[MEMORIAL]:'ר׳ משה בן יעקב'};
+const OCC_HINT = {'לרגל':'בר המצווה של בנם','לזכות':'בנם משה','לזכות ולהצלחת':'אלונה בת אירית ומשפחתה','לרפואת':'משה בן שרה','להצלחת':'בנם משה',[MEMORIAL]:'ר׳ משה בן יעקב'};
 const options = (list, sel, none) => (none ? `<option value="">${none}</option>` : '') + list.map(x => `<option${x===sel?' selected':''}>${esc(x)}</option>`).join('');
 function announceHTML(p){
   const s = syn();
   return `<div class="announce">
     <div class="an-head">${esc(s.kiddushHeading)}</div>
-    <label class="f" for="${p}Sponsor">מי מביא את הקידוש</label>
+    <label class="f" for="${p}Sponsor">מי מביא את הקידוש (אפשר להשאיר ריק אם ממלאים סיבה)</label>
     <div class="an-line">${s.kiddushBy?`<span class="an-fixed">${esc(s.kiddushBy)}</span>`:''}<input type="text" id="${p}Sponsor" maxlength="60" placeholder="משפחת לוי">
       <select id="${p}SponsorSfx" aria-label="תוספת אחרי השם">${options(LIVING_SFX, '', 'ללא')}</select></div>
     <label class="f" for="${p}Occ">סיבת הקידוש (לא חובה)</label>
@@ -385,7 +385,7 @@ const announceValues = p => ({
 function announceView(b){
   const s = syn();
   return `<div class="announce view"><div class="an-head">${esc(s.kiddushHeading)}</div>
-    <div>${s.kiddushBy?esc(s.kiddushBy)+' ':''}<b>${esc(b.sponsorLine)}</b></div>${b.occasionLine?`<div>${esc(b.occasionLine).replace(/\n/g,'<br>')}</div>`:''}</div>`;
+    ${b.sponsorLine?`<div>${s.kiddushBy?esc(s.kiddushBy)+' ':''}<b>${esc(b.sponsorLine)}</b></div>`:''}${b.occasionLine?`<div>${esc(b.occasionLine).replace(/\n/g,'<br>')}</div>`:''}</div>`;
 }
 
 /** שותפים שעוד לא אישרו, או כל השותפים למי שרשאי לראות אותם */
@@ -571,7 +571,7 @@ const A = {
   },
   register: d => registerSheet(d.k),
   regNext: () => {
-    if (!$('#fSponsor').value.trim()){ $('#fSponsor').focus(); return toast('נא למלא את שם בעל הקידוש'); }
+    if (!$('#fSponsor').value.trim() && !$('#fOcc').value.trim()){ $('#fSponsor').focus(); return toast('נא למלא את שם בעל הקידוש או את סיבת הקידוש'); }
     const ce = coError('f'); if (ce) return toast(ce);
     $('#step1').hidden = true; $('#step2').hidden = false; $('#st2').classList.add('on'); $('#sheet').scrollTop = 0;
   },
@@ -633,7 +633,7 @@ const A = {
   doReason: guard(async d => {
     const k = d.k, kind = d.kind;
     if (kind === 'manual'){
-      if (!$('#rSponsor').value.trim()) return toast('נא למלא את שם בעל הקידוש');
+      if (!$('#rSponsor').value.trim() && !$('#rOcc').value.trim()) return toast('נא למלא את שם בעל הקידוש או את סיבת הקידוש');
       const ce = coError('r'); if (ce) return toast(ce);
       await call('kiddush:registerManual', { dateKey:k, ...announceValues('r'), cosponsors:coPayload('r'), phone:$('#rPhone').value });
       toast('נשמר');
