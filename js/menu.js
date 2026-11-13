@@ -93,7 +93,8 @@ const css = `
 :root[data-theme="dark"] .sm-toast svg{color:#dfb564}
 :root[data-theme="dark"] .sm-toast button{color:#9ba4b3}
 @media (prefers-reduced-motion:reduce){.sm-toast{transition:none}}
-:root[data-theme="dark"] :root[data-theme="dark"] :root[data-theme="dark"] :root[data-theme="dark"] @media print{`;
+@media print{.sm-bar,.sm-stripe,.sm-day,.sm-layer,.sm-toasts{display:none!important}}
+`;
 
 /* ---------- שורת היום ---------- */
 const COMMUNITY_KEY = 'site.community', ACTIVE_KEY = 'site.activeSynagogue', CONFIG_KEY = 'zmanim.config', TOKEN_KEY = 'convex.auth.token';
