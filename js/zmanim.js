@@ -1,6 +1,6 @@
 /**
  * זמני היום למיקום נתון. כל הזמנים במילישניות UTC.
- * שעות זמניות לפי הגר"א: מהנץ עד השקיעה.
+ * שעות זמניות לפי הגר"א: מהנץ עד השקיעה. סוף שעה שביעית: 7 שעות זמניות אחרי הנץ.
  * לפי המג"א: מעלות השחר 72 דקות לפני הנץ עד 72 דקות אחרי השקיעה.
  */
 
@@ -25,6 +25,7 @@ export function zmanim(dayNum, lat, lng) {
       sofZmanShmaMGA: alot72 + 3 * hourMGA,
       chatzot: at(6),
       minchaGedola: at(6.5),
+      sofShaa7: at(7),
       minchaKetana: at(9.5),
       plagHaMincha: at(10.75)
     });
@@ -36,7 +37,7 @@ export function zmanim(dayNum, lat, lng) {
  * עיגול לדקה שלמה, לצד המחמיר:
  * זמנים שעד אליהם צריך להספיק מעוגלים למטה, זמנים שמהם מותר להתחיל מעוגלים למעלה.
  */
-const ROUND_UP = new Set(['alotHaShachar', 'sunrise', 'tzeit', 'havdalah', 'minchaGedola', 'minchaKetana', 'plagHaMincha']);
+const ROUND_UP = new Set(['alotHaShachar', 'sunrise', 'tzeit', 'havdalah', 'minchaGedola', 'sofShaa7', 'minchaKetana', 'plagHaMincha']);
 
 export function roundZman(key, ms) {
   if (ms == null) return null;

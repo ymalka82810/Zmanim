@@ -702,6 +702,7 @@ const ZMAN_WORDS = [
   [/סו"?ז|סוף זמן|גר"?א/, 'sofZmanShma', 'כל יום'],
   [/חצות/, 'chatzot', 'כל יום'],
   [/מנחה גדולה/, 'minchaGedola', 'כל יום'],
+  [/שעה (ה)?שביעית|שעה ז'/, 'sofShaa7', 'כל יום'],
   [/פלג/, 'plagHaMincha', null]
 ];
 const PRAYER_WORDS = /שחרית|מנחה|ערבית|מעריב|קבלת שבת|מוסף|שיעור|דף יומי|תהילים|לימוד|הלל|סליחות|ותיקין|אבות ובנים|תפילה|קריאת/;
@@ -715,12 +716,12 @@ const isOnlyDayWord = s => !!whenOf(s) && !PRAYER_WORDS.test(s) && s.length < 16
 
 const BASE_BY_WHEN = {
   'כניסה': ['candles', 'sunset', 'plagHaMincha', 'tzeit'],
-  'כל יום': ['sunrise', 'sofZmanShmaMGA', 'sofZmanShma', 'chatzot', 'minchaGedola', 'minchaKetana', 'plagHaMincha', 'sunset', 'tzeit'],
+  'כל יום': ['sunrise', 'sofZmanShmaMGA', 'sofZmanShma', 'chatzot', 'minchaGedola', 'sofShaa7', 'minchaKetana', 'plagHaMincha', 'sunset', 'tzeit'],
   'יציאה': ['havdalah', 'tzeit', 'sunset']
 };
 const BASE_LABEL = { candles: 'הדלקת נרות', sunset: 'שקיעה', tzeit: 'צאת הכוכבים', havdalah: 'צאת שבת/חג', alotHaShachar: 'עלות השחר',
   sunrise: 'הנץ', sofZmanShmaMGA: 'סו"ז ק"ש מג"א', sofZmanShma: 'סו"ז ק"ש גר"א', chatzot: 'חצות', minchaGedola: 'מנחה גדולה',
-  minchaKetana: 'מנחה קטנה', plagHaMincha: 'פלג המנחה' };
+  sofShaa7: 'סוף שעה שביעית', minchaKetana: 'מנחה קטנה', plagHaMincha: 'פלג המנחה' };
 
 const overlapX = (a, b) => Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
 const sameLine = (a, b) => Math.abs(a.baseline - b.baseline) < Math.max(a.size, b.size) * 0.45;
